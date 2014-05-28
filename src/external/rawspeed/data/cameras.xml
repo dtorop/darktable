@@ -13,7 +13,7 @@
 <!DOCTYPE Cameras [
 <!ELEMENT BlackAreas ( Vertical*, Horizontal* ) >
 
-<!ELEMENT Camera ( CFA?, Crop, Sensor+, BlackAreas?, Aliases?, Hints? ) >
+<!ELEMENT Camera ( CFA?, CFA2?, Crop, Sensor+, BlackAreas?, Aliases?, Hints? ) >
 <!ATTLIST Camera make CDATA #REQUIRED >
 <!ATTLIST Camera model CDATA #REQUIRED >
 <!ATTLIST Camera supported CDATA #IMPLIED >
@@ -26,6 +26,10 @@
 <!ELEMENT CFA ( Color+ ) >
 <!ATTLIST CFA height NMTOKEN #REQUIRED >
 <!ATTLIST CFA width NMTOKEN #REQUIRED >
+
+<!ELEMENT CFA2 ( Color+ ) >
+<!ATTLIST CFA2 height NMTOKEN #REQUIRED >
+<!ATTLIST CFA2 width NMTOKEN #REQUIRED >
 
 <!ELEMENT Color ( #PCDATA ) >
 <!ATTLIST Color x NMTOKEN #REQUIRED >
@@ -4403,13 +4407,389 @@
 	</Camera>
 	<Camera make="FUJIFILM" model="FinePix X100">
 		<CFA width="2" height="2">
+			<Color x="0" y="0">RED</Color>
+			<Color x="1" y="0">GREEN</Color>
+			<Color x="0" y="1">GREEN</Color>
+			<Color x="1" y="1">BLUE</Color>
+		</CFA>
+		<Crop x="68" y="0" width="-70" height="0"/>
+		<Sensor black="254" white="4000"/>
+	</Camera>
+	<Camera make="FUJIFILM" model="X10">
+		<CFA width="2" height="2">
 			<Color x="0" y="0">BLUE</Color>
 			<Color x="1" y="0">GREEN</Color>
 			<Color x="0" y="1">GREEN</Color>
 			<Color x="1" y="1">RED</Color>
 		</CFA>
-		<Crop x="73" y="1" width="-73" height="-1"/>
-		<Sensor black="255" white="4000"/>
+		<Crop x="48" y="0" width="-48" height="0"/>
+		<Sensor black="256" white="4000"/>
+	</Camera>
+	<Camera make="FUJIFILM" model="X-S1">
+		<CFA width="2" height="2">
+			<Color x="0" y="0">BLUE</Color>
+			<Color x="1" y="0">GREEN</Color>
+			<Color x="0" y="1">GREEN</Color>
+			<Color x="1" y="1">RED</Color>
+		</CFA>
+		<Crop x="48" y="0" width="-48" height="0"/>
+		<Sensor black="260" white="4000"/>
+	</Camera>
+	<Camera make="FUJIFILM" model="X-Pro1">
+		<CFA2 width="6" height="6">
+			<Color x="0" y="0">GREEN</Color>
+			<Color x="1" y="0">GREEN</Color>
+			<Color x="2" y="0">RED</Color>
+			<Color x="3" y="0">GREEN</Color>
+			<Color x="4" y="0">GREEN</Color>
+			<Color x="5" y="0">BLUE</Color>
+			<Color x="0" y="1">GREEN</Color>
+			<Color x="1" y="1">GREEN</Color>
+			<Color x="2" y="1">BLUE</Color>
+			<Color x="3" y="1">GREEN</Color>
+			<Color x="4" y="1">GREEN</Color>
+			<Color x="5" y="1">RED</Color>
+			<Color x="0" y="2">BLUE</Color>
+			<Color x="1" y="2">RED</Color>
+			<Color x="2" y="2">GREEN</Color>
+			<Color x="3" y="2">RED</Color>
+			<Color x="4" y="2">BLUE</Color>
+			<Color x="5" y="2">GREEN</Color>
+			<Color x="0" y="3">GREEN</Color>
+			<Color x="1" y="3">GREEN</Color>
+			<Color x="2" y="3">BLUE</Color>
+			<Color x="3" y="3">GREEN</Color>
+			<Color x="4" y="3">GREEN</Color>
+			<Color x="5" y="3">RED</Color>
+			<Color x="0" y="4">GREEN</Color>
+			<Color x="1" y="4">GREEN</Color>
+			<Color x="2" y="4">RED</Color>
+			<Color x="3" y="4">GREEN</Color>
+			<Color x="4" y="4">GREEN</Color>
+			<Color x="5" y="4">BLUE</Color>
+			<Color x="0" y="5">RED</Color>
+			<Color x="1" y="5">BLUE</Color>
+			<Color x="2" y="5">GREEN</Color>
+			<Color x="3" y="5">BLUE</Color>
+			<Color x="4" y="5">RED</Color>
+			<Color x="5" y="5">GREEN</Color>
+		</CFA2>
+		<Crop x="0" y="0" width="-168" height="0"/>
+		<Sensor black="256" white="4094"/>
+	</Camera>
+	<Camera make="FUJIFILM" model="XF1">
+		<CFA width="2" height="2">
+			<Color x="0" y="0">BLUE</Color>
+			<Color x="1" y="0">GREEN</Color>
+			<Color x="0" y="1">GREEN</Color>
+			<Color x="1" y="1">RED</Color>
+		</CFA>
+		<Crop x="48" y="0" width="-48" height="0"/>
+		<Sensor black="257" white="4000"/>
+	</Camera>
+	<Camera make="FUJIFILM" model="X-E1">
+		<CFA2 width="6" height="6">
+			<Color x="0" y="0">GREEN</Color>
+			<Color x="1" y="0">GREEN</Color>
+			<Color x="2" y="0">RED</Color>
+			<Color x="3" y="0">GREEN</Color>
+			<Color x="4" y="0">GREEN</Color>
+			<Color x="5" y="0">BLUE</Color>
+			<Color x="0" y="1">GREEN</Color>
+			<Color x="1" y="1">GREEN</Color>
+			<Color x="2" y="1">BLUE</Color>
+			<Color x="3" y="1">GREEN</Color>
+			<Color x="4" y="1">GREEN</Color>
+			<Color x="5" y="1">RED</Color>
+			<Color x="0" y="2">BLUE</Color>
+			<Color x="1" y="2">RED</Color>
+			<Color x="2" y="2">GREEN</Color>
+			<Color x="3" y="2">RED</Color>
+			<Color x="4" y="2">BLUE</Color>
+			<Color x="5" y="2">GREEN</Color>
+			<Color x="0" y="3">GREEN</Color>
+			<Color x="1" y="3">GREEN</Color>
+			<Color x="2" y="3">BLUE</Color>
+			<Color x="3" y="3">GREEN</Color>
+			<Color x="4" y="3">GREEN</Color>
+			<Color x="5" y="3">RED</Color>
+			<Color x="0" y="4">GREEN</Color>
+			<Color x="1" y="4">GREEN</Color>
+			<Color x="2" y="4">RED</Color>
+			<Color x="3" y="4">GREEN</Color>
+			<Color x="4" y="4">GREEN</Color>
+			<Color x="5" y="4">BLUE</Color>
+			<Color x="0" y="5">RED</Color>
+			<Color x="1" y="5">BLUE</Color>
+			<Color x="2" y="5">GREEN</Color>
+			<Color x="3" y="5">BLUE</Color>
+			<Color x="4" y="5">RED</Color>
+			<Color x="5" y="5">GREEN</Color>
+		</CFA2>
+		<Crop x="0" y="0" width="-168" height="0"/>
+		<Sensor black="256" white="4094"/>
+	</Camera>
+	<Camera make="FUJIFILM" model="X20">
+		<CFA2 width="6" height="6">
+			<Color x="0" y="0">GREEN</Color>
+			<Color x="1" y="0">BLUE</Color>
+			<Color x="2" y="0">GREEN</Color>
+			<Color x="3" y="0">GREEN</Color>
+			<Color x="4" y="0">RED</Color>
+			<Color x="5" y="0">GREEN</Color>
+			<Color x="0" y="1">RED</Color>
+			<Color x="1" y="1">GREEN</Color>
+			<Color x="2" y="1">RED</Color>
+			<Color x="3" y="1">BLUE</Color>
+			<Color x="4" y="1">GREEN</Color>
+			<Color x="5" y="1">BLUE</Color>
+			<Color x="0" y="2">GREEN</Color>
+			<Color x="1" y="2">BLUE</Color>
+			<Color x="2" y="2">GREEN</Color>
+			<Color x="3" y="2">GREEN</Color>
+			<Color x="4" y="2">RED</Color>
+			<Color x="5" y="2">GREEN</Color>
+			<Color x="0" y="3">GREEN</Color>
+			<Color x="1" y="3">RED</Color>
+			<Color x="2" y="3">GREEN</Color>
+			<Color x="3" y="3">GREEN</Color>
+			<Color x="4" y="3">BLUE</Color>
+			<Color x="5" y="3">GREEN</Color>
+			<Color x="0" y="4">BLUE</Color>
+			<Color x="1" y="4">GREEN</Color>
+			<Color x="2" y="4">BLUE</Color>
+			<Color x="3" y="4">RED</Color>
+			<Color x="4" y="4">GREEN</Color>
+			<Color x="5" y="4">RED</Color>
+			<Color x="0" y="5">GREEN</Color>
+			<Color x="1" y="5">RED</Color>
+			<Color x="2" y="5">GREEN</Color>
+			<Color x="3" y="5">GREEN</Color>
+			<Color x="4" y="5">BLUE</Color>
+			<Color x="5" y="5">GREEN</Color>
+		</CFA2>
+		<Crop x="0" y="0" width="-64" height="0"/>
+		<Sensor black="257" white="4094"/>
+	</Camera>
+	<Camera make="FUJIFILM" model="X100S">
+		<CFA2 width="6" height="6">
+			<Color x="0" y="0">RED</Color>
+			<Color x="1" y="0">BLUE</Color>
+			<Color x="2" y="0">GREEN</Color>
+			<Color x="3" y="0">BLUE</Color>
+			<Color x="4" y="0">RED</Color>
+			<Color x="5" y="0">GREEN</Color>
+			<Color x="0" y="1">GREEN</Color>
+			<Color x="1" y="1">GREEN</Color>
+			<Color x="2" y="1">RED</Color>
+			<Color x="3" y="1">GREEN</Color>
+			<Color x="4" y="1">GREEN</Color>
+			<Color x="5" y="1">BLUE</Color>
+			<Color x="0" y="2">GREEN</Color>
+			<Color x="1" y="2">GREEN</Color>
+			<Color x="2" y="2">BLUE</Color>
+			<Color x="3" y="2">GREEN</Color>
+			<Color x="4" y="2">GREEN</Color>
+			<Color x="5" y="2">RED</Color>
+			<Color x="0" y="3">BLUE</Color>
+			<Color x="1" y="3">RED</Color>
+			<Color x="2" y="3">GREEN</Color>
+			<Color x="3" y="3">RED</Color>
+			<Color x="4" y="3">BLUE</Color>
+			<Color x="5" y="3">GREEN</Color>
+			<Color x="0" y="4">GREEN</Color>
+			<Color x="1" y="4">GREEN</Color>
+			<Color x="2" y="4">BLUE</Color>
+			<Color x="3" y="4">GREEN</Color>
+			<Color x="4" y="4">GREEN</Color>
+			<Color x="5" y="4">RED</Color>
+			<Color x="0" y="5">GREEN</Color>
+			<Color x="1" y="5">GREEN</Color>
+			<Color x="2" y="5">RED</Color>
+			<Color x="3" y="5">GREEN</Color>
+			<Color x="4" y="5">GREEN</Color>
+			<Color x="5" y="5">BLUE</Color>
+		</CFA2>
+		<Crop x="4" y="0" width="-52" height="0"/>
+		<Sensor black="1024" white="16383"/>
+	</Camera>
+	<Camera make="FUJIFILM" model="X-M1">
+		<CFA2 width="6" height="6">
+			<Color x="0" y="0">GREEN</Color>
+			<Color x="1" y="0">GREEN</Color>
+			<Color x="2" y="0">RED</Color>
+			<Color x="3" y="0">GREEN</Color>
+			<Color x="4" y="0">GREEN</Color>
+			<Color x="5" y="0">BLUE</Color>
+			<Color x="0" y="1">GREEN</Color>
+			<Color x="1" y="1">GREEN</Color>
+			<Color x="2" y="1">BLUE</Color>
+			<Color x="3" y="1">GREEN</Color>
+			<Color x="4" y="1">GREEN</Color>
+			<Color x="5" y="1">RED</Color>
+			<Color x="0" y="2">BLUE</Color>
+			<Color x="1" y="2">RED</Color>
+			<Color x="2" y="2">GREEN</Color>
+			<Color x="3" y="2">RED</Color>
+			<Color x="4" y="2">BLUE</Color>
+			<Color x="5" y="2">GREEN</Color>
+			<Color x="0" y="3">GREEN</Color>
+			<Color x="1" y="3">GREEN</Color>
+			<Color x="2" y="3">BLUE</Color>
+			<Color x="3" y="3">GREEN</Color>
+			<Color x="4" y="3">GREEN</Color>
+			<Color x="5" y="3">RED</Color>
+			<Color x="0" y="4">GREEN</Color>
+			<Color x="1" y="4">GREEN</Color>
+			<Color x="2" y="4">RED</Color>
+			<Color x="3" y="4">GREEN</Color>
+			<Color x="4" y="4">GREEN</Color>
+			<Color x="5" y="4">BLUE</Color>
+			<Color x="0" y="5">RED</Color>
+			<Color x="1" y="5">BLUE</Color>
+			<Color x="2" y="5">GREEN</Color>
+			<Color x="3" y="5">BLUE</Color>
+			<Color x="4" y="5">RED</Color>
+			<Color x="5" y="5">GREEN</Color>
+		</CFA2>
+		<Crop x="0" y="0" width="-168" height="0"/>
+		<Sensor black="256" white="4094"/>
+	</Camera>
+	<Camera make="FUJIFILM" model="X-A1">
+		<CFA width="2" height="2">
+			<Color x="0" y="0">RED</Color>
+			<Color x="1" y="0">GREEN</Color>
+			<Color x="0" y="1">GREEN</Color>
+			<Color x="1" y="1">BLUE</Color>
+		</CFA>
+		<Crop x="0" y="0" width="-168" height="0"/>
+		<Sensor black="256" white="4094"/>
+	</Camera>
+	<Camera make="FUJIFILM" model="XQ1">
+		<CFA2 width="6" height="6">
+			<Color x="0" y="0">GREEN</Color>
+			<Color x="1" y="0">BLUE</Color>
+			<Color x="2" y="0">GREEN</Color>
+			<Color x="3" y="0">GREEN</Color>
+			<Color x="4" y="0">RED</Color>
+			<Color x="5" y="0">GREEN</Color>
+			<Color x="0" y="1">RED</Color>
+			<Color x="1" y="1">GREEN</Color>
+			<Color x="2" y="1">RED</Color>
+			<Color x="3" y="1">BLUE</Color>
+			<Color x="4" y="1">GREEN</Color>
+			<Color x="5" y="1">BLUE</Color>
+			<Color x="0" y="2">GREEN</Color>
+			<Color x="1" y="2">BLUE</Color>
+			<Color x="2" y="2">GREEN</Color>
+			<Color x="3" y="2">GREEN</Color>
+			<Color x="4" y="2">RED</Color>
+			<Color x="5" y="2">GREEN</Color>
+			<Color x="0" y="3">GREEN</Color>
+			<Color x="1" y="3">RED</Color>
+			<Color x="2" y="3">GREEN</Color>
+			<Color x="3" y="3">GREEN</Color>
+			<Color x="4" y="3">BLUE</Color>
+			<Color x="5" y="3">GREEN</Color>
+			<Color x="0" y="4">BLUE</Color>
+			<Color x="1" y="4">GREEN</Color>
+			<Color x="2" y="4">BLUE</Color>
+			<Color x="3" y="4">RED</Color>
+			<Color x="4" y="4">GREEN</Color>
+			<Color x="5" y="4">RED</Color>
+			<Color x="0" y="5">GREEN</Color>
+			<Color x="1" y="5">RED</Color>
+			<Color x="2" y="5">GREEN</Color>
+			<Color x="3" y="5">GREEN</Color>
+			<Color x="4" y="5">BLUE</Color>
+			<Color x="5" y="5">GREEN</Color>
+		</CFA2>
+		<Crop x="0" y="0" width="-64" height="0"/>
+		<Sensor black="257" white="4094"/>
+	</Camera>
+	<Camera make="FUJIFILM" model="X-E2">
+		<CFA2 width="6" height="6">
+			<Color x="0" y="0">RED</Color>
+			<Color x="1" y="0">BLUE</Color>
+			<Color x="2" y="0">GREEN</Color>
+			<Color x="3" y="0">BLUE</Color>
+			<Color x="4" y="0">RED</Color>
+			<Color x="5" y="0">GREEN</Color>
+			<Color x="0" y="1">GREEN</Color>
+			<Color x="1" y="1">GREEN</Color>
+			<Color x="2" y="1">RED</Color>
+			<Color x="3" y="1">GREEN</Color>
+			<Color x="4" y="1">GREEN</Color>
+			<Color x="5" y="1">BLUE</Color>
+			<Color x="0" y="2">GREEN</Color>
+			<Color x="1" y="2">GREEN</Color>
+			<Color x="2" y="2">BLUE</Color>
+			<Color x="3" y="2">GREEN</Color>
+			<Color x="4" y="2">GREEN</Color>
+			<Color x="5" y="2">RED</Color>
+			<Color x="0" y="3">BLUE</Color>
+			<Color x="1" y="3">RED</Color>
+			<Color x="2" y="3">GREEN</Color>
+			<Color x="3" y="3">RED</Color>
+			<Color x="4" y="3">BLUE</Color>
+			<Color x="5" y="3">GREEN</Color>
+			<Color x="0" y="4">GREEN</Color>
+			<Color x="1" y="4">GREEN</Color>
+			<Color x="2" y="4">BLUE</Color>
+			<Color x="3" y="4">GREEN</Color>
+			<Color x="4" y="4">GREEN</Color>
+			<Color x="5" y="4">RED</Color>
+			<Color x="0" y="5">GREEN</Color>
+			<Color x="1" y="5">GREEN</Color>
+			<Color x="2" y="5">RED</Color>
+			<Color x="3" y="5">GREEN</Color>
+			<Color x="4" y="5">GREEN</Color>
+			<Color x="5" y="5">BLUE</Color>
+		</CFA2>
+		<Crop x="4" y="0" width="-52" height="0"/>
+		<Sensor black="1024" white="16383"/>
+	</Camera>
+	<Camera make="FUJIFILM" model="X-T1">
+		<CFA2 width="6" height="6">
+			<Color x="0" y="0">RED</Color>
+			<Color x="1" y="0">BLUE</Color>
+			<Color x="2" y="0">GREEN</Color>
+			<Color x="3" y="0">BLUE</Color>
+			<Color x="4" y="0">RED</Color>
+			<Color x="5" y="0">GREEN</Color>
+			<Color x="0" y="1">GREEN</Color>
+			<Color x="1" y="1">GREEN</Color>
+			<Color x="2" y="1">RED</Color>
+			<Color x="3" y="1">GREEN</Color>
+			<Color x="4" y="1">GREEN</Color>
+			<Color x="5" y="1">BLUE</Color>
+			<Color x="0" y="2">GREEN</Color>
+			<Color x="1" y="2">GREEN</Color>
+			<Color x="2" y="2">BLUE</Color>
+			<Color x="3" y="2">GREEN</Color>
+			<Color x="4" y="2">GREEN</Color>
+			<Color x="5" y="2">RED</Color>
+			<Color x="0" y="3">BLUE</Color>
+			<Color x="1" y="3">RED</Color>
+			<Color x="2" y="3">GREEN</Color>
+			<Color x="3" y="3">RED</Color>
+			<Color x="4" y="3">BLUE</Color>
+			<Color x="5" y="3">GREEN</Color>
+			<Color x="0" y="4">GREEN</Color>
+			<Color x="1" y="4">GREEN</Color>
+			<Color x="2" y="4">BLUE</Color>
+			<Color x="3" y="4">GREEN</Color>
+			<Color x="4" y="4">GREEN</Color>
+			<Color x="5" y="4">RED</Color>
+			<Color x="0" y="5">GREEN</Color>
+			<Color x="1" y="5">GREEN</Color>
+			<Color x="2" y="5">RED</Color>
+			<Color x="3" y="5">GREEN</Color>
+			<Color x="4" y="5">GREEN</Color>
+			<Color x="5" y="5">BLUE</Color>
+		</CFA2>
+		<Crop x="4" y="0" width="-52" height="0"/>
+		<Sensor black="1024" white="16383"/>
 	</Camera>
 	<Camera make="SONY" model="DSC-R1">
 		<CFA width="2" height="2">
