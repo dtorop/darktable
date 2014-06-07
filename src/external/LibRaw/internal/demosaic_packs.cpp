@@ -1,5 +1,5 @@
 /* 
-  Copyright 2008-2010 LibRaw LLC (info@libraw.org)
+  Copyright 2008-2013 LibRaw LLC (info@libraw.org)
 
 LibRaw is free software; you can redistribute it and/or modify
 it under the terms of the one of three licenses as you choose:
@@ -34,28 +34,66 @@ it under the terms of the one of three licenses as you choose:
 #define SRC_USES_BLACK
 #define SRC_USES_CURVE
 
+/* WF filtering is allowed to triple libraw license */
+#include "./wf_filtering.cpp"
+/* DHT and AAHD are LGPL licensed, so include them */
+#include "./dht_demosaic.cpp"
+#include "./aahd_demosaic.cpp"
+
+
 #include "internal/var_defines.h"
 
-// api stubs
-void CLASS ahd_interpolate_mod() {}
-void CLASS afd_interpolate_pl(int, int) {}
-void CLASS vcd_interpolate(int) {}
-void CLASS lmmse_interpolate(int) {}
+
+#ifdef LIBRAW_DEMOSAIC_PACK_GPL2
+/*AHD-Mod*/
+#include <ahd_interpolate_mod.c>
+/*LMMSE*/
+#include <lmmse_interpolate.c>
+/*AFD*/
+#include <ahd_partial_interpolate.c>
+#include <afd_interpolate_pl.c>
+/* VCD*/
+#include <refinement.c>
+#include <vcd_interpolate.c>
+#include <es_median_filter.c>
+#include <median_filter_new.c>
+#else
+// fake implementations of all GPL2 demosaics
+
+void CLASS ahd_interpolate_mod() {ahd_interpolate();}
+void CLASS afd_interpolate_pl(int, int) {ahd_interpolate();}
+void CLASS vcd_interpolate(int) {ahd_interpolate();}
+void CLASS lmmse_interpolate(int) {ahd_interpolate();}
 void CLASS es_median_filter() {}
 void CLASS median_filter_new() {}
 void CLASS refinement() {}
 
-void CLASS fbdd(int) {}
-void CLASS dcb(int, int) {}
+#endif
 
-void CLASS CA_correct_RT(float,float) {}
-void CLASS amaze_demosaic_RT() {}
-void CLASS green_equilibrate(float thresh) {}
-void CLASS cfa_linedn(float linenoise) {}
-void CLASS cfa_impulse_gauss(float lclean, float cclean) {}
+/* DCB is BSD licensed, so include it */
+#include "./dcb_demosaicing.c"
 
-void CLASS foveon_interpolate() {}
-void CLASS foveon_load_raw() {}
-void CLASS parse_foveon() {}
-void CLASS foveon_thumb_loader() {}
-void CLASS foveon_thumb() {}
+
+#ifdef LIBRAW_DEMOSAIC_PACK_GPL3
+/*AMaZE*/
+#include <amaze_demosaic_RT.cc>
+#include <CA_correct_RT.cc>
+#include <cfa_linedn_new.c>
+#include <cfa_impulse_gauss.c>
+#include <green_equi.c>
+#else
+// fallback to AHD and no correction
+void CLASS CA_correct_RT(float,float){}
+void CLASS amaze_demosaic_RT() { ahd_interpolate();}
+void CLASS green_equilibrate(float thresh) {} 
+void CLASS cfa_linedn(float linenoise){}
+void CLASS cfa_impulse_gauss(float lclean, float cclean){}
+#endif
+
+#define sget4(s) sget4((uchar *)s)
+#ifndef M_PI
+#define M_PI            3.14159265358979323846
+#endif
+#ifdef LIBRAW_DEMOSAIC_PACK_GPL2
+#include <dcraw_foveon.c>
+#endif

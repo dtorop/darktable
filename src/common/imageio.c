@@ -309,7 +309,7 @@ return_label:
 static gboolean
 _blacklisted_ext(const gchar *filename)
 {
-  const char *extensions_blacklist[] = { "dng", "cr2", "nef", "nrw", "orf", "rw2", "pef", "srw", "arw", "raf", "mrw", "raw", "sr2", "mef", "mos", "dcr", "erf", "3fr", NULL };
+  const char *extensions_blacklist[] = { "dng", "cr2", "nef", "nrw", "orf", "rw2", "pef", "srw", "arw", "mrw", "raw", "sr2", "mef", "mos", "dcr", "erf", "3fr", NULL };
   gboolean supported = TRUE;
   char *ext = g_strrstr(filename, ".");
   if(!ext) return FALSE;
@@ -323,34 +323,11 @@ _blacklisted_ext(const gchar *filename)
   return supported;
 }
 
-// we do not support non-Bayer raw images; make sure we skip those in order
-// to prevent LibRaw from crashing
-static gboolean 
-_blacklisted_raw(const gchar *maker, const gchar *model)
+static int fcol(const int row, const int col, const dt_image_t *img)
 {
-  typedef struct blacklist_t {
-    const gchar *maker;
-    const gchar *model;
-  } blacklist_t;
-
-  blacklist_t blacklist[] = { { "fujifilm",                        "x-pro1" },
-                              { "fujifilm",                        "x-e1"   },
-                              { "fujifilm",                        "x-e2"   },
-                              { "fujifilm",                        "x-m1"   },
-                              { NULL,                              NULL     } };
-
-  gboolean blacklisted = FALSE;
-
-  for(blacklist_t *i = blacklist; i->maker != NULL; i++)
-    if(!g_ascii_strncasecmp(maker, i->maker, strlen(i->maker)) &&
-       !g_ascii_strncasecmp(model, i->model, strlen(i->model)))
-    {
-      blacklisted = TRUE;
-      break;
-    }
-  return blacklisted;
+  if (img->filters == 9) return img->xtrans[row%6][col%6];
+  return img->filters >> (((row << 1 & 14) + (col & 1)) << 1) & 3;
 }
-
 
 // open a raw file, libraw path:
 dt_imageio_retval_t
@@ -364,56 +341,44 @@ dt_imageio_open_raw(
   if(!img->exif_inited)
     (void) dt_exif_read(img, filename);
 
-  if(_blacklisted_raw(img->exif_maker, img->exif_model)) return DT_IMAGEIO_FILE_CORRUPTED;
-
   int ret;
   libraw_data_t *raw = libraw_init(0);
   libraw_processed_image_t *image = NULL;
   raw->params.half_size = 0; /* dcraw -h */
-  raw->params.use_camera_wb = 0;
-  raw->params.use_auto_wb = 0;
-  raw->params.med_passes = 0;//img->raw_params.med_passes;
-  raw->params.no_auto_bright = 1;
-  // raw->params.filtering_mode |= LIBRAW_FILTERING_NOBLACKS;
-  // raw->params.document_mode = 2; // no color scaling, no black, no max, no wb..?
-  raw->params.document_mode = 2; // color scaling (clip,wb,max) and black point, but no demosaic
-  raw->params.output_color = 0;
-  raw->params.output_bps = 16;
-  raw->params.user_flip = 0; // -1: use orientation from raw; 0: do not rotate
-  raw->params.gamm[0] = 1.0;
-  raw->params.gamm[1] = 1.0;
-  // raw->params.user_qual = img->raw_params.demosaic_method; // 3: AHD, 2: PPG, 1: VNG
-  raw->params.user_qual = 0;
-  // raw->params.four_color_rgb = img->raw_params.four_color_rgb;
-  raw->params.four_color_rgb = 0;
-  raw->params.use_camera_matrix = 0;
-  raw->params.green_matching = 0;
-  raw->params.highlight = 1;
-  raw->params.threshold = 0;
-  // raw->params.auto_bright_thr = img->raw_auto_bright_threshold;
-
-  // raw->params.amaze_ca_refine = 0;
-  raw->params.fbdd_noiserd    = 0;
 
   ret = libraw_open_file(raw, filename);
   HANDLE_ERRORS(ret, 0);
-  raw->params.user_qual = 0;
-  raw->params.half_size = 0;
 
   ret = libraw_unpack(raw);
+  HANDLE_ERRORS(ret, 1);
+
+  // libraw_dcraw_process() subtracts black to 0, but save original
+  // values
   img->raw_black_level = raw->color.black;
   img->raw_white_point = raw->color.maximum;
-  HANDLE_ERRORS(ret, 1);
+
+  for (int c=0; c<4; c++)           // scale colors 0.0 to 1.0
+    raw->params.user_mul[c] = 1.0f;
+  raw->params.output_color = 0;     // raw rgb
+  // LibRaw 0.16.0 introduced undocumented no_interpolation,
+  // similar to dcraw's document mode
+  raw->params.no_interpolation = 1;
+
   ret = libraw_dcraw_process(raw);
-  // ret = libraw_dcraw_document_mode_processing(raw);
   HANDLE_ERRORS(ret, 1);
+
+  raw->params.output_bps = 16;
+  raw->params.no_auto_bright = 1;
+  raw->params.gamm[0] = 1.0;
+  raw->params.gamm[1] = 1.0;
   image = libraw_dcraw_make_mem_image(raw, &ret);
   HANDLE_ERRORS(ret, 1);
 
   // fallback for broken exif read in case of phase one H25
   if(!strncmp(img->exif_maker, "Phase One", 9))
     img->orientation = raw->sizes.flip;
-  // filters seem only ever to take a useful value after unpack/process
+
+  // filters only takes a useful value after unpack/process
   img->filters = raw->idata.filters;
   img->bpp = img->filters ? sizeof(uint16_t) : 4*sizeof(float);
   img->width  = raw->sizes.width;
@@ -430,26 +395,51 @@ dt_imageio_open_raw(
   dt_gettime_t(img->exif_datetime_taken, raw->other.timestamp);
 #endif
 
+  if (img->filters == LIBRAW_XTRANS)
+  {
+    // the filter array is always aligned to the topleft of the
+    // sensor, but as the raw image rotates, must rotate the array
+    // correspondingly
+    uint8_t xtemp[6][6];
+    dt_imageio_flip_buffers((char *)xtemp, (char *)raw->idata.xtrans, 1, 6, 6, 6, 6, 6, img->orientation);
+
+    // Offset filter to count from edge of useful image. As the image
+    // may be rotated, this may involve counting backwards from its
+    // far side. Some of these dimensions are not necessarily modulo 6.
+    int bottom_offset = 6 - ((raw->sizes.height + raw->sizes.top_margin) % 6);
+    int right_offset = 6 - ((raw->sizes.width + raw->sizes.left_margin) % 6);
+    int yoffset = (img->orientation & 2) ? bottom_offset : raw->sizes.top_margin;
+    int xoffset = (img->orientation & 1) ? right_offset : raw->sizes.left_margin;
+    int joff = (img->orientation & 4) ? xoffset : yoffset;
+    int ioff = (img->orientation & 4) ? yoffset : xoffset;
+
+    for (int i=0; i < 6; ++i)
+      for (int j=0; j < 6; ++j)
+        img->xtrans[j][i] = xtemp[(j+joff)%6][(i+ioff)%6];
+  }
+
   void *buf = dt_mipmap_cache_alloc(img, DT_MIPMAP_FULL, a);
   if(!buf)
   {
     libraw_recycle(raw);
     libraw_close(raw);
-    free(image);
+    libraw_dcraw_clear_mem(image);
     return DT_IMAGEIO_CACHE_FULL;
   }
   if(img->filters)
   {
 #ifdef _OPENMP
-    #pragma omp parallel for schedule(static) default(none) shared(img, image, raw, buf)
+    #pragma omp parallel for schedule(static) default(none) shared(img, image, buf)
 #endif
-    for(size_t k=0; k<(size_t)img->width*img->height; k++)
-      ((uint16_t *)buf)[k] = CLAMPS((((uint16_t *)image->data)[k] - raw->color.black)*65535.0f/(float)(raw->color.maximum - raw->color.black), 0, 0xffff);
+    for (int row=0; row < image->height; row++)
+      for (int col=0; col < image->width; col++)
+        ((uint16_t *)buf)[row*image->width + col] =
+          ((uint16_t *)image->data)[(row*image->width+col)*image->colors+fcol(row,col,img)];
   }
   // clean up raw stuff.
   libraw_recycle(raw);
   libraw_close(raw);
-  free(image);
+  libraw_dcraw_clear_mem(image);
   raw = NULL;
   image = NULL;
 

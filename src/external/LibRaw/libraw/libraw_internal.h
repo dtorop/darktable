@@ -1,6 +1,6 @@
 /* -*- C++ -*-
  * File: libraw_internal.h
- * Copyright 2008-2010 LibRaw LLC (info@libraw.org)
+ * Copyright 2008-2013 LibRaw LLC (info@libraw.org)
  * Created: Sat Mar  8 , 2008
  *
  * LibRaw internal data structures (not visible outside)
@@ -61,18 +61,22 @@ public:
     {
          unsigned pad[128], p;
     }sony_decrypt;
-    uchar jpeg_buffer[4096];
     struct
     {
         uchar buf[0x4000];
         int vbits, padding;
     }pana_bits;
-
+    uchar jpeg_buffer[4096];
+    struct 
+    {
+      float cbrt[0x10000], xyz_cam[3][4];
+    }ahd_data;
     void init() 
         { 
             getbits.bitbuf = 0; getbits.vbits = getbits.reset = 0;
             ph1_bits.bitbuf = 0; ph1_bits.vbits = 0;
             pana_bits.vbits = 0;
+            ahd_data.cbrt[0]=-2.0f;
         }
 };
 
@@ -156,6 +160,7 @@ struct decode
 struct tiff_ifd_t 
 {
     int t_width, t_height, bps, comp, phint, offset, t_flip, samples, bytes,tile_maxbytes;
+    int t_tile_width, t_tile_length;
 };
 
 
