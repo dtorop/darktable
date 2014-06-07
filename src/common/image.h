@@ -107,7 +107,7 @@ typedef struct dt_image_t
   // used by library
   int32_t num, flags, film_id, id, group_id, version;
 
-  uint32_t filters;          // demosaic pattern
+  uint32_t filters;          // Bayer demosaic pattern
   int32_t bpp;               // bytes per pixel
   float d65_color_matrix[9]; // the 3x3 matrix embedded in some DNGs
   uint8_t *profile;          // embedded profile, for example from JPEGs
@@ -123,6 +123,9 @@ typedef struct dt_image_t
   /* needed in exposure iop for Deflicker */
   uint16_t raw_black_level;
   uint16_t raw_white_point;
+
+  /* filter for Fuji X-Trans images, only used if filters == 9 */
+  uint8_t xtrans[6][6];
 }
 dt_image_t;
 
@@ -204,6 +207,9 @@ dt_image_flipped_filter(const dt_image_t *img)
 
   const int orient = dt_image_orientation(img);
   uint32_t filters = img->filters;
+  if (filters == 9)
+    // x-trans 6x6 filter is rotated on raw image load
+    return filters;
   if((orient & 1) && (img->height & 1))
   {
     switch(filters)
