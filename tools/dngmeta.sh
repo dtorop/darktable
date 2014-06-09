@@ -96,30 +96,30 @@ echo ""
 echo -e "\t<Camera make=\"$MAKE\" model=\"$MODEL\"$MODE>"
 
 if [[ $MAKE == FUJIFILM && $CFA_PATTERN_WIDTH == 6 && $CFA_PATTERN_HEIGHT == 6 ]]; then
-    echo -e "\t\t<CFA2 width=\"$CFA_PATTERN_WIDTH\" height=\"$CFA_PATTERN_HEIGHT\">"
-    for ROW in {0..5}; do
-	for COL in {0..5}; do
-	    # the DNG's CFA pattern is mysteriously shifted
-	    # horizontally for 14-bit x-trans chips (despite it being
-	    # stored unshifted in the raw file)
-	    if [[ $MODEL == X100S || $MODEL == X-E2 || $MODEL == X-T1 ]]; then
-		COL_OFFSET=2
-	    else
-		COL_OFFSET=0
-	    fi
-	    COLOR=$(echo "${CFA_PATTERN[$((ROW*6+(COL+COL_OFFSET)%6))]}")
-	    echo -e "\t\t\t<Color x=\"$COL\" y=\"$ROW\">$COLOR</Color>"
-	done
+  echo -e "\t\t<CFA2 width=\"$CFA_PATTERN_WIDTH\" height=\"$CFA_PATTERN_HEIGHT\">"
+  for ROW in {0..5}; do
+    for COL in {0..5}; do
+      # the DNG's CFA pattern is mysteriously shifted
+      # horizontally for 14-bit x-trans chips (despite it being
+      # stored unshifted in the raw file)
+      if [[ $MODEL == X100S || $MODEL == X-E2 || $MODEL == X-T1 ]]; then
+        COL_OFFSET=2
+      else
+        COL_OFFSET=0
+      fi
+      COLOR=$(echo "${CFA_PATTERN[$((ROW*6+(COL+COL_OFFSET)%6))]}")
+      echo -e "\t\t\t<Color x=\"$COL\" y=\"$ROW\">$COLOR</Color>"
     done
-    echo -e "\t\t</CFA2>"
+  done
+  echo -e "\t\t</CFA2>"
 else
-    # CFA2 is a superset of CFA, but keep with tradition and use CFA for Bayer matrices
-    echo -e "\t\t<CFA width=\"$CFA_PATTERN_WIDTH\" height=\"$CFA_PATTERN_HEIGHT\">"
-    echo -e "\t\t\t<Color x=\"0\" y=\"0\">${CFA_PATTERN[0]}</Color>"
-    echo -e "\t\t\t<Color x=\"1\" y=\"0\">${CFA_PATTERN[1]}</Color>"
-    echo -e "\t\t\t<Color x=\"0\" y=\"1\">${CFA_PATTERN[2]}</Color>"
-    echo -e "\t\t\t<Color x=\"1\" y=\"1\">${CFA_PATTERN[3]}</Color>"
-    echo -e "\t\t</CFA>"
+  # CFA2 is a superset of CFA, but keep with tradition and use CFA for Bayer matrices
+  echo -e "\t\t<CFA width=\"$CFA_PATTERN_WIDTH\" height=\"$CFA_PATTERN_HEIGHT\">"
+  echo -e "\t\t\t<Color x=\"0\" y=\"0\">${CFA_PATTERN[0]}</Color>"
+  echo -e "\t\t\t<Color x=\"1\" y=\"0\">${CFA_PATTERN[1]}</Color>"
+  echo -e "\t\t\t<Color x=\"0\" y=\"1\">${CFA_PATTERN[2]}</Color>"
+  echo -e "\t\t\t<Color x=\"1\" y=\"1\">${CFA_PATTERN[3]}</Color>"
+  echo -e "\t\t</CFA>"
 fi
 
 echo -e "\t\t<Crop x=\"0\" y=\"0\" width=\"0\" height=\"0\"/>"
