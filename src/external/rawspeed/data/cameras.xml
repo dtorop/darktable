@@ -23,11 +23,11 @@
 <!ELEMENT Cameras ( Camera+ ) >
 <!ATTLIST Cameras version CDATA #IMPLIED >
 
-<!ELEMENT CFA ( Color+ ) >
+<!ELEMENT CFA ( Color*, ColorRow* ) >
 <!ATTLIST CFA height NMTOKEN #REQUIRED >
 <!ATTLIST CFA width NMTOKEN #REQUIRED >
 
-<!ELEMENT CFA2 ( Color?, ColorRow? ) >
+<!ELEMENT CFA2 ( Color*, ColorRow* ) >
 <!ATTLIST CFA2 height NMTOKEN #REQUIRED >
 <!ATTLIST CFA2 width NMTOKEN #REQUIRED >
 
@@ -4360,42 +4360,12 @@
 	</Camera>
 	<Camera make="FUJIFILM" model="X-Pro1">
 		<CFA2 width="6" height="6">
-			<Color x="0" y="0">GREEN</Color>
-			<Color x="1" y="0">GREEN</Color>
-			<Color x="2" y="0">RED</Color>
-			<Color x="3" y="0">GREEN</Color>
-			<Color x="4" y="0">GREEN</Color>
-			<Color x="5" y="0">BLUE</Color>
-			<Color x="0" y="1">GREEN</Color>
-			<Color x="1" y="1">GREEN</Color>
-			<Color x="2" y="1">BLUE</Color>
-			<Color x="3" y="1">GREEN</Color>
-			<Color x="4" y="1">GREEN</Color>
-			<Color x="5" y="1">RED</Color>
-			<Color x="0" y="2">BLUE</Color>
-			<Color x="1" y="2">RED</Color>
-			<Color x="2" y="2">GREEN</Color>
-			<Color x="3" y="2">RED</Color>
-			<Color x="4" y="2">BLUE</Color>
-			<Color x="5" y="2">GREEN</Color>
-			<Color x="0" y="3">GREEN</Color>
-			<Color x="1" y="3">GREEN</Color>
-			<Color x="2" y="3">BLUE</Color>
-			<Color x="3" y="3">GREEN</Color>
-			<Color x="4" y="3">GREEN</Color>
-			<Color x="5" y="3">RED</Color>
-			<Color x="0" y="4">GREEN</Color>
-			<Color x="1" y="4">GREEN</Color>
-			<Color x="2" y="4">RED</Color>
-			<Color x="3" y="4">GREEN</Color>
-			<Color x="4" y="4">GREEN</Color>
-			<Color x="5" y="4">BLUE</Color>
-			<Color x="0" y="5">RED</Color>
-			<Color x="1" y="5">BLUE</Color>
-			<Color x="2" y="5">GREEN</Color>
-			<Color x="3" y="5">BLUE</Color>
-			<Color x="4" y="5">RED</Color>
-			<Color x="5" y="5">GREEN</Color>
+			<ColorRow y="0">GGRGGB</ColorRow>
+			<ColorRow y="1">GGBGGR</ColorRow>
+			<ColorRow y="2">BRGRBG</ColorRow>
+			<ColorRow y="3">GGBGGR</ColorRow>
+			<ColorRow y="4">GGRGGB</ColorRow>
+			<ColorRow y="5">RBGBRG</ColorRow>
 		</CFA2>
 		<Crop x="0" y="0" width="-168" height="0"/>
 		<Sensor black="256" white="4094"/>
@@ -4412,168 +4382,48 @@
 	</Camera>
 	<Camera make="FUJIFILM" model="X-E1">
 		<CFA2 width="6" height="6">
-			<Color x="0" y="0">GREEN</Color>
-			<Color x="1" y="0">GREEN</Color>
-			<Color x="2" y="0">RED</Color>
-			<Color x="3" y="0">GREEN</Color>
-			<Color x="4" y="0">GREEN</Color>
-			<Color x="5" y="0">BLUE</Color>
-			<Color x="0" y="1">GREEN</Color>
-			<Color x="1" y="1">GREEN</Color>
-			<Color x="2" y="1">BLUE</Color>
-			<Color x="3" y="1">GREEN</Color>
-			<Color x="4" y="1">GREEN</Color>
-			<Color x="5" y="1">RED</Color>
-			<Color x="0" y="2">BLUE</Color>
-			<Color x="1" y="2">RED</Color>
-			<Color x="2" y="2">GREEN</Color>
-			<Color x="3" y="2">RED</Color>
-			<Color x="4" y="2">BLUE</Color>
-			<Color x="5" y="2">GREEN</Color>
-			<Color x="0" y="3">GREEN</Color>
-			<Color x="1" y="3">GREEN</Color>
-			<Color x="2" y="3">BLUE</Color>
-			<Color x="3" y="3">GREEN</Color>
-			<Color x="4" y="3">GREEN</Color>
-			<Color x="5" y="3">RED</Color>
-			<Color x="0" y="4">GREEN</Color>
-			<Color x="1" y="4">GREEN</Color>
-			<Color x="2" y="4">RED</Color>
-			<Color x="3" y="4">GREEN</Color>
-			<Color x="4" y="4">GREEN</Color>
-			<Color x="5" y="4">BLUE</Color>
-			<Color x="0" y="5">RED</Color>
-			<Color x="1" y="5">BLUE</Color>
-			<Color x="2" y="5">GREEN</Color>
-			<Color x="3" y="5">BLUE</Color>
-			<Color x="4" y="5">RED</Color>
-			<Color x="5" y="5">GREEN</Color>
+			<ColorRow y="0">GGRGGB</ColorRow>
+			<ColorRow y="1">GGBGGR</ColorRow>
+			<ColorRow y="2">BRGRBG</ColorRow>
+			<ColorRow y="3">GGBGGR</ColorRow>
+			<ColorRow y="4">GGRGGB</ColorRow>
+			<ColorRow y="5">RBGBRG</ColorRow>
 		</CFA2>
 		<Crop x="0" y="0" width="-168" height="0"/>
 		<Sensor black="256" white="4094"/>
 	</Camera>
 	<Camera make="FUJIFILM" model="X20">
 		<CFA2 width="6" height="6">
-			<Color x="0" y="0">GREEN</Color>
-			<Color x="1" y="0">BLUE</Color>
-			<Color x="2" y="0">GREEN</Color>
-			<Color x="3" y="0">GREEN</Color>
-			<Color x="4" y="0">RED</Color>
-			<Color x="5" y="0">GREEN</Color>
-			<Color x="0" y="1">RED</Color>
-			<Color x="1" y="1">GREEN</Color>
-			<Color x="2" y="1">RED</Color>
-			<Color x="3" y="1">BLUE</Color>
-			<Color x="4" y="1">GREEN</Color>
-			<Color x="5" y="1">BLUE</Color>
-			<Color x="0" y="2">GREEN</Color>
-			<Color x="1" y="2">BLUE</Color>
-			<Color x="2" y="2">GREEN</Color>
-			<Color x="3" y="2">GREEN</Color>
-			<Color x="4" y="2">RED</Color>
-			<Color x="5" y="2">GREEN</Color>
-			<Color x="0" y="3">GREEN</Color>
-			<Color x="1" y="3">RED</Color>
-			<Color x="2" y="3">GREEN</Color>
-			<Color x="3" y="3">GREEN</Color>
-			<Color x="4" y="3">BLUE</Color>
-			<Color x="5" y="3">GREEN</Color>
-			<Color x="0" y="4">BLUE</Color>
-			<Color x="1" y="4">GREEN</Color>
-			<Color x="2" y="4">BLUE</Color>
-			<Color x="3" y="4">RED</Color>
-			<Color x="4" y="4">GREEN</Color>
-			<Color x="5" y="4">RED</Color>
-			<Color x="0" y="5">GREEN</Color>
-			<Color x="1" y="5">RED</Color>
-			<Color x="2" y="5">GREEN</Color>
-			<Color x="3" y="5">GREEN</Color>
-			<Color x="4" y="5">BLUE</Color>
-			<Color x="5" y="5">GREEN</Color>
+			<ColorRow y="0">GBGGRG</ColorRow>
+			<ColorRow y="1">RGRBGB</ColorRow>
+			<ColorRow y="2">GBGGRG</ColorRow>
+			<ColorRow y="3">GRGGBG</ColorRow>
+			<ColorRow y="4">BGBRGR</ColorRow>
+			<ColorRow y="5">GRGGBG</ColorRow>
 		</CFA2>
 		<Crop x="0" y="0" width="-64" height="0"/>
 		<Sensor black="257" white="4094"/>
 	</Camera>
 	<Camera make="FUJIFILM" model="X100S">
 		<CFA2 width="6" height="6">
-			<Color x="0" y="0">RED</Color>
-			<Color x="1" y="0">BLUE</Color>
-			<Color x="2" y="0">GREEN</Color>
-			<Color x="3" y="0">BLUE</Color>
-			<Color x="4" y="0">RED</Color>
-			<Color x="5" y="0">GREEN</Color>
-			<Color x="0" y="1">GREEN</Color>
-			<Color x="1" y="1">GREEN</Color>
-			<Color x="2" y="1">RED</Color>
-			<Color x="3" y="1">GREEN</Color>
-			<Color x="4" y="1">GREEN</Color>
-			<Color x="5" y="1">BLUE</Color>
-			<Color x="0" y="2">GREEN</Color>
-			<Color x="1" y="2">GREEN</Color>
-			<Color x="2" y="2">BLUE</Color>
-			<Color x="3" y="2">GREEN</Color>
-			<Color x="4" y="2">GREEN</Color>
-			<Color x="5" y="2">RED</Color>
-			<Color x="0" y="3">BLUE</Color>
-			<Color x="1" y="3">RED</Color>
-			<Color x="2" y="3">GREEN</Color>
-			<Color x="3" y="3">RED</Color>
-			<Color x="4" y="3">BLUE</Color>
-			<Color x="5" y="3">GREEN</Color>
-			<Color x="0" y="4">GREEN</Color>
-			<Color x="1" y="4">GREEN</Color>
-			<Color x="2" y="4">BLUE</Color>
-			<Color x="3" y="4">GREEN</Color>
-			<Color x="4" y="4">GREEN</Color>
-			<Color x="5" y="4">RED</Color>
-			<Color x="0" y="5">GREEN</Color>
-			<Color x="1" y="5">GREEN</Color>
-			<Color x="2" y="5">RED</Color>
-			<Color x="3" y="5">GREEN</Color>
-			<Color x="4" y="5">GREEN</Color>
-			<Color x="5" y="5">BLUE</Color>
+			<ColorRow y="0">RBGBRG</ColorRow>
+			<ColorRow y="1">GGRGGB</ColorRow>
+			<ColorRow y="2">GGBGGR</ColorRow>
+			<ColorRow y="3">BRGRBG</ColorRow>
+			<ColorRow y="4">GGBGGR</ColorRow>
+			<ColorRow y="5">GGRGGB</ColorRow>
 		</CFA2>
 		<Crop x="4" y="0" width="-52" height="0"/>
 		<Sensor black="1024" white="16383"/>
 	</Camera>
 	<Camera make="FUJIFILM" model="X-M1">
 		<CFA2 width="6" height="6">
-			<Color x="0" y="0">GREEN</Color>
-			<Color x="1" y="0">GREEN</Color>
-			<Color x="2" y="0">RED</Color>
-			<Color x="3" y="0">GREEN</Color>
-			<Color x="4" y="0">GREEN</Color>
-			<Color x="5" y="0">BLUE</Color>
-			<Color x="0" y="1">GREEN</Color>
-			<Color x="1" y="1">GREEN</Color>
-			<Color x="2" y="1">BLUE</Color>
-			<Color x="3" y="1">GREEN</Color>
-			<Color x="4" y="1">GREEN</Color>
-			<Color x="5" y="1">RED</Color>
-			<Color x="0" y="2">BLUE</Color>
-			<Color x="1" y="2">RED</Color>
-			<Color x="2" y="2">GREEN</Color>
-			<Color x="3" y="2">RED</Color>
-			<Color x="4" y="2">BLUE</Color>
-			<Color x="5" y="2">GREEN</Color>
-			<Color x="0" y="3">GREEN</Color>
-			<Color x="1" y="3">GREEN</Color>
-			<Color x="2" y="3">BLUE</Color>
-			<Color x="3" y="3">GREEN</Color>
-			<Color x="4" y="3">GREEN</Color>
-			<Color x="5" y="3">RED</Color>
-			<Color x="0" y="4">GREEN</Color>
-			<Color x="1" y="4">GREEN</Color>
-			<Color x="2" y="4">RED</Color>
-			<Color x="3" y="4">GREEN</Color>
-			<Color x="4" y="4">GREEN</Color>
-			<Color x="5" y="4">BLUE</Color>
-			<Color x="0" y="5">RED</Color>
-			<Color x="1" y="5">BLUE</Color>
-			<Color x="2" y="5">GREEN</Color>
-			<Color x="3" y="5">BLUE</Color>
-			<Color x="4" y="5">RED</Color>
-			<Color x="5" y="5">GREEN</Color>
+			<ColorRow y="0">GGRGGB</ColorRow>
+			<ColorRow y="1">GGBGGR</ColorRow>
+			<ColorRow y="2">BRGRBG</ColorRow>
+			<ColorRow y="3">GGBGGR</ColorRow>
+			<ColorRow y="4">GGRGGB</ColorRow>
+			<ColorRow y="5">RBGBRG</ColorRow>
 		</CFA2>
 		<Crop x="0" y="0" width="-168" height="0"/>
 		<Sensor black="256" white="4094"/>
@@ -4590,126 +4440,36 @@
 	</Camera>
 	<Camera make="FUJIFILM" model="XQ1">
 		<CFA2 width="6" height="6">
-			<Color x="0" y="0">GREEN</Color>
-			<Color x="1" y="0">BLUE</Color>
-			<Color x="2" y="0">GREEN</Color>
-			<Color x="3" y="0">GREEN</Color>
-			<Color x="4" y="0">RED</Color>
-			<Color x="5" y="0">GREEN</Color>
-			<Color x="0" y="1">RED</Color>
-			<Color x="1" y="1">GREEN</Color>
-			<Color x="2" y="1">RED</Color>
-			<Color x="3" y="1">BLUE</Color>
-			<Color x="4" y="1">GREEN</Color>
-			<Color x="5" y="1">BLUE</Color>
-			<Color x="0" y="2">GREEN</Color>
-			<Color x="1" y="2">BLUE</Color>
-			<Color x="2" y="2">GREEN</Color>
-			<Color x="3" y="2">GREEN</Color>
-			<Color x="4" y="2">RED</Color>
-			<Color x="5" y="2">GREEN</Color>
-			<Color x="0" y="3">GREEN</Color>
-			<Color x="1" y="3">RED</Color>
-			<Color x="2" y="3">GREEN</Color>
-			<Color x="3" y="3">GREEN</Color>
-			<Color x="4" y="3">BLUE</Color>
-			<Color x="5" y="3">GREEN</Color>
-			<Color x="0" y="4">BLUE</Color>
-			<Color x="1" y="4">GREEN</Color>
-			<Color x="2" y="4">BLUE</Color>
-			<Color x="3" y="4">RED</Color>
-			<Color x="4" y="4">GREEN</Color>
-			<Color x="5" y="4">RED</Color>
-			<Color x="0" y="5">GREEN</Color>
-			<Color x="1" y="5">RED</Color>
-			<Color x="2" y="5">GREEN</Color>
-			<Color x="3" y="5">GREEN</Color>
-			<Color x="4" y="5">BLUE</Color>
-			<Color x="5" y="5">GREEN</Color>
+			<ColorRow y="0">GBGGRG</ColorRow>
+			<ColorRow y="1">RGRBGB</ColorRow>
+			<ColorRow y="2">GBGGRG</ColorRow>
+			<ColorRow y="3">GRGGBG</ColorRow>
+			<ColorRow y="4">BGBRGR</ColorRow>
+			<ColorRow y="5">GRGGBG</ColorRow>
 		</CFA2>
 		<Crop x="0" y="0" width="-64" height="0"/>
 		<Sensor black="257" white="4094"/>
 	</Camera>
 	<Camera make="FUJIFILM" model="X-E2">
 		<CFA2 width="6" height="6">
-			<Color x="0" y="0">RED</Color>
-			<Color x="1" y="0">BLUE</Color>
-			<Color x="2" y="0">GREEN</Color>
-			<Color x="3" y="0">BLUE</Color>
-			<Color x="4" y="0">RED</Color>
-			<Color x="5" y="0">GREEN</Color>
-			<Color x="0" y="1">GREEN</Color>
-			<Color x="1" y="1">GREEN</Color>
-			<Color x="2" y="1">RED</Color>
-			<Color x="3" y="1">GREEN</Color>
-			<Color x="4" y="1">GREEN</Color>
-			<Color x="5" y="1">BLUE</Color>
-			<Color x="0" y="2">GREEN</Color>
-			<Color x="1" y="2">GREEN</Color>
-			<Color x="2" y="2">BLUE</Color>
-			<Color x="3" y="2">GREEN</Color>
-			<Color x="4" y="2">GREEN</Color>
-			<Color x="5" y="2">RED</Color>
-			<Color x="0" y="3">BLUE</Color>
-			<Color x="1" y="3">RED</Color>
-			<Color x="2" y="3">GREEN</Color>
-			<Color x="3" y="3">RED</Color>
-			<Color x="4" y="3">BLUE</Color>
-			<Color x="5" y="3">GREEN</Color>
-			<Color x="0" y="4">GREEN</Color>
-			<Color x="1" y="4">GREEN</Color>
-			<Color x="2" y="4">BLUE</Color>
-			<Color x="3" y="4">GREEN</Color>
-			<Color x="4" y="4">GREEN</Color>
-			<Color x="5" y="4">RED</Color>
-			<Color x="0" y="5">GREEN</Color>
-			<Color x="1" y="5">GREEN</Color>
-			<Color x="2" y="5">RED</Color>
-			<Color x="3" y="5">GREEN</Color>
-			<Color x="4" y="5">GREEN</Color>
-			<Color x="5" y="5">BLUE</Color>
+			<ColorRow y="0">RBGBRG</ColorRow>
+			<ColorRow y="1">GGRGGB</ColorRow>
+			<ColorRow y="2">GGBGGR</ColorRow>
+			<ColorRow y="3">BRGRBG</ColorRow>
+			<ColorRow y="4">GGBGGR</ColorRow>
+			<ColorRow y="5">GGRGGB</ColorRow>
 		</CFA2>
 		<Crop x="4" y="0" width="-52" height="0"/>
 		<Sensor black="1024" white="16383"/>
 	</Camera>
 	<Camera make="FUJIFILM" model="X-T1">
 		<CFA2 width="6" height="6">
-			<Color x="0" y="0">RED</Color>
-			<Color x="1" y="0">BLUE</Color>
-			<Color x="2" y="0">GREEN</Color>
-			<Color x="3" y="0">BLUE</Color>
-			<Color x="4" y="0">RED</Color>
-			<Color x="5" y="0">GREEN</Color>
-			<Color x="0" y="1">GREEN</Color>
-			<Color x="1" y="1">GREEN</Color>
-			<Color x="2" y="1">RED</Color>
-			<Color x="3" y="1">GREEN</Color>
-			<Color x="4" y="1">GREEN</Color>
-			<Color x="5" y="1">BLUE</Color>
-			<Color x="0" y="2">GREEN</Color>
-			<Color x="1" y="2">GREEN</Color>
-			<Color x="2" y="2">BLUE</Color>
-			<Color x="3" y="2">GREEN</Color>
-			<Color x="4" y="2">GREEN</Color>
-			<Color x="5" y="2">RED</Color>
-			<Color x="0" y="3">BLUE</Color>
-			<Color x="1" y="3">RED</Color>
-			<Color x="2" y="3">GREEN</Color>
-			<Color x="3" y="3">RED</Color>
-			<Color x="4" y="3">BLUE</Color>
-			<Color x="5" y="3">GREEN</Color>
-			<Color x="0" y="4">GREEN</Color>
-			<Color x="1" y="4">GREEN</Color>
-			<Color x="2" y="4">BLUE</Color>
-			<Color x="3" y="4">GREEN</Color>
-			<Color x="4" y="4">GREEN</Color>
-			<Color x="5" y="4">RED</Color>
-			<Color x="0" y="5">GREEN</Color>
-			<Color x="1" y="5">GREEN</Color>
-			<Color x="2" y="5">RED</Color>
-			<Color x="3" y="5">GREEN</Color>
-			<Color x="4" y="5">GREEN</Color>
-			<Color x="5" y="5">BLUE</Color>
+			<ColorRow y="0">RBGBRG</ColorRow>
+			<ColorRow y="1">GGRGGB</ColorRow>
+			<ColorRow y="2">GGBGGR</ColorRow>
+			<ColorRow y="3">BRGRBG</ColorRow>
+			<ColorRow y="4">GGBGGR</ColorRow>
+			<ColorRow y="5">GGRGGB</ColorRow>
 		</CFA2>
 		<Crop x="4" y="0" width="-52" height="0"/>
 		<Sensor black="1024" white="16383"/>

@@ -97,19 +97,20 @@ echo -e "\t<Camera make=\"$MAKE\" model=\"$MODEL\"$MODE>"
 
 if [[ $MAKE == FUJIFILM && $CFA_PATTERN_WIDTH == 6 && $CFA_PATTERN_HEIGHT == 6 ]]; then
   echo -e "\t\t<CFA2 width=\"$CFA_PATTERN_WIDTH\" height=\"$CFA_PATTERN_HEIGHT\">"
+  # The DNG's CFA pattern is mysteriously shifted horizontally for
+  # 14-bit x-trans chips (despite it being stored unshifted in the raw
+  # file). Identify 14-bit cips by their max white value.
+  if [[ $WHITE -gt 16000 ]]; then
+    COL_OFFSET=2
+  else
+    COL_OFFSET=0
+  fi
   for ROW in {0..5}; do
+    COLORS=""
     for COL in {0..5}; do
-      # the DNG's CFA pattern is mysteriously shifted
-      # horizontally for 14-bit x-trans chips (despite it being
-      # stored unshifted in the raw file)
-      if [[ $MODEL == X100S || $MODEL == X-E2 || $MODEL == X-T1 ]]; then
-        COL_OFFSET=2
-      else
-        COL_OFFSET=0
-      fi
-      COLOR=$(echo "${CFA_PATTERN[$((ROW*6+(COL+COL_OFFSET)%6))]}")
-      echo -e "\t\t\t<Color x=\"$COL\" y=\"$ROW\">$COLOR</Color>"
+      COLORS+=${CFA_PATTERN[$((ROW*6+(COL+COL_OFFSET)%6))]:0:1}
     done
+    echo -e "\t\t\t<ColorRow y=\"$ROW\">$COLORS</ColorRow>"
   done
   echo -e "\t\t</CFA2>"
 else
