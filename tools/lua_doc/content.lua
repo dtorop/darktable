@@ -269,6 +269,15 @@ darktable.styles.apply:add_parameter("style",my_tostring(types.dt_style_t),[[The
 darktable.styles.apply:add_parameter("image",my_tostring(types.dt_lua_image_t),[[The image to apply the style to.]])
 darktable.styles.apply:set_main_parent(darktable.styles)
 
+darktable.styles.import:set_text([[Import a style from an external .dtstyle file]]):add_version_info("function_added")
+darktable.styles.import:add_parameter("filename","string","The file to import");
+darktable.styles.import:set_main_parent(darktable.styles)
+
+darktable.styles.export:set_text([[Export a style to an external .dtstyle file]]):add_version_info("function_added")
+darktable.styles.export:add_parameter("style",my_tostring(types.dt_style_t),"The file to import");
+darktable.styles.export:add_parameter("directory","string","The directory to export to");
+darktable.styles.export:add_parameter("overwrite","boolean","Is overwriting an existing file allowed"):set_attribute("optional")
+darktable.styles.export:set_main_parent(darktable.styles)
 -------------------------
 --  DARKTABLE.DATABASE --
 -------------------------
@@ -481,8 +490,8 @@ types.dt_lua_image_t.exif_iso:set_text([[The iso used on the image.]])
 types.dt_lua_image_t.exif_datetime_taken:set_text([[The date and time of the image.]])
 types.dt_lua_image_t.exif_focus_distance:set_text([[The distance of the subject.]])
 types.dt_lua_image_t.exif_crop:set_text([[The exif crop data.]])
-types.dt_lua_image_t.latitude:set_text([[GPS latitude data of the image.]])
-types.dt_lua_image_t.longitude:set_text([[GPS longitude data of the image.]])
+types.dt_lua_image_t.latitude:set_text([[GPS latitude data of the image, nil if not set.]]):add_version_info("the field is now nil instead of NAN if not set")
+types.dt_lua_image_t.longitude:set_text([[GPS longitude data of the image, nil if not set.]]):add_version_info("the field is now nil instead of NAN if not set")
 types.dt_lua_image_t.is_raw:set_text([[True if the image is a RAW file.]])
 types.dt_lua_image_t.is_ldr:set_text([[True if the image is a ldr image.]])
 types.dt_lua_image_t.is_hdr:set_text([[True if the image is a hdr image.]])
