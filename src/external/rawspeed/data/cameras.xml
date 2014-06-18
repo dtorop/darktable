@@ -23,7 +23,7 @@
 <!ELEMENT Cameras ( Camera+ ) >
 <!ATTLIST Cameras version CDATA #IMPLIED >
 
-<!ELEMENT CFA ( Color*, ColorRow* ) >
+<!ELEMENT CFA ( Color+ ) >
 <!ATTLIST CFA height NMTOKEN #REQUIRED >
 <!ATTLIST CFA width NMTOKEN #REQUIRED >
 
