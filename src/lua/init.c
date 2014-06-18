@@ -62,6 +62,11 @@ static lua_CFunction early_init_funcs[] =
   NULL
 };
 
+static int dt_call_after_load(lua_State *L)
+{
+  return luaL_error(L,"Attempt to initialize DT twice");
+}
+
 void dt_lua_init_early(lua_State*L)
 {
   if(!L) {
@@ -74,10 +79,12 @@ void dt_lua_init_early(lua_State*L)
   luaA_open();
   dt_lua_push_darktable_lib(L);
   // set the metatable
-  lua_newtable(L);
+  lua_getmetatable(L,-1);
+  lua_pushcfunction(L,dt_call_after_load);
+  lua_setfield(L,-2,"__call");
   lua_pushcfunction(L,dt_luacleanup);
   lua_setfield(L,-2,"__gc");
-  lua_setmetatable(L,-2);
+  lua_pop(L,1);
 
   lua_pop(L,1);
 
@@ -90,7 +97,8 @@ void dt_lua_init_early(lua_State*L)
 
 }
 
-static int32_t run_early_script(struct dt_job_t *job) {
+static int32_t run_early_script(dt_job_t *job)
+{
   char tmp_path[PATH_MAX];
   lua_State *L = darktable.lua_state.state;
   gboolean has_lock = dt_lua_lock();
@@ -98,12 +106,17 @@ static int32_t run_early_script(struct dt_job_t *job) {
   dt_loc_get_datadir(tmp_path, sizeof(tmp_path));
   g_strlcat(tmp_path, "/luarc", sizeof(tmp_path));
   dt_lua_dofile_silent(L,tmp_path,0,0);
-  if(darktable.gui != NULL) {
+  if(darktable.gui != NULL)
+  {
     // run user init script
     dt_loc_get_user_config_dir(tmp_path, sizeof(tmp_path));
     g_strlcat(tmp_path, "/luarc", sizeof(tmp_path));
     dt_lua_dofile_silent(L,tmp_path,0,0);
   }
+  char *lua_command = dt_control_job_get_params(job);
+  if(lua_command)
+    dt_lua_dostring_silent(L, lua_command, 0, 0);
+  free(lua_command);
   dt_lua_unlock(has_lock);
   return 0;
 }
@@ -128,7 +141,7 @@ static lua_CFunction init_funcs[] =
 };
 
 
-void dt_lua_init(lua_State*L)
+void dt_lua_init(lua_State*L,const char *lua_command)
 {
   /*
      Note to reviewers
@@ -173,13 +186,16 @@ void dt_lua_init(lua_State*L)
 
 
 
-  if(darktable.gui) {
-  dt_job_t job;
-  dt_control_job_init(&job, "lua: run initial script");
-  job.execute = &run_early_script;
-  dt_control_add_job(darktable.control, &job);
-  } else {
-    run_early_script(NULL);
+  dt_job_t *job = dt_control_job_create(&run_early_script, "lua: run initial script");
+  dt_control_job_set_params(job, g_strdup(lua_command));
+  if(darktable.gui)
+  {
+    dt_control_add_job(darktable.control, DT_JOB_QUEUE_USER_BG, job);
+  }
+  else
+  {
+    run_early_script(job);
+    dt_control_job_dispose(job);
   }
 
 }
@@ -199,16 +215,17 @@ static int load_from_lua(lua_State *L)
   if(darktable.lua_state.state) {
     luaL_error(L,"Attempt to load darktable multiple time.");
   }
-  int argc =lua_gettop(L)+1;
+  int argc =lua_gettop(L);
 
   char **argv=calloc(argc+1,sizeof(char*)); 
   char *argv_copy[argc+1]; 
   argv[0] =strdup("lua");
   argv_copy[0] = argv[0];
   for(int i = 1 ; i < argc ; i++) {
-    argv[i] = strdup(luaL_checkstring(L,i));
+    argv[i] = strdup(luaL_checkstring(L,i+1));
     argv_copy[i] = argv[i];
   }
+  lua_pop(L,lua_gettop(L));
   argv[argc] = NULL;
   argv_copy[argc] = NULL;
   gtk_init(&argc,&argv);
@@ -222,7 +239,11 @@ static int load_from_lua(lua_State *L)
 }
 // function used by the lua interpreter to load darktable
 int luaopen_darktable(lua_State *L) {
+  dt_lua_push_darktable_lib(L);
+  lua_getmetatable(L,-1);
   lua_pushcfunction(L,load_from_lua);
+  lua_setfield(L,-2,"__call");
+  lua_pop(L,1);
   return 1;
 }
 

@@ -45,6 +45,7 @@ static event_handler event_list[] = {
   {"post-import-image",register_multiinstance_event,trigger_multiinstance_event,FALSE},
   {"post-import-film",register_multiinstance_event,trigger_multiinstance_event,FALSE},
   {"intermediate-export-image",register_multiinstance_event,trigger_multiinstance_event,FALSE},
+  {"view-changed",register_multiinstance_event,trigger_multiinstance_event,FALSE},
   //{"test",register_singleton_event,trigger_singleton_event},  // avoid error because of unused function
   {NULL,NULL,NULL}
 };
@@ -158,11 +159,12 @@ static int trigger_keyed_event(lua_State * L) {
 typedef struct {
   char* name;
 } shortcut_callback_data;
-static int32_t shortcut_callback_job(struct dt_job_t *job) {
+static int32_t shortcut_callback_job(dt_job_t *job) {
   gboolean has_lock = dt_lua_lock();
-  shortcut_callback_data *t = (shortcut_callback_data*)job->param;
+  shortcut_callback_data *t = dt_control_job_get_params(job);
   lua_pushstring(darktable.lua_state.state,t->name);
   free(t->name);
+  free(t);
   run_event("shortcut",1);
   dt_lua_unlock(has_lock);
   return 0;
@@ -173,12 +175,21 @@ static gboolean shortcut_callback(GtkAccelGroup *accel_group,
     GdkModifierType modifier,
     gpointer p)
 {
-  dt_job_t job;
-  dt_control_job_init(&job, "lua: on shortcut");
-  job.execute = &shortcut_callback_job;
-  shortcut_callback_data *t = (shortcut_callback_data*)job.param;
-  t->name = strdup(p);
-  dt_control_add_job(darktable.control, &job);
+  dt_job_t *job = dt_control_job_create(&shortcut_callback_job, "lua: on shortcut");
+  if(job)
+  {
+    shortcut_callback_data *t = (shortcut_callback_data*)calloc(1, sizeof(shortcut_callback_data));
+    if(!t)
+    {
+      dt_control_job_dispose(job);
+    }
+    else
+    {
+      dt_control_job_set_params(job, t);
+      t->name = strdup(p);
+      dt_control_add_job(darktable.control, DT_JOB_QUEUE_USER_FG, job);
+    }
+  }
   return TRUE;
 }
 
@@ -391,6 +402,17 @@ static void on_export_image_tmpfile(gpointer instance,
   dt_lua_unlock(has_lock);
 }
 
+static void on_view_changed(gpointer instance,
+    dt_view_t* old_view,
+    dt_view_t* new_view,
+     gpointer user_data){
+  gboolean has_lock = dt_lua_lock();
+  dt_lua_module_push_entry(darktable.lua_state.state,"view",old_view->module_name);
+  dt_lua_module_push_entry(darktable.lua_state.state,"view",new_view->module_name);
+  run_event("view-changed",2);
+  dt_lua_unlock(has_lock);
+}
+
 static void on_image_imported(gpointer instance,uint32_t id, gpointer user_data){
   gboolean has_lock = dt_lua_lock();
   luaA_push(darktable.lua_state.state,dt_lua_image_t,&id);
@@ -425,6 +447,7 @@ int dt_lua_init_events(lua_State *L) {
   dt_control_signal_connect(darktable.signals,DT_SIGNAL_FILMROLLS_IMPORTED,G_CALLBACK(on_film_imported),NULL);
   //dt_control_signal_connect(darktable.signals,DT_SIGNAL_IMAGE_EXPORT_MULTIPLE,G_CALLBACK(on_export_selection),NULL);
   dt_control_signal_connect(darktable.signals,DT_SIGNAL_IMAGE_EXPORT_TMPFILE,G_CALLBACK(on_export_image_tmpfile),NULL);
+  dt_control_signal_connect(darktable.signals,DT_SIGNAL_VIEWMANAGER_VIEW_CHANGED,G_CALLBACK(on_view_changed),NULL);
   return 0;
 }
 // modelines: These editor modelines have been set for all relevant files by tools/update_modelines.sh
