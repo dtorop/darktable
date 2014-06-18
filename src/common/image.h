@@ -208,8 +208,10 @@ dt_image_flipped_filter(const dt_image_t *img)
   const int orient = dt_image_orientation(img);
   uint32_t filters = img->filters;
   if (filters == 9)
-    // x-trans 6x6 filter is rotated on raw image load
+  {
+    // x-trans 6x6 pattern is already rotated on raw image load
     return filters;
+  }
   if((orient & 1) && (img->height & 1))
   {
     switch(filters)
