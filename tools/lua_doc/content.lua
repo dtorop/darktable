@@ -1,10 +1,5 @@
-doc = require "core"
 real_darktable = require "darktable"
 require "darktable.debug"
-darktable = doc.toplevel.darktable
-types = doc.toplevel.types
-events = doc.toplevel.events
-attributes = doc.toplevel.attributes
 local tmp_node
 
 ---------------------
@@ -26,21 +21,11 @@ if  #real_darktable.styles == 0 then
 end
 
 
-
-----------------------
---  EARLY TWEAKING  --
-----------------------
-for k, v in pairs(real_darktable.modules.format) do
-	local res = v()
-	doc.document_type_from_obj(res,types[real_darktable.debug.type(res)])
-end
-
-for k, v in pairs(real_darktable.modules.storage) do
-	local res = v()
-	if res then
-		doc.document_type_from_obj(res,types[real_darktable.debug.type(res)])
-	end
-end
+doc = require "core"
+darktable = doc.toplevel.darktable
+types = doc.toplevel.types
+events = doc.toplevel.events
+attributes = doc.toplevel.attributes
 
 
 local function my_tostring(obj)
@@ -350,6 +335,9 @@ darktable.modules.storage.email:set_alias(darktable.modules.storage.flickr)
 darktable.modules.storage.email:set_alias(darktable.modules.storage.facebook)
 darktable.modules.storage.email:set_alias(darktable.modules.storage.picasa)
 
+for k, v in darktable.modules.view:unskiped_children() do
+	v:set_main_parent(darktable.modules.view)
+end
 darktable.modules.view:set_text([[The different views in darktable]])
 darktable.modules.view:add_version_info([[View objects added]])
 darktable.modules.view.map:set_text([[The map view]])
@@ -393,6 +381,20 @@ tmp:set_attribute("optional",true)
 tmp:add_parameter("job",my_tostring(types.dt_lua_backgroundjob_t),[[The job who is being cancelded]])
 darktable.modules.lib.backgroundjobs.create_job:add_return(my_tostring(types.dt_lua_backgroundjob_t),[[The newly created job object]])
 
+darktable.modules.lib.snapshots:set_text([[The UI element that manipulates snapshots in darkroom]])
+darktable.modules.lib.snapshots.ratio:set_text([[The place in the screen where the line separating the snapshot is. Between 0 and 1]])
+darktable.modules.lib.snapshots.direction:set_text([[The direction of the snapshot overlay, can be one of:]]..startlist()..
+listel("top")..
+listel("bottom")..
+listel("left")..
+listel("right")..
+endlist())
+
+darktable.modules.lib.snapshots["#"]:set_text([[The different snapshots for the image]])
+darktable.modules.lib.snapshots.selected:set_text([[The currently selected snapshot]])
+darktable.modules.lib.snapshots.take_snapshot:set_text([[Take a snapshot of the current image and add it to the UI]]..para()..[[The snapshot file will be generated at the next redraw of the main window]])
+darktable.modules.lib.snapshots.max_snapshot:set_text([[The maximum number of snapshots]])
+
 darktable.modules.lib.styles:set_text([[The style selection menu]])
 darktable.modules.lib.metadata_view:set_text([[The widget displaying metadata about the current image]])
 darktable.modules.lib.metadata:set_text([[The widget allowing modification of metadata fields on the current image]])
@@ -416,7 +418,6 @@ darktable.modules.lib.copy_history:set_text([[The UI element that manipulates hi
 darktable.modules.lib.image:set_text([[The UI element that manipulates the current image]])
 darktable.modules.lib.modulegroups:set_text([[The icons describing the different iop groups]])
 darktable.modules.lib.module_toolbox:set_text([[The tools on the bottom line of the UI (overexposure)]])
-darktable.modules.lib.snapshots:set_text([[The UI element that manipulates snapshots in darkroom]])
 darktable.modules.lib.session:set_text([[The session UI when tethering]])
 darktable.modules.lib.histogram:set_text([[The histogram widget]])
 darktable.modules.lib.export:set_text([[The export menu]])
@@ -610,7 +611,7 @@ types.dt_lib_module_t:add_version_info([[Type added]])
 types.dt_lib_module_t.id:set_text([[A unit string identifying the lib]])
 types.dt_lib_module_t.name:set_text([[The translated title of the UI element]])
 types.dt_lib_module_t.version:set_text([[The version of the internal data of this lib]])
-types.dt_lib_module_t.visible:set_text([[Whether the UI element is visible.]]..para()..
+types.dt_lib_module_t.visible:set_text([[Allow to make a lib module completely invisible to the user.]]..para()..
 [[Note that if the module is invisible the user will have no way to restore it without lua]])
 types.dt_lib_module_t.visible:set_attribute("implicit_yield",true)
 types.dt_lib_module_t.container:set_text([[The location of the lib in the darktable UI]])
@@ -618,6 +619,10 @@ types.dt_lib_module_t.expandable:set_text([[True if the lib can be expanded/retr
 types.dt_lib_module_t.expanded:set_text([[True if the lib is expanded]]);
 types.dt_lib_module_t.position:set_text([[A value deciding the position of the lib within its container]])
 types.dt_lib_module_t.views:set_text([[A table of all teh views that display this widget]])
+types.dt_lib_module_t.reset:set_text([[A function to reset the lib to its default values]]..para()..
+[[This function will do nothing if the lib is not visible or can't be reset]])
+types.dt_lib_module_t.reset:add_parameter("self",my_tostring(types.dt_lib_module_t),[[The lib to reset]])
+types.dt_lib_module_t.on_screen:set_text([[True if the lib is currently visible on the screen]])
 
 types.dt_view_t:set_text([[A darktable view]])
 types.dt_view_t:add_version_info([[Type added]])
@@ -626,12 +631,15 @@ types.dt_view_t.name:set_text([[The name of the view]])
 
 
 types.dt_lua_backgroundjob_t:set_text([[A lua-managed entry in the backgroundjob lib]]):add_version_info("type added")
-local job = real_darktable.modules.lib.backgroundjobs.create_job("test job",true)
-doc.document_type_from_obj(job,types.dt_lua_backgroundjob_t)
-job.valid = false
-job = nil
 types.dt_lua_backgroundjob_t.percent:set_text([[The value of the progress bar. nil if there is no progress bar]])
 types.dt_lua_backgroundjob_t.valid:set_text([[True if the job is displayed, set it to false to destroy the entry]]..para().."An invalid job cannot be made valid again")
+
+
+types.dt_lua_snapshot_t:set_text([[The description of a snapshot in the snapshot lib]]):add_version_info("type added")
+types.dt_lua_snapshot_t.filename:set_text([[The filename of an image containing the snapshot]])
+types.dt_lua_snapshot_t.select:set_text([[Activates this snapshot on the display. To deactivate all snapshot you need to call this function on the active snapshot]])
+types.dt_lua_snapshot_t.select:add_parameter("snapshot",my_tostring(types.dt_lua_snapshot_t),[[The snapshot to activate]])
+types.dt_lua_snapshot_t.name:set_text([[The name of the snapshot, as seen in the UI]])
 
 
 ----------------------

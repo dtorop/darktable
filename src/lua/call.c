@@ -63,13 +63,6 @@ int dt_lua_do_chunk(lua_State *L,int nargs,int nresults)
   do {
     switch(thread_result) {
       case LUA_OK:
-        if(darktable.gui!=NULL)
-        {
-          dt_lua_unlock(false);
-          dt_control_signal_raise(darktable.signals, DT_SIGNAL_FILMROLLS_CHANGED); // just for good measure
-          dt_control_queue_redraw();
-          dt_lua_lock();
-        }
         if(nresults !=LUA_MULTRET) {
           lua_settop(new_thread,nresults);
         }
@@ -162,7 +155,7 @@ int dt_lua_do_chunk(lua_State *L,int nargs,int nresults)
 error:
   {
     const char *error_msg = lua_tostring(new_thread,-1);
-    luaL_traceback(L,L,error_msg,0);
+    luaL_traceback(L,new_thread,error_msg,0);
     lua_remove(L,-2); // remove the new thread from L
     return thread_result;
   }
@@ -228,6 +221,19 @@ int dt_lua_do_chunk_silent(lua_State *L,int nargs, int nresults)
     return nresults;
   }
   return 0;
+}
+
+int dt_lua_do_chunk_raise(lua_State *L,int nargs, int nresults)
+{
+  int orig_top = lua_gettop(L);
+  int thread_result = dt_lua_do_chunk(L,nargs,nresults);
+  if(thread_result == LUA_OK) {
+    return lua_gettop(L) - orig_top;
+  } else {
+    const char * message = lua_tostring(L,-1);
+    return luaL_error(L,message);
+  }
+
 }
 
 int dt_lua_init_call(lua_State *L) {

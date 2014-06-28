@@ -330,6 +330,7 @@ static void lua_job_cancelled(GtkWidget *w, gpointer user_data)
 
 static int lua_create_job(lua_State *L){
   dt_lib_module_t*self = lua_touserdata(L,lua_upvalueindex(1));
+  dt_lua_lib_check_error(L,self);
   const char * message = luaL_checkstring(L,1);
   int type = !lua_toboolean(L,2);//inverted logic, true => no percentage bar
   int cancellable = FALSE;
@@ -354,6 +355,7 @@ static int lua_create_job(lua_State *L){
 }
 static int lua_job_progress(lua_State *L){
   dt_lib_module_t*self = lua_touserdata(L,lua_upvalueindex(1));
+  dt_lua_lib_check_error(L,self);
   const guint *key;
   luaA_to(L,dt_lua_backgroundjob_t,&key,1);
   if(lua_isnone(L,3)) {
@@ -381,6 +383,7 @@ static int lua_job_progress(lua_State *L){
 
 static int lua_job_valid(lua_State*L){
   dt_lib_module_t*self = lua_touserdata(L,lua_upvalueindex(1));
+  dt_lua_lib_check_error(L,self);
   const guint *key;
   luaA_to(L,dt_lua_backgroundjob_t,&key,1);
   if(lua_isnone(L,3)) {
@@ -418,16 +421,17 @@ void init(struct dt_lib_module_t *self)
   int my_typeid = dt_lua_module_get_entry_typeid(L,"lib",self->plugin_name);
   lua_pushlightuserdata(L,self);
   lua_pushcclosure(L,lua_create_job,1);
-  dt_lua_register_type_callback_stack_typeid(L,my_typeid,"create_job");
+  lua_pushcclosure(L,dt_lua_type_member_common,1);
+  dt_lua_type_register_const_typeid(L,my_typeid,"create_job");
 
   // create a type describing a job object
   int job_typeid = dt_lua_init_gpointer_type(L,dt_lua_backgroundjob_t);
   lua_pushlightuserdata(L,self);
   lua_pushcclosure(L,lua_job_progress,1);
-  dt_lua_register_type_callback_stack_entry_typeid(L,job_typeid,"percent");
+  dt_lua_type_register_typeid(L,job_typeid,"percent");
   lua_pushlightuserdata(L,self);
   lua_pushcclosure(L,lua_job_valid,1);
-  dt_lua_register_type_callback_stack_entry_typeid(L,job_typeid,"valid");
+  dt_lua_type_register_typeid(L,job_typeid,"valid");
 #endif //USE_LUA
 }
 // modelines: These editor modelines have been set for all relevant files by tools/update_modelines.sh

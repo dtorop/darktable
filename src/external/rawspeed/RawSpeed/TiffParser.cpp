@@ -164,8 +164,31 @@ RawDecoder* TiffParser::getDecoder() {
         mRootIFD = NULL;
         return new MefDecoder(root, mInput);
       }
+      if (!make.compare("Kodak")) {
+        mRootIFD = NULL;
+        return new DcrDecoder(root, mInput);
+      }
+      if (!make.compare("EASTMAN KODAK COMPANY")) {
+        mRootIFD = NULL;
+        return new KdcDecoder(root, mInput);
+      }
+      if (!make.compare("SEIKO EPSON CORP.")) {
+        mRootIFD = NULL;
+        return new ErfDecoder(root, mInput);
+      }
     }
   }
+
+  potentials = mRootIFD->getIFDsWithTag(SOFTWARE);
+  if (!potentials.empty()) {
+    string software = potentials[0]->getEntry(SOFTWARE)->getString();
+    TrimSpaces(software);
+    if (!software.compare("Camera Library")) {
+      mRootIFD = NULL;
+      return new MosDecoder(root, mInput);
+    }
+  }
+
   throw TiffParserException("No decoder found. Sorry.");
   return NULL;
 }

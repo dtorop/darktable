@@ -101,7 +101,6 @@ static int current_view_cb(lua_State *L)
   {
     luaL_argcheck(L,dt_lua_isa(L,1,dt_view_t),1,"dt_view_t expected");
     dt_view_t * module = *(dt_view_t**)lua_touserdata(L,1);
-    printf("switch to %d\n",module->view(module));
     int i = 0;
     while(i< darktable.view_manager->num_views && module != &darktable.view_manager->view[i]) i++;
     if(i == darktable.view_manager->num_views) return luaL_error(L,"should never happen : %s %d\n",__FILE__,__LINE__);
@@ -123,11 +122,15 @@ int dt_lua_init_gui(lua_State * L)
     lua_pop(L,1);
 
     lua_pushcfunction(L,selection_cb);
-    dt_lua_register_type_callback_stack_typeid(L,type_id,"selection");
-    dt_lua_register_type_callback_typeid(L,type_id,hovered_cb,NULL,"hovered",NULL);
-    dt_lua_register_type_callback_typeid(L,type_id,act_on_cb,NULL,"action_images",NULL);
+    lua_pushcclosure(L,dt_lua_type_member_common,1);
+    dt_lua_type_register_const_typeid(L,type_id,"selection");
+    lua_pushcfunction(L,hovered_cb);
+    dt_lua_type_register_const_typeid(L,type_id,"hovered");
+    lua_pushcfunction(L,act_on_cb);
+    dt_lua_type_register_const_typeid(L,type_id,"action_images");
     lua_pushcfunction(L,current_view_cb);
-    dt_lua_register_type_callback_stack_typeid(L,type_id,"current_view");
+    lua_pushcclosure(L,dt_lua_type_member_common,1);
+    dt_lua_type_register_const_typeid(L,type_id,"current_view");
   }
   return 0;
 }

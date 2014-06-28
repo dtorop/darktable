@@ -94,18 +94,24 @@ local function document_type_sub(node,result,parent,prev_name)
 			set_attribute(result["#"],"is_attribute",true)
 		elseif field == "__get" then
 			for k,v in pairs(node.__get) do
-				nojoin[v] = true
-				result[k] = document_unknown(v,result,k)
-				set_attribute(result[k],"read",true)
-				set_attribute(result[k],"is_attribute",true)
+				if not node.__luaA_ParentMetatable or
+					node.__luaA_ParentMetatable.__get[k] ~= v then
+					nojoin[v] = true
+					result[k] = document_unknown(v,result,k)
+					set_attribute(result[k],"read",true)
+					set_attribute(result[k],"is_attribute",true)
+				end
 			end
 			for k,v in pairs(node.__set) do
-				nojoin[v] = true
-				if not result[k] then
-					result[k] = document_unknown(v,result,k)
+				if not node.__luaA_ParentMetatable or
+					node.__luaA_ParentMetatable.__set[k] ~= v then
+					nojoin[v] = true
+					if not result[k] then
+						result[k] = document_unknown(v,result,k)
+					end
+					set_attribute(result[k],"write",true)
+					set_attribute(result[k],"is_attribute",true)
 				end
-				set_attribute(result[k],"write",true)
-				set_attribute(result[k],"is_attribute",true)
 			end
 		elseif field == "__luaA_ParentMetatable" then
 				local type_node = create_documentation_node(value,toplevel.types,value.__luaA_TypeName);
@@ -140,7 +146,7 @@ local function document_type_from_obj(obj,type_doc)
 		if type_doc[k] and M.get_attribute(type_doc[k],"reported_type")== "undocumented" then
 			M.remove_parent(type_doc[k],type_doc)
 			type_doc[k] = create_documentation_node(v,type_doc,k)
-		elseif type(k) == "number" and M.get_attribute(type_doc["#"],"reported_type")== "undocumented" then
+		elseif type(k) == "number" and type_doc["#"] and M.get_attribute(type_doc["#"],"reported_type")== "undocumented" then
 			M.remove_parent(type_doc["#"],type_doc)
 			nojoin[v] = true
 			type_doc["#"] = create_documentation_node(v,type_doc,"#")
@@ -602,6 +608,7 @@ end
 --------------------------
 -- GENERATE DOCUMENTATION
 --------------------------
+dt.gui.selection{dt.database[1]}
 toplevel = create_documentation_node()
 toplevel.attributes = create_documentation_node(nil,toplevel,"attributes")
 
@@ -623,7 +630,56 @@ for k,v in pairs(debug.getregistry().dt_lua_event_list) do
 	set_attribute(toplevel.events[k],"reported_type","event")
 end
 
+
+
+-- formats and modules are constructors, call them all once to document
+for k, v in pairs(dt.modules.format) do
+	local res = v()
+	document_type_from_obj(res,toplevel.types[dt.debug.type(res)])
+end
+
+for k, v in pairs(dt.modules.storage) do
+	local res = v()
+	if res then
+		document_type_from_obj(res,toplevel.types[dt.debug.type(res)])
+	end
+end
+
+
+
+
+
+
+-- libs might be available only in certain views, iterate through all views to document them
+for _,view in pairs(dt.modules.view) do
+	dt.gui.current_view(view);
+	if(view == dt.modules.view.darkroom) then
+		dt.modules.lib.snapshots:take_snapshot();
+		local snapshot = dt.modules.lib.snapshots[1]
+		document_type_from_obj(snapshot,toplevel.types.dt_lua_snapshot_t)
+	elseif(view == dt.modules.view.lighttable) then
+		local job =dt.modules.lib.backgroundjobs.create_job("test job",true)
+		document_type_from_obj(job,toplevel.types.dt_lua_backgroundjob_t)
+		job.valid = false
+		job = nil
+	end
+	for libname,lib in pairs(dt.modules.lib) do
+		document_type_from_obj(lib,toplevel.darktable.modules.lib[libname])
+	end
+end
+
+
+
+
+
 M.toplevel = toplevel
 M.create_documentation_node = create_documentation_node
 M.document_function = document_function
+dt.gui.selection{dt.database[1]}
+for _,view in pairs(dt.modules.view) do
+	dt.gui.current_view(view);
+	for libname,lib in pairs(dt.modules.lib) do
+		document_type_from_obj(lib,toplevel.darktable.modules.lib[libname])
+	end
+end
 return M;

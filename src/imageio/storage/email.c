@@ -56,8 +56,8 @@ name (const struct dt_imageio_module_storage_t *self)
 
 int recommended_dimension(struct dt_imageio_module_storage_t *self, uint32_t *width, uint32_t *height)
 {
-  *width=1280;
-  *height=1280;
+  *width=1536;
+  *height=1536;
   return 1;
 }
 
@@ -177,7 +177,7 @@ finalize_store(dt_imageio_module_storage_t *self, dt_imageio_module_data_t *para
   gchar attachments[4096]= {0};
   gchar *uriFormat=NULL;
   gchar *subject=_("images exported from darktable");
-  gchar *imageBodyFormat="%s %s"; // filename, exif oneliner
+  gchar *imageBodyFormat=" - %s (%s)\\n"; // filename, exif oneliner
   gchar *attachmentFormat=NULL;
   gchar *attachmentSeparator="";
 
