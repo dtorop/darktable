@@ -426,14 +426,14 @@ static int
 FCxtrans(size_t row, size_t col,
          const uint8_t (*const xtrans)[6])
 {
-  return xtrans[(row+6) % 6][(col+6) % 6];
+  return xtrans[row%6][col%6];
 }
 
 // xtrans_interpolate adapted from dcraw 9.20
 
 #define CLIPF(x) CLAMPS(x,0.0f,1.0f)
 #define SQR(x) ((x)*(x))
-#define TS 256          /* Tile Size */
+#define TS 156          /* Tile Size */
 
 /*
    Frank Markesteijn's algorithm for Fuji X-Trans sensors
@@ -464,7 +464,7 @@ xtrans_markesteijn_interpolate(
   const int ndir = 4 << (passes > 1);
 
   const size_t image_size = width*height*4*(size_t)sizeof(float);
-  const size_t buffer_size = TS*TS*(ndir*((size_t)sizeof(char)+7*(size_t)sizeof(float)));
+  const size_t buffer_size = TS*TS*(ndir*7*(size_t)sizeof(float));
   char *const all_buffers = (char *) dt_alloc_align(16, image_size+dt_get_num_threads()*buffer_size);
   if (!all_buffers)
   {
@@ -515,7 +515,7 @@ xtrans_markesteijn_interpolate(
       for (int ng=0, d=0; d < 10; d+=2)
       {
         int g = FCxtrans(row,col,xtrans) == 1;
-        if (FCxtrans(row+orth[d],col+orth[d+2],xtrans) == 1) ng=0; else ng++;
+        if (FCxtrans(row+orth[d]+6,col+orth[d+2]+6,xtrans) == 1) ng=0; else ng++;
         if (ng == 4)
         {
           sgrow = row;
@@ -594,7 +594,10 @@ xtrans_markesteijn_interpolate(
     float       (*rgb)[TS][TS][3]  = (float(*)[TS][TS][3]) buffer;
     float (*const yuv)    [TS][3]  = (float(*)    [TS][3])(buffer + TS*TS*(ndir*3*sizeof(float)));
     float (*const drv)[TS][TS]     = (float(*)[TS][TS])   (buffer + TS*TS*(ndir*6*sizeof(float)));
-    char (*const homo)[TS][TS]     = (char (*)[TS][TS])   (buffer + TS*TS*(ndir*7*sizeof(float)));
+    // homo and homosum reuse buffers which contain have useful data
+    // at non-overlapping points in the loop
+    uint8_t (*const homo)[TS][TS]    = (uint8_t (*)[TS][TS]) (yuv);
+    uint8_t (*const homosum)[TS][TS] = (uint8_t (*)[TS][TS]) (drv);
 
     for (int left=3; left < width-19; left += TS-16)
     {
@@ -779,38 +782,60 @@ xtrans_markesteijn_interpolate(
           for (int d=0; d < ndir; d++)
             for (int v=-1; v <= 1; v++)
               for (int h=-1; h <= 1; h++)
-                if (drv[d][row+v][col+h] <= tr)
-                  homo[d][row][col]++;
+                homo[d][row][col] += ((drv[d][row+v][col+h] <= tr) ? 1:0);
+        }
+
+      if (height-top < TS+4) mrow = height-top+2;
+      if (width-left < TS+4) mcol = width-left+2;
+
+      /* Build 5x5 sum of homogeneity maps for each pixel & direction */
+      for (int d=0; d<ndir; d++)
+        for (int row = MIN(top,8); row < mrow-8; row++)
+        {
+          int col = MIN(left,8);
+          int v5sum[5] = {0};
+          for (int v=-2; v<=2; v++)
+            for (int h=-2; h<=2; h++)
+              v5sum[(col+h)%5] += homo[d][row+v][col+h];
+          homosum[d][row][col] = v5sum[0] + v5sum[1] + v5sum[2] + v5sum[3] + v5sum[4];
+          // calculate by rolling through column sums
+          for (col++; col < mcol-8; col++)
+          {
+            int colsum = 0;
+            for (int v=-2; v<=2; v++)
+              colsum += homo[d][row+v][col+2];
+            homosum[d][row][col] = homosum[d][row][col-1] - v5sum[col%5] + colsum;
+            v5sum[col%5] = colsum;
+          }
         }
 
       /* Average the most homogenous pixels for the final result:       */
-      if (height-top < TS+4) mrow = height-top+2;
-      if (width-left < TS+4) mcol = width-left+2;
       for (int row = MIN(top,8); row < mrow-8; row++)
         for (int col = MIN(left,8); col < mcol-8; col++)
         {
           int hm[8] = { 0 };
+          unsigned int maxval = 0;
           for (int d=0; d < ndir; d++)
           {
-            for (int v=-2; v <= 2; v++)
-              for (int h=-2; h <= 2; h++)
-                hm[d] += homo[d][row+v][col+h];
+            hm[d] = homosum[d][row][col];
+            maxval = (maxval < hm[d] ? hm[d] : maxval);
           }
+          maxval -= maxval >> 3;
           for (int d=0; d < ndir-4; d++)
-            if (hm[d] < hm[d+4]) hm[d  ] = 0; else
-            if (hm[d] > hm[d+4]) hm[d+4] = 0;
-          unsigned short max=hm[0];
-          for (int d=1; d < ndir; d++)
-            if (max < hm[d]) max = hm[d];
-          max -= max >> 3;
+            if (hm[d] < hm[d+4])
+              hm[d] = 0;
+            else if (hm[d] > hm[d+4])
+              hm[d+4] = 0;
           float avg[4] = {0.0f};
           for (int d=0; d < ndir; d++)
-            if (hm[d] >= max)
+            if (hm[d] >= maxval)
             {
-              for (int c=0; c<3; c++) avg[c] += rgb[d][row][col][c];
-              avg[3]+=1;
+              for (int c=0; c<3; c++)
+                avg[c] += rgb[d][row][col][c];
+              avg[3]++;
             }
-          for (int c=0; c<3; c++) image[(row+top)*width+col+left][c] = avg[c]/avg[3];
+          for (int c=0; c<3; c++)
+            image[(row+top)*width+col+left][c] = avg[c]/avg[3];
         }
     }
   }
@@ -833,7 +858,7 @@ fcol(const int row, const int col,
      const unsigned int filters, const uint8_t (*const xtrans)[6])
 {
   if (filters == 9)
-    return FCxtrans(row, col, xtrans);
+    return FCxtrans(row+6, col+6, xtrans);
   else
     return FC(row, col, filters);
 }
