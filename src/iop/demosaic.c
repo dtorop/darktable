@@ -453,7 +453,7 @@ xtrans_markesteijn_interpolate(
                         { 0,1,0,-2,1,0,-2,0,1,1,-2,-2,1,-1,-1,1 } },
         dir[4] = { 1,TS,TS+1,TS-1 };
 
-  short allhex[3][3][2][8];
+  short allhex[3][3][8];
   // sgrow/sgcol is the offset in the sensor matrix of the solitary
   // green pixels (initialized here only to avoid compiler warning)
   unsigned short sgrow=0, sgcol=0;
@@ -527,8 +527,7 @@ xtrans_markesteijn_interpolate(
           {
             int v = orth[d  ]*patt[g][c*2] + orth[d+1]*patt[g][c*2+1];
             int h = orth[d+2]*patt[g][c*2] + orth[d+3]*patt[g][c*2+1];
-            allhex[row][col][0][c^(g*2 & d)] = h + v*width;
-            allhex[row][col][1][c^(g*2 & d)] = h + v*TS;
+            allhex[row][col][c^(g*2 & d)] = h + v*TS;
           }
       }
 
@@ -593,7 +592,7 @@ xtrans_markesteijn_interpolate(
           if (max==0.0f)
           {
             float (*const pix)[3] = &rgb[0][row-top][col-left];
-            const short *const hex = allhex[row%3][col%3][0];
+            const short *const hex = allhex[row%3][col%3];
             for (int c=0; c<6; c++)
             {
               const float val = pix[hex[c]][1];
@@ -628,7 +627,7 @@ xtrans_markesteijn_interpolate(
           int f = FCxtrans(row+yoff,col+xoff,xtrans);
           if (f == 1) continue;
           float (*const pix)[3] = &rgb[0][row-top][col-left];
-          short *hex = allhex[row%3][col%3][0];
+          short *hex = allhex[row%3][col%3];
           color[0] = 0.68 * (pix[  hex[1]][1] + pix[  hex[0]][1]) -
                      0.18 * (pix[2*hex[1]][1] + pix[2*hex[0]][1]);
           color[1] = 0.87 *  pix[  hex[3]][1] + pix[  hex[2]][1] * 0.13 +
@@ -659,7 +658,7 @@ xtrans_markesteijn_interpolate(
             {
               int f = FCxtrans(row+yoff,col+xoff,xtrans);
               if (f == 1) continue;
-              short *hex = allhex[row%3][col%3][1];
+              short *hex = allhex[row%3][col%3];
               for (int d=3; d < 6; d++)
               {
                 float (*rfx)[3] = &rgb[(d-2)^!((row-sgrow) % 3)][row-top][col-left];
@@ -719,7 +718,7 @@ xtrans_markesteijn_interpolate(
               if ((col-sgcol) % 3)
               {
                 float (*rfx)[3] = &rgb[0][row-top][col-left];
-                short *hex = allhex[row%3][col%3][1];
+                short *hex = allhex[row%3][col%3];
                 for (int d=0; d < ndir; d+=2, rfx += TS*TS)
                   if (hex[d] + hex[d+1])
                   {
