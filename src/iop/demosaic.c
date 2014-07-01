@@ -464,7 +464,7 @@ xtrans_markesteijn_interpolate(
   const int ndir = 4 << (passes > 1);
 
   const size_t image_size = width*height*4*(size_t)sizeof(float);
-  const size_t buffer_size = TS*TS*(ndir*7*(size_t)sizeof(float));
+  const size_t buffer_size = (3+ndir*4)*TS*TS*(size_t)sizeof(float);
   char *const all_buffers = (char *) dt_alloc_align(16, image_size+dt_get_num_threads()*buffer_size);
   if (!all_buffers)
   {
@@ -591,13 +591,16 @@ xtrans_markesteijn_interpolate(
   for (int top=3; top < height-19; top += TS-16)
   {
     char *const buffer = all_buffers + image_size + dt_get_thread_num() * buffer_size;
+    // rgb points to ndir TSxTS tiles of 3 channels (R, G, and B)
     float       (*rgb)[TS][TS][3]  = (float(*)[TS][TS][3]) buffer;
-    float (*const yuv)    [TS][3]  = (float(*)    [TS][3])(buffer + TS*TS*(ndir*3*sizeof(float)));
-    float (*const drv)[TS][TS]     = (float(*)[TS][TS])   (buffer + TS*TS*(ndir*6*sizeof(float)));
-    // homo and homosum reuse buffers which contain have useful data
-    // at non-overlapping points in the loop
-    uint8_t (*const homo)[TS][TS]    = (uint8_t (*)[TS][TS]) (yuv);
-    uint8_t (*const homosum)[TS][TS] = (uint8_t (*)[TS][TS]) (drv);
+    // yuv points to a TSxTS tile of 3 channels (Y, u, and v)
+    float (*const yuv)    [TS][3]  = (float(*)    [TS][3]) (buffer + ndir*TS*TS*3*sizeof(float));
+    // drv points to ndir TSxTS tiles, each a single chanel of derivatives
+    float (*const drv)[TS][TS]     = (float(*)[TS][TS]) (buffer + (ndir+1)*TS*TS*3*sizeof(float));
+    // homo and homosum reuse buffers which are used at other points
+    // in the loop; each points to ndir single-channel TSxTS tiles
+    uint8_t (*const homo)   [TS][TS] = (uint8_t (*)[TS][TS]) (buffer + ndir*TS*TS*3*sizeof(float));
+    uint8_t (*const homosum)[TS][TS] = (uint8_t (*)[TS][TS]) (buffer + ndir*TS*TS*(3*sizeof(float) + sizeof(uint8_t)));
 
     for (int left=3; left < width-19; left += TS-16)
     {
