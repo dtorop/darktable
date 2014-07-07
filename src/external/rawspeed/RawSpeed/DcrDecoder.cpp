@@ -35,20 +35,24 @@ DcrDecoder::~DcrDecoder(void) {
 }
 
 RawImage DcrDecoder::decodeRawInternal() {
-  vector<TiffIFD*> data = mRootIFD->getIFDsWithTag(STRIPOFFSETS);
+  vector<TiffIFD*> data = mRootIFD->getIFDsWithTag(CFAPATTERN);
 
-  if (data.size() < 2)
+  if (data.size() < 1)
     ThrowRDE("DCR Decoder: No image data found");
     
-  TiffIFD* raw = data[2];
+  TiffIFD* raw = data[0];
   uint32 width = raw->getEntry(IMAGEWIDTH)->getInt();
   uint32 height = raw->getEntry(IMAGELENGTH)->getInt();
   uint32 off = raw->getEntry(STRIPOFFSETS)->getInt();
   uint32 c2 = raw->getEntry(STRIPBYTECOUNTS)->getInt();
 
+  if (c2 > mFile->getSize() - off) {
+    mRaw->setError("Warning: byte count larger than file size, file probably truncated.");
+  }
+
   mRaw->dim = iPoint2D(width, height);
   mRaw->createData();
-  ByteStream input(mFile->getData(off), c2);
+  ByteStream input(mFile->getData(off), mFile->getSize() - off);
 
   int compression = raw->getEntry(COMPRESSION)->getInt();
   if (65000 == compression) {
@@ -64,7 +68,20 @@ RawImage DcrDecoder::decodeRawInternal() {
     if (linearization->type != TIFF_SHORT)
       ThrowRDE("DCR Decoder: Linearization table is wrong type");
 
-    decodeKodak65000(input, width, height, linearization->getShortArray());
+    // Get create passthrough curve if user has requested that.
+    if (uncorrectedRawValues) {
+      for (int i = 0; i < 1024; i++)
+        linear[i] = i;
+    }
+
+    try {
+    if (uncorrectedRawValues)
+      decodeKodak65000(input, width, height, linear);
+    else
+      decodeKodak65000(input, width, height, linearization->getShortArray());
+    } catch (IOException) {
+      mRaw->setError("IO error occurred while reading image. Returning partial result.");
+    }
   } else
     ThrowRDE("DCR Decoder: Unsupported compression %d", compression);
 
@@ -116,7 +133,7 @@ void DcrDecoder::decodeKodak65000Segment(ByteStream &input, ushort16 *out, uint3
       }
       bits += 32;
     }
-    uint32 diff = bitbuf & (0xffff >> (16-len));
+    uint32 diff = (uint32)bitbuf & (0xffff >> (16-len));
     bitbuf >>= len;
     bits -= len;
     if ((diff & (1 << (len-1))) == 0)
