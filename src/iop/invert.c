@@ -211,7 +211,7 @@ void process (struct dt_iop_module_t *self, dt_dev_pixelpipe_iop_t *piece, void 
   const int filters = dt_image_filter(&piece->pipe->image);
   uint8_t (*const xtrans)[6] = self->dev->image_storage.xtrans;
 
-  if(!dt_dev_pixelpipe_uses_downsampled_input(piece->pipe) && (filters == 9) && piece->pipe->image.bpp != 4)
+  if(!dt_dev_pixelpipe_uses_downsampled_input(piece->pipe) && (filters == 9u) && piece->pipe->image.bpp != 4)
   { // xtrans int mosaiced
     const float *const m = piece->pipe->processed_maximum;
     const int32_t film_rgb_i[3] = {m[0]*film_rgb[0]*65535, m[1]*film_rgb[1]*65535, m[2]*film_rgb[2]*65535};
@@ -251,7 +251,7 @@ void process (struct dt_iop_module_t *self, dt_dev_pixelpipe_iop_t *piece, void 
     for(int k=0; k<3; k++)
       piece->pipe->processed_maximum[k] = 1.0f;
   }
-  else if(!dt_dev_pixelpipe_uses_downsampled_input(piece->pipe) && (filters == 9) && piece->pipe->image.bpp == 4)
+  else if(!dt_dev_pixelpipe_uses_downsampled_input(piece->pipe) && (filters == 9u) && piece->pipe->image.bpp == 4)
   { // xtrans float mosaiced
 #ifdef _OPENMP
     #pragma omp parallel for default(none) shared(roi_out, ivoid, ovoid) schedule(static)

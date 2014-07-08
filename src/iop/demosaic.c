@@ -942,7 +942,7 @@ static int
 fcol(const int row, const int col,
      const unsigned int filters, const uint8_t (*const xtrans)[6])
 {
-  if (filters == 9)
+  if (filters == 9u)
     // There are a few cases in VNG demosaic in which row or col is -1
     // or -2. The +6 ensures a non-negative array index.
     return FCxtrans(row+6, col+6, xtrans);
@@ -960,7 +960,7 @@ lin_interpolate(
   const unsigned int filters,
   const uint8_t (*const xtrans)[6])
 {
-  const int colors = (filters == 9) ? 3 : 4;
+  const int colors = (filters == 9u) ? 3 : 4;
 
   // border interpolate
 #ifdef _OPENMP
@@ -1008,7 +1008,7 @@ lin_interpolate(
   // COLORPIX                   # color of center pixel
 
   int lookup[16][16][32];
-  const int size=(filters == 9) ? 6 : 16;
+  const int size=(filters == 9u) ? 6 : 16;
   for (int row=0; row < size; row++)
     for (int col=0; col < size; col++)
     {
@@ -1112,13 +1112,13 @@ vng_interpolate(
   // is only used for rotating the buffer
   float (*brow[4])[4];
   const int width = roi_out->width, height = roi_out->height;
-  const int prow = (filters == 9) ? 6 : 8;
-  const int pcol = (filters == 9) ? 6 : 2;
-  const int colors = (filters == 9) ? 3 : 4;
+  const int prow = (filters == 9u) ? 6 : 8;
+  const int pcol = (filters == 9u) ? 6 : 2;
+  const int colors = (filters == 9u) ? 3 : 4;
 
   // separate out G1 and G2 in Bayer patterns
   unsigned int filters4;
-  if (filters == 9)
+  if (filters == 9u)
     filters4 = filters;
   else if ((filters & 3) == 1)
     filters4 = filters | 0x03030303u;
@@ -1243,7 +1243,7 @@ vng_interpolate(
   memcpy (out + (4*((height-3)*width+2)), brow[1]+2, (size_t)(width-4)*4*sizeof(*out));
   free (buffer);
 
-  if (filters4 != 9)
+  if (filters4 != 9u)
     // for Bayer mix the two greens to make VNG4
 #ifdef _OPENMP
     #pragma omp parallel for default(none) shared(out) schedule(static)
@@ -1473,7 +1473,7 @@ modify_roi_in (struct dt_iop_module_t *self, struct dt_dev_pixelpipe_iop_t *piec
   roi_in->height /= roi_out->scale;
   roi_in->scale = 1.0f;
   // clamp to even x/y, to make demosaic pattern still hold..
-  if (data->filters != 9)
+  if (data->filters != 9u)
   {
     roi_in->x = MAX(0, roi_in->x & ~1);
     roi_in->y = MAX(0, roi_in->y & ~1);
@@ -1525,13 +1525,13 @@ process (struct dt_iop_module_t *self, dt_dev_pixelpipe_iop_t *piece, void *i, v
   const int qual = get_quality();
   int demosaicing_method = data->demosaicing_method;
   if(piece->pipe->type == DT_DEV_PIXELPIPE_FULL && qual < 2 && roi_out->scale<=.99999f) // only overwrite setting if quality << requested and in dr mode
-    demosaicing_method = (data->filters != 9) ? DT_IOP_DEMOSAIC_PPG : DT_IOP_DEMOSAIC_VNG;
+    demosaicing_method = (data->filters != 9u) ? DT_IOP_DEMOSAIC_PPG : DT_IOP_DEMOSAIC_VNG;
 
   const float *const pixels = (float *)i;
   if(roi_out->scale > .99999f && roi_out->scale < 1.00001f)
   {
     // output 1:1
-    if(data->filters==9)
+    if(data->filters==9u)
     {
       if (demosaicing_method < DT_IOP_DEMOSAIC_MARKESTEIJN)
         vng_interpolate((float *)o, pixels, &roo, &roi, data->filters, img->xtrans);
@@ -1578,7 +1578,7 @@ process (struct dt_iop_module_t *self, dt_dev_pixelpipe_iop_t *piece, void *i, v
         amaze_demosaic_RT(self, piece, pixels, (float *)o, &roi, &roo, data->filters);
     }
   }
-  else if(roi_out->scale > (data->filters == 9 ? 0.333f : .5f) ||       // also covers roi_out->scale >1
+  else if(roi_out->scale > (data->filters == 9u ? 0.333f : .5f) ||     // also covers roi_out->scale >1
           (piece->pipe->type == DT_DEV_PIXELPIPE_FULL && qual > 0) ||  // or in darkroom mode and quality requested by user settings
           (piece->pipe->type == DT_DEV_PIXELPIPE_EXPORT))              // we assume you always want that for exports.
   {
@@ -1590,7 +1590,7 @@ process (struct dt_iop_module_t *self, dt_dev_pixelpipe_iop_t *piece, void *i, v
     roo.scale = 1.0f;
 
     float *tmp = (float *)dt_alloc_align(16, (size_t)roo.width*roo.height*4*sizeof(float));
-    if(data->filters==9)
+    if(data->filters==9u)
     {
       if (demosaicing_method < DT_IOP_DEMOSAIC_MARKESTEIJN)
         vng_interpolate(tmp, pixels, &roo, &roi, data->filters, img->xtrans);
@@ -1646,7 +1646,7 @@ process (struct dt_iop_module_t *self, dt_dev_pixelpipe_iop_t *piece, void *i, v
   {
     // sample half-size raw (Bayer) or 1/3-size raw (X-Trans)
     const float clip = fminf(piece->pipe->processed_maximum[0], fminf(piece->pipe->processed_maximum[1], piece->pipe->processed_maximum[2]));
-    if(data->filters==9)
+    if(data->filters==9u)
       dt_iop_clip_and_zoom_demosaic_third_size_xtrans_f((float *)o, pixels, &roo, &roi, roo.width, roi.width, img->xtrans);
     else if(piece->pipe->type == DT_DEV_PIXELPIPE_EXPORT && data->median_thrs > 0.0f)
     {
@@ -1991,7 +1991,7 @@ void tiling_callback  (struct dt_iop_module_t *self, struct dt_dev_pixelpipe_iop
 
   if(roi_out->scale > 0.99999f && roi_out->scale < 1.00001f)
     tiling->factor += fmax(0.25f, smooth);
-  else if(roi_out->scale > (data->filters == 9 ? 0.333f : 0.5f) ||
+  else if(roi_out->scale > (data->filters == 9u ? 0.333f : 0.5f) ||
           (piece->pipe->type == DT_DEV_PIXELPIPE_FULL && qual > 0) || (piece->pipe->type == DT_DEV_PIXELPIPE_EXPORT))
     tiling->factor += fmax(1.25f, smooth);
   else
@@ -2002,7 +2002,7 @@ void tiling_callback  (struct dt_iop_module_t *self, struct dt_dev_pixelpipe_iop
   // of small image crops which won't be tiled anyhow
   tiling->maxbuf = 1.0f;
   tiling->overhead = 0;
-  if(data->filters != 9)
+  if(data->filters != 9u)
   {  // Bayer pattern
     tiling->xalign = 2;
     tiling->yalign = 2;
@@ -2083,7 +2083,7 @@ void commit_params (struct dt_iop_module_t *self, dt_iop_params_t *params, dt_de
   piece->process_cl_ready = 1;
 
   // x-trans images not implemented in OpenCL yet
-  if(d->filters == 9)
+  if(d->filters == 9u)
     piece->process_cl_ready = 0;
 
   // Demosaic modes AMAZE and VNG4 not implemented in OpenCL yet.
@@ -2113,7 +2113,7 @@ void gui_update   (struct dt_iop_module_t *self)
   dt_iop_demosaic_gui_data_t *g = (dt_iop_demosaic_gui_data_t *)self->gui_data;
   dt_iop_demosaic_params_t *p = (dt_iop_demosaic_params_t *)self->params;
 
-  if(self->dev->image_storage.filters != 9)
+  if(self->dev->image_storage.filters != 9u)
   {
     gtk_widget_show(g->demosaic_method_bayer);
     gtk_widget_hide(g->demosaic_method_xtrans);
@@ -2141,7 +2141,7 @@ void reload_defaults(dt_iop_module_t *module)
   {
     0, 0.0f,0,0,0
   };
-  if (module->dev->image_storage.filters == 9)
+  if (module->dev->image_storage.filters == 9u)
     tmp.demosaicing_method = DT_IOP_DEMOSAIC_VNG;
   memcpy(module->params, &tmp, sizeof(dt_iop_demosaic_params_t));
   memcpy(module->default_params, &tmp, sizeof(dt_iop_demosaic_params_t));

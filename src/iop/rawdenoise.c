@@ -373,7 +373,7 @@ void process(struct dt_iop_module_t *self, dt_dev_pixelpipe_iop_t *piece, void *
   if (d->threshold > 0.0)
   {
     uint32_t filters = dt_image_filter(&piece->pipe->image);
-    if (filters != 9)
+    if (filters != 9u)
       wavelet_denoise(ivoid, ovoid, roi_in, d->threshold, filters);
     else
       wavelet_denoise_xtrans(ivoid, ovoid, roi_in, d->threshold, self->dev->image_storage.xtrans);
