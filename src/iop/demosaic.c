@@ -429,6 +429,40 @@ FCxtrans(const int row, const int col,
   return xtrans[row%6][col%6];
 }
 
+static const uint8_t *FCxtrans_row(const int row, const uint8_t (*const xtrans)[6])
+{
+  // add a sufficiently large modulo 6 value to row as row may be
+  // offset to less than zero, and don't want negative modulo result
+  return xtrans[(row+18)%6];
+}
+
+static int xtrans_col(const int col)
+{
+  return (col+18)%6;
+}
+
+static int xtrans_next(const int col)
+{
+  return ((col == 5) ? 0 : col+1);
+}
+
+static void *allhex_row(const int row, short (*const allhex)[3][8])
+{
+  // add a sufficiently large modulo 3 value to row as it may be
+  // offset to less than zero, and don't want negative modulo result
+  return allhex[(row+12)%3];
+}
+
+static int allhex_col(const int col)
+{
+  return (col+12)%3;
+}
+
+static int allhex_next(const int col)
+{
+  return ((col == 2) ? 0 : col+1);
+}
+
 // xtrans_interpolate adapted from dcraw 9.20
 
 #define CLIPF(x) CLAMPS(x,0.0f,1.0f)
@@ -533,12 +567,16 @@ xtrans_markesteijn_interpolate(
       // beyond edges of image, fill with mirrored/interpolated edges.
       // The extra border avoids discontinuities at image edges.
       for (int row=top; row < mrow; row++)
-        for (int col=left; col < mcol; col++)
+      {
+        const uint8_t *const cfa_row = FCxtrans_row(row+yoff, xtrans);
+        for (int col=left, cfa_col=xtrans_col(left+xoff);
+             col < mcol;
+             col++, cfa_col=xtrans_next(cfa_col))
         {
           float (*const pix) = rgb[0][row-top][col-left];
           if ((col>=0) && (row >= 0) && (col < width) && (row < height))
           {
-            const int f = FCxtrans(row+yoff, col+xoff, xtrans);
+            const int f = cfa_row[cfa_col];
             for (int c=0; c<3; c++)
               pix[c] = (c == f) ? in[roi_in->width*row + col] : 0;
           }
@@ -576,6 +614,7 @@ xtrans_markesteijn_interpolate(
               }
           }
         }
+      }
 
       // duplicate rgb[0] to rgb[1], rgb[2], and rgb[3]
       for (int c=1; c<=3; c++)
@@ -644,13 +683,19 @@ xtrans_markesteijn_interpolate(
       /* Interpolate green horizontally, vertically, and along both diagonals: */
       // need a 3 pixel border here as 3*hex[] can have a 3 unit offset
       for (int row=top+3; row < mrow-3; row++)
-        for (int col=left+3; col < mcol-3; col++)
+      {
+        const uint8_t *const cfa_row = FCxtrans_row(row+yoff, xtrans);
+        short (*const hex_row)[8] = allhex[(row+9)%3];
+        for (int col=left+3, cfa_col=xtrans_col(left+3+xoff), hex_col=allhex_col(left);
+             col < mcol-3;
+             col++, cfa_col=xtrans_next(cfa_col), hex_col=allhex_next(hex_col))
         {
           float color[8];
-          int f = FCxtrans(row+yoff+12,col+xoff+12,xtrans);
+          const int f = cfa_row[cfa_col];
           if (f == 1) continue;
           float (*const pix)[3] = &rgb[0][row-top][col-left];
-          short *hex = allhex[(row+9)%3][(col+9)%3];
+          const short *const hex = hex_row[hex_col];
+          // FIXME: 0.679 - 0.179 is approx 0.5, find source of these values
           color[0] = 0.6796875f * (pix[  hex[1]][1] + pix[  hex[0]][1]) -
                      0.1796875f * (pix[2*hex[1]][1] + pix[2*hex[0]][1]);
           color[1] = 0.87109375f *  pix[  hex[3]][1] + pix[  hex[2]][1] * 0.13f +
@@ -662,6 +707,7 @@ xtrans_markesteijn_interpolate(
             rgb[c^!((row-sgrow) % 3)][row-top][col-left][1] =
               CLAMPS(color[c],gmin[row-top][col-left],gmax[row-top][col-left]);
         }
+      }
 
       for (int pass=0; pass < passes; pass++)
       {
@@ -676,11 +722,16 @@ xtrans_markesteijn_interpolate(
         /* Recalculate green from interpolated values of closer pixels: */
         if (pass)
           for (int row=top+5; row < mrow-5; row++)
-            for (int col=left+5; col < mcol-5; col++)
+          {
+            const uint8_t *const cfa_row = FCxtrans_row(row+yoff, xtrans);
+            const short (*const hex_row)[8] = allhex_row(row, allhex);
+            for (int col=left+5, cfa_col=xtrans_col(left+5+xoff), hex_col=allhex_col(left+5);
+                 col < mcol-5;
+                 col++, cfa_col=xtrans_next(cfa_col), hex_col=allhex_next(hex_col))
             {
-              int f = FCxtrans(row+yoff+12,col+xoff+12,xtrans);
+              const int f = cfa_row[cfa_col];
               if (f == 1) continue;
-              short *hex = allhex[(row+12)%3][(col+12)%3];
+              const short *const hex = hex_row[hex_col];
               for (int d=3; d < 6; d++)
               {
                 float (*rfx)[3] = &rgb[(d-2)^!((row-sgrow) % 3)][row-top][col-left];
@@ -689,13 +740,19 @@ xtrans_markesteijn_interpolate(
                 rfx[0][1] = CLAMPS(val/3.0f, gmin[row-top][col-left], gmax[row-top][col-left]);
               }
             }
+          }
 
         /* Interpolate red and blue values for solitary green pixels:   */
         for (int row=(top-sgrow+7)/3*3+sgrow; row < mrow-5; row+=3)
-          for (int col=(left-sgcol+7)/3*3+sgcol; col < mcol-5; col+=3)
+        {
+          const uint8_t *const cfa_row = FCxtrans_row(row+yoff, xtrans);
+          int col=(left-sgcol+7)/3*3+sgcol;
+          for (int cfa_col=xtrans_col(col+1+xoff);
+               col < mcol-5;
+               col+=3, cfa_col=((cfa_col >= 3) ? cfa_col-3 : cfa_col+3))
           {
             float (*rfx)[3] = &rgb[0][row-top][col-left];
-            int h = FCxtrans(row+yoff+12,col+xoff+13,xtrans);
+            int h = cfa_row[cfa_col];
             float diff[6] = {0.0f};
             float color[3][8];
             for (int i=1, d=0; d < 6; d++, i^=TS^1, h^=2)
@@ -718,28 +775,39 @@ xtrans_markesteijn_interpolate(
               }
             }
           }
+        }
 
         /* Interpolate red for blue pixels and vice versa:              */
         for (int row=top+4; row < mrow-4; row++)
-          for (int col=left+4; col < mcol-4; col++)
+        {
+          const uint8_t *const cfa_row = FCxtrans_row(row+yoff, xtrans);
+          for (int col=left+4, cfa_col=xtrans_col(left+4+xoff);
+               col < mcol-4;
+               col++, cfa_col=xtrans_next(cfa_col))
           {
-            int f = 2-FCxtrans(row+yoff+12,col+xoff+12,xtrans);
+            const int f = 2-cfa_row[cfa_col];
             if (f == 1) continue;
             float (*rfx)[3] = &rgb[0][row-top][col-left];
-            int i = (row-sgrow) % 3 ? TS:1;
+            const int i = (row-sgrow) % 3 ? TS:1;
             for (int d=0; d < 4; d++, rfx += TS*TS)
               rfx[0][f] = CLIPF((rfx[i][f] + rfx[-i][f] +
                   2*rfx[0][1] - rfx[i][1] - rfx[-i][1])/2);
           }
+        }
 
         /* Fill in red and blue for 2x2 blocks of green:                */
         for (int row=top+5; row < mrow-5; row++)
+          // FIXME: faster modulo skipping here?
           if ((row-sgrow) % 3)
-            for (int col=left+5; col < mcol-5; col++)
+          {
+            short (*const hex_row)[8] = allhex[(row+12)%3];
+            for (int col=left+5, hex_col=allhex_col(left+5);
+                 col < mcol-5;
+                 col++, hex_col=allhex_next(hex_col))
               if ((col-sgcol) % 3)
               {
                 float (*rfx)[3] = &rgb[0][row-top][col-left];
-                short *hex = allhex[(row+12)%3][(col+12)%3];
+                const short *const hex = hex_row[hex_col];
                 for (int d=0; d < ndir; d+=2, rfx += TS*TS)
                   if (hex[d] + hex[d+1])
                   {
@@ -754,6 +822,7 @@ xtrans_markesteijn_interpolate(
                       rfx[0][c] = CLIPF((g + rfx[hex[d]][c] + rfx[hex[d+1]][c])/2);
                   }
               }
+          }
       }  // end of multipass loop
 
       // jump back to the first set of rgb buffers (this is a nop
