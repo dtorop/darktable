@@ -359,6 +359,7 @@ dt_imageio_open_raw(
 
   for (int c=0; c<4; c++)           // scale colors 0.0 to 1.0
     raw->params.user_mul[c] = 1.0f;
+  raw->params.user_flip = 0;        // do not rotate
   raw->params.output_color = 0;     // raw rgb
   // LibRaw 0.16.0 introduced undocumented no_interpolation,
   // similar to dcraw's document mode
@@ -396,27 +397,11 @@ dt_imageio_open_raw(
 #endif
 
   if (img->filters == LIBRAW_XTRANS)
-  {
-    // the filter array is always aligned to the topleft of the
-    // sensor, but as the raw image rotates, must rotate the array
-    // correspondingly
-    uint8_t xtemp[6][6];
-    dt_imageio_flip_buffers((char *)xtemp, (char *)raw->idata.xtrans, 1, 6, 6, 6, 6, 6, img->orientation);
-
-    // Offset filter to count from edge of useful image. As the image
-    // may be rotated, this may involve counting backwards from its
-    // far side. Some of these dimensions are not necessarily modulo 6.
-    int bottom_offset = 6 - ((raw->sizes.height + raw->sizes.top_margin) % 6);
-    int right_offset = 6 - ((raw->sizes.width + raw->sizes.left_margin) % 6);
-    int yoffset = (img->orientation & 2) ? bottom_offset : raw->sizes.top_margin;
-    int xoffset = (img->orientation & 1) ? right_offset : raw->sizes.left_margin;
-    int joff = (img->orientation & 4) ? xoffset : yoffset;
-    int ioff = (img->orientation & 4) ? yoffset : xoffset;
-
+    // The filter array return by libraw is aligned to the topleft of
+    // the sensor. Offset filter to count from edge of useful image.
     for (int i=0; i < 6; ++i)
       for (int j=0; j < 6; ++j)
-        img->xtrans[j][i] = xtemp[(j+joff)%6][(i+ioff)%6];
-  }
+        img->xtrans[j][i] = raw->idata.xtrans[(j+raw->sizes.top_margin)%6][(i+raw->sizes.left_margin)%6];
 
   void *buf = dt_mipmap_cache_alloc(img, DT_MIPMAP_FULL, a);
   if(!buf)
