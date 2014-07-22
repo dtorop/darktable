@@ -2023,7 +2023,7 @@ void init(dt_iop_module_t *module)
   module->params = malloc(sizeof(dt_iop_demosaic_params_t));
   module->default_params = malloc(sizeof(dt_iop_demosaic_params_t));
   module->default_enabled = 1;
-  module->priority = 122; // module order created by iop_dependencies.py, do not edit!
+  module->priority = 140; // module order created by iop_dependencies.py, do not edit!
   module->hide_enable_button = 1;
   module->params_size = sizeof(dt_iop_demosaic_params_t);
   module->gui_data = NULL;
@@ -2236,8 +2236,8 @@ void gui_init     (struct dt_iop_module_t *self)
   dt_bauhaus_widget_set_label(g->demosaic_method_bayer, NULL, _("method"));
   gtk_box_pack_start(GTK_BOX(self->widget), g->demosaic_method_bayer, TRUE, TRUE, 0);
   dt_bauhaus_combobox_add(g->demosaic_method_bayer, _("PPG (fast)"));
-  dt_bauhaus_combobox_add(g->demosaic_method_bayer, _("amaze (slow)"));
-  dt_bauhaus_combobox_add(g->demosaic_method_bayer, _("VNG4 (for maze artifacts)"));
+  dt_bauhaus_combobox_add(g->demosaic_method_bayer, _("AMaZE (slow)"));
+  dt_bauhaus_combobox_add(g->demosaic_method_bayer, _("VNG4 (slow)"));
   g_object_set(G_OBJECT(g->demosaic_method_bayer), "tooltip-text", _("demosaicing raw data method"), (char *)NULL);
 
   g->demosaic_method_xtrans = dt_bauhaus_combobox_new(self);
