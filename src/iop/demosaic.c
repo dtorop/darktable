@@ -422,7 +422,7 @@ green_equilibration_favg(float *out, const float *const in, const int width, con
 // x-trans specific demosaicing algorithms
 //
 
-static uint8_t
+static int
 FCxtrans(const int row, const int col,
          const uint8_t (*const xtrans)[6])
 {
@@ -695,7 +695,8 @@ xtrans_markesteijn_interpolate(
           if (f == 1) continue;
           float (*const pix)[3] = &rgb[0][row-top][col-left];
           const short *const hex = hex_row[hex_col];
-          // FIXME: 0.679 - 0.179 is approx 0.5, find source of these values
+          // TODO: these constants come from integer math constants in
+          // dcraw -- calculate them instead from interpolation math
           color[0] = 0.6796875f * (pix[  hex[1]][1] + pix[  hex[0]][1]) -
                      0.1796875f * (pix[2*hex[1]][1] + pix[2*hex[0]][1]);
           color[1] = 0.87109375f *  pix[  hex[3]][1] + pix[  hex[2]][1] * 0.13f +
