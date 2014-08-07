@@ -483,6 +483,11 @@ void commit_params (struct dt_iop_module_t *self, dt_iop_params_t *p1, dt_dev_pi
   {
     d->mode = EXPOSURE_MODE_MANUAL;
   }
+
+  if(d->mode != EXPOSURE_MODE_DEFLICKER &&
+      self->request_color_pick != DT_REQUEST_COLORPICK_MODULE && //autoexp
+      d->exposure == 0.0f && d->black == 0.0f)
+    piece->enabled = 0;
 }
 
 void init_pipe (struct dt_iop_module_t *self, dt_dev_pixelpipe_t *pipe, dt_dev_pixelpipe_iop_t *piece)
@@ -942,7 +947,7 @@ void gui_init(struct dt_iop_module_t *self)
   g->mode = dt_bauhaus_combobox_new(self);
   dt_bauhaus_widget_set_label(g->mode, NULL, _("mode"));
 
-  dt_bauhaus_combobox_add(g->mode, _("manual"));
+  dt_bauhaus_combobox_add(g->mode, C_("mode", "manual"));
   g->modes = g_list_append(g->modes, GUINT_TO_POINTER(EXPOSURE_MODE_MANUAL));
 
   dt_bauhaus_combobox_add(g->mode, _("automatic"));

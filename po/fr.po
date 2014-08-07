@@ -2,8 +2,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: darktable 1.3\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2014-07-24 19:12+0200\n"
-"PO-Revision-Date: 2014-07-24 19:12+0100\n"
+"POT-Creation-Date: 2014-08-07 11:46+0200\n"
+"PO-Revision-Date: 2014-08-07 11:53+0100\n"
 "Last-Translator: Pascal Obry <pascal@obry.net>\n"
 "Language-Team: \n"
 "Language: fr_FR\n"
@@ -825,7 +825,7 @@ msgstr "le fichier «%s» possède un format inconnu !"
 msgid "error loading file `%s'"
 msgstr "erreur de chargement du fichier «%s»"
 
-#: ../src/common/darktable.c:589
+#: ../src/common/darktable.c:602
 #, c-format
 msgid "ERROR : invalid temporary directory : %s\n"
 msgstr "ERREUR : répertoire temporaire invalide : %s\n"
@@ -866,7 +866,7 @@ msgstr "activé(e)"
 #: ../src/common/styles.c:635 ../src/develop/blend_gui.c:1539
 #: ../src/develop/blend_gui.c:1688 ../src/develop/develop.c:1158
 #: ../src/imageio/format/j2k.c:637 ../src/iop/colorin.c:1187
-#: ../src/iop/demosaic.c:2155 ../src/iop/vignette.c:1137
+#: ../src/iop/demosaic.c:2192 ../src/iop/vignette.c:1137
 #: ../src/libs/history.c:154 ../src/libs/live_view.c:411
 msgid "off"
 msgstr "désactivé(e)"
@@ -875,29 +875,29 @@ msgstr "désactivé(e)"
 msgid "orphaned image"
 msgstr "image orpheline"
 
-#: ../src/common/image.c:1194
+#: ../src/common/image.c:1228
 msgid "cannot create local copy when the original file is not accessible."
 msgstr ""
 "impossible de créer la copie locale lorsque l'original n'est pas accessible."
 
-#: ../src/common/image.c:1208
+#: ../src/common/image.c:1242
 msgid "cannot create local copy."
 msgstr "copie locale impossible."
 
-#: ../src/common/image.c:1242 ../src/control/jobs/control_jobs.c:489
+#: ../src/common/image.c:1276 ../src/control/jobs/control_jobs.c:489
 msgid "cannot remove local copy when the original file is not accessible."
 msgstr ""
 "impossible de supprimer la copie locale lorsque l'original n'est pas "
 "accessible"
 
-#: ../src/common/image.c:1393
+#: ../src/common/image.c:1427
 #, c-format
 msgid "%d local copy has been synchronized"
 msgid_plural "%d local copies have been synchronized"
 msgstr[0] "%d copie locale a été synchronisée"
 msgstr[1] "%d copies locales ont été synchronisées"
 
-#: ../src/common/imageio.c:668
+#: ../src/common/imageio.c:636
 #, c-format
 msgid ""
 "failed to allocate memory for %s, please lower the threads used for export "
@@ -906,22 +906,22 @@ msgstr ""
 "échec de l'allocation de mémoire pour %s, merci de diminuer le nombre de "
 "fils utilisés pour l'exportation ou d'acheter de la mémoire."
 
-#: ../src/common/imageio.c:668
+#: ../src/common/imageio.c:636
 msgctxt "noun"
 msgid "thumbnail export"
 msgstr "l'aperçu"
 
-#: ../src/common/imageio.c:668
+#: ../src/common/imageio.c:636
 msgctxt "noun"
 msgid "export"
 msgstr "l'image"
 
-#: ../src/common/imageio.c:676 ../src/common/mipmap_cache.c:1161
+#: ../src/common/imageio.c:644 ../src/common/mipmap_cache.c:1161
 #, c-format
 msgid "image `%s' is not available!"
 msgstr "image '%s\" non disponible"
 
-#: ../src/common/imageio.c:692
+#: ../src/common/imageio.c:660
 #, c-format
 msgid "cannot find the style '%s' to apply during export."
 msgstr "impossible de trouver le style «%s» à appliquer pendant l'exportation."
@@ -2255,7 +2255,7 @@ msgstr "ISO"
 #. exposure
 #: ../src/gui/preferences.c:470 ../src/gui/preferences.c:1387
 #: ../src/gui/presets.c:451 ../src/iop/exposure.c:113
-#: ../src/iop/exposure.c:967 ../src/iop/relight.c:384
+#: ../src/iop/exposure.c:972 ../src/iop/relight.c:384
 #: ../src/libs/metadata_view.c:93
 msgid "exposure"
 msgstr "exposition"
@@ -2275,8 +2275,7 @@ msgid "focal length"
 msgstr "focale"
 
 #: ../src/gui/preferences.c:491 ../src/iop/borders.c:1054
-#: ../src/iop/exposure.c:973 ../src/iop/levels.c:580
-#: ../src/iop/tonecurve.c:780
+#: ../src/iop/exposure.c:978 ../src/iop/levels.c:580
 msgid "auto"
 msgstr "auto"
 
@@ -2719,7 +2718,7 @@ msgstr ""
 "navigateur. connectez-vous à votre compte facebook et autorisez darktable à "
 "charger des fichiers pour continuer."
 
-#: ../src/imageio/storage/facebook.c:618 ../src/imageio/storage/picasa.c:839
+#: ../src/imageio/storage/facebook.c:618
 msgid ""
 "step 2: paste your browser URL and click the OK button once you are done."
 msgstr "étape 2 : coller l'URL du navigateur cliquez sur \"OK\""
@@ -2958,6 +2957,14 @@ msgstr ""
 "navigateur. connectez-vous à votre compte google+ et autorisez darktable à "
 "charger des fichiers pour continuer."
 
+#: ../src/imageio/storage/picasa.c:839
+msgid ""
+"step 2: paste the verification code shown to you in the browser and click "
+"the OK button once you are done."
+msgstr ""
+"étape 2 : coller le code de vérification affiché par le navigateur et "
+"cliquer \"OK\""
+
 #: ../src/imageio/storage/picasa.c:847
 msgid "google+ authentication"
 msgstr "authentification google+"
@@ -3150,29 +3157,29 @@ msgstr "fotogenetic (point & shoot)"
 msgid "fotogenetic (EV3)"
 msgstr "fotogenetic (EV3)"
 
-#: ../src/iop/basecurve.c:203
+#: ../src/iop/basecurve.c:206
 msgid "base curve"
 msgstr "courbe de base"
 
-#: ../src/iop/basecurve.c:766
+#: ../src/iop/basecurve.c:769
 msgid "abscissa: input, ordinate: output. works on RGB channels"
 msgstr "abscisse : entrée, ordonnée : sortie. fonctionne sur les canaux RVB"
 
-#: ../src/iop/basecurve.c:772 ../src/iop/lens.c:2085
+#: ../src/iop/basecurve.c:775 ../src/iop/lens.c:2085
 #: ../src/iop/vignette.c:1143 ../src/iop/watermark.c:1114
 msgid "scale"
 msgstr "échelle"
 
-#: ../src/iop/basecurve.c:773 ../src/iop/profile_gamma.c:337
+#: ../src/iop/basecurve.c:776 ../src/iop/profile_gamma.c:337
 #: ../src/iop/tonecurve.c:418
 msgid "linear"
 msgstr "linéaire"
 
-#: ../src/iop/basecurve.c:774
+#: ../src/iop/basecurve.c:777
 msgid "logarithmic"
 msgstr "logarithmique"
 
-#: ../src/iop/basecurve.c:775
+#: ../src/iop/basecurve.c:778
 msgid ""
 "scale to use in the graph. use logarithmic scale for more precise control "
 "near the blacks"
@@ -4370,40 +4377,40 @@ msgctxt "accel"
 msgid "edge threshold"
 msgstr "seuil "
 
-#: ../src/iop/demosaic.c:2132 ../src/iop/demosaic.c:2140
+#: ../src/iop/demosaic.c:2169 ../src/iop/demosaic.c:2177
 #: ../src/iop/dither.c:564 ../src/iop/highlights.c:702
 msgid "method"
 msgstr "méthode"
 
-#: ../src/iop/demosaic.c:2134
+#: ../src/iop/demosaic.c:2171
 msgid "PPG (fast)"
 msgstr "PPG (rapide)"
 
-#: ../src/iop/demosaic.c:2135
+#: ../src/iop/demosaic.c:2172
 msgid "AMaZE (slow)"
 msgstr "AMaZE (lent)"
 
-#: ../src/iop/demosaic.c:2136
+#: ../src/iop/demosaic.c:2173
 msgid "VNG4 (slow)"
 msgstr "VNG4 (lent)"
 
-#: ../src/iop/demosaic.c:2137 ../src/iop/demosaic.c:2145
+#: ../src/iop/demosaic.c:2174 ../src/iop/demosaic.c:2182
 msgid "demosaicing raw data method"
 msgstr "méthode de dématriçage"
 
-#: ../src/iop/demosaic.c:2142
+#: ../src/iop/demosaic.c:2179
 msgid "VNG"
 msgstr "VNG"
 
-#: ../src/iop/demosaic.c:2143
+#: ../src/iop/demosaic.c:2180
 msgid "Markesteijn 1-pass (slow)"
 msgstr "Markesteijn 1-passe (slow)"
 
-#: ../src/iop/demosaic.c:2144
+#: ../src/iop/demosaic.c:2181
 msgid "Markesteijn 3-pass (slower)"
 msgstr "Markesteijn 3-passes (plus lent)"
 
-#: ../src/iop/demosaic.c:2148
+#: ../src/iop/demosaic.c:2185
 msgid ""
 "threshold for edge-aware median.\n"
 "set to 0.0 to switch off.\n"
@@ -4413,59 +4420,59 @@ msgstr ""
 "mettre 0.0 pour désactiver\n"
 "mettre 1.0 pour ignorer les bords"
 
-#: ../src/iop/demosaic.c:2149
+#: ../src/iop/demosaic.c:2186
 msgid "edge threshold"
 msgstr "seuil "
 
-#: ../src/iop/demosaic.c:2153
+#: ../src/iop/demosaic.c:2190
 msgid "color smoothing"
 msgstr "lissage des couleurs"
 
-#: ../src/iop/demosaic.c:2156
+#: ../src/iop/demosaic.c:2193
 msgid "one time"
 msgstr "une passe"
 
-#: ../src/iop/demosaic.c:2157
+#: ../src/iop/demosaic.c:2194
 msgid "two times"
 msgstr "deux passes"
 
-#: ../src/iop/demosaic.c:2158
+#: ../src/iop/demosaic.c:2195
 msgid "three times"
 msgstr "trois passes"
 
-#: ../src/iop/demosaic.c:2159
+#: ../src/iop/demosaic.c:2196
 msgid "four times"
 msgstr "quatre passes"
 
-#: ../src/iop/demosaic.c:2160
+#: ../src/iop/demosaic.c:2197
 msgid "five times"
 msgstr "cinq passes"
 
-#: ../src/iop/demosaic.c:2161
+#: ../src/iop/demosaic.c:2198
 msgid "how many color smoothing median steps after demosaicing"
 msgstr "nombre de passes pour le lissage de couleur après le dématriçage"
 
-#: ../src/iop/demosaic.c:2165
+#: ../src/iop/demosaic.c:2202
 msgid "match greens"
 msgstr "correction des verts"
 
-#: ../src/iop/demosaic.c:2166
+#: ../src/iop/demosaic.c:2203
 msgid "disabled"
 msgstr "désactivée"
 
-#: ../src/iop/demosaic.c:2167
+#: ../src/iop/demosaic.c:2204
 msgid "local average"
 msgstr "moyenne locale"
 
-#: ../src/iop/demosaic.c:2168
+#: ../src/iop/demosaic.c:2205
 msgid "full average"
 msgstr "moyenne globale"
 
-#: ../src/iop/demosaic.c:2169
+#: ../src/iop/demosaic.c:2206
 msgid "full and local average"
 msgstr "moyenne globale et locale"
 
-#: ../src/iop/demosaic.c:2170
+#: ../src/iop/demosaic.c:2207
 msgid "green channels matching method"
 msgstr "méthode de calcul des verts"
 
@@ -4483,7 +4490,7 @@ msgstr "profil pour ISO %d trouvé"
 msgid "interpolated from ISO %d and %d"
 msgstr "interpolé depuis ISO %d et %d"
 
-#: ../src/iop/denoiseprofile.c:1725 ../src/iop/exposure.c:943
+#: ../src/iop/denoiseprofile.c:1725 ../src/iop/exposure.c:948
 #: ../src/iop/lens.c:2094 ../src/iop/levels.c:547
 msgid "mode"
 msgstr "mode"
@@ -4648,58 +4655,58 @@ msgstr "défauts de magic lantern"
 msgid "almost no clipping"
 msgstr "presque aucune troncature"
 
-#: ../src/iop/exposure.c:945 ../src/iop/levels.c:549
-#: ../src/iop/tonecurve.c:781
+#: ../src/iop/exposure.c:950 ../src/iop/levels.c:549
+msgctxt "mode"
 msgid "manual"
-msgstr "manuelle"
+msgstr "manuel"
 
-#: ../src/iop/exposure.c:948 ../src/iop/levels.c:552
-#: ../src/iop/vignette.c:1134
+#: ../src/iop/exposure.c:953 ../src/iop/levels.c:552
+#: ../src/iop/tonecurve.c:780 ../src/iop/vignette.c:1134
 msgid "automatic"
-msgstr "auto"
+msgstr "automatique"
 
-#: ../src/iop/exposure.c:957
+#: ../src/iop/exposure.c:962
 msgid "adjust the black level"
 msgstr "ajuste les niveaux de noir"
 
-#: ../src/iop/exposure.c:959 ../src/iop/levels.c:623
+#: ../src/iop/exposure.c:964 ../src/iop/levels.c:623
 msgid "black"
 msgstr "noir"
 
-#: ../src/iop/exposure.c:965
+#: ../src/iop/exposure.c:970
 msgid "adjust the exposure correction"
 msgstr "ajuste la correction d'exposition [IL]"
 
-#: ../src/iop/exposure.c:978
+#: ../src/iop/exposure.c:983
 msgid "percentage of bright values clipped out"
 msgstr "pourcentage de valeurs hautes tronquées"
 
-#: ../src/iop/exposure.c:988 ../src/iop/exposure.c:990
+#: ../src/iop/exposure.c:993 ../src/iop/exposure.c:995
 msgid "percentile"
 msgstr "centile"
 
-#: ../src/iop/exposure.c:994 ../src/iop/exposure.c:996
+#: ../src/iop/exposure.c:999 ../src/iop/exposure.c:1001
 msgid "target level"
 msgstr "valeur cible"
 
-#: ../src/iop/exposure.c:1000
+#: ../src/iop/exposure.c:1005
 msgid "histogram of"
 msgstr "histogramme de"
 
-#: ../src/iop/exposure.c:1002
+#: ../src/iop/exposure.c:1007
 msgid "pre-processed image"
 msgstr "image développée"
 
-#: ../src/iop/exposure.c:1005
+#: ../src/iop/exposure.c:1010
 msgid "source raw data"
 msgstr "données raw"
 
-#: ../src/iop/exposure.c:1013
+#: ../src/iop/exposure.c:1018
 msgid "computed EC: "
 msgstr "CE calculée: "
 
 #. This gets filled in by process
-#: ../src/iop/exposure.c:1017
+#: ../src/iop/exposure.c:1022
 msgid "what exposure correction have actually been used"
 msgstr "la correction d'exposition utilisée "
 
@@ -5535,7 +5542,7 @@ msgctxt "accel"
 msgid "noise threshold"
 msgstr "seuil de bruit"
 
-#: ../src/iop/rawdenoise.c:474
+#: ../src/iop/rawdenoise.c:472
 msgid "noise threshold"
 msgstr "seuil de bruit"
 
@@ -5893,6 +5900,11 @@ msgstr "double-cliquer pour réinitialiser"
 #: ../src/iop/tonecurve.c:779
 msgid "scale chroma"
 msgstr "échelle des canaux a et b"
+
+#: ../src/iop/tonecurve.c:781
+msgctxt "scale"
+msgid "manual"
+msgstr "manuelle"
 
 #: ../src/iop/tonecurve.c:783
 msgid ""
@@ -6460,44 +6472,44 @@ msgstr "non développées"
 msgid "not tagged"
 msgstr "non positionnée"
 
-#: ../src/libs/collect.c:1490
+#: ../src/libs/collect.c:1501
 msgid "local HDD"
 msgstr "disque dur local"
 
-#: ../src/libs/collect.c:1575 ../src/libs/collect.c:1589
-#: ../src/libs/collect.c:1979
+#: ../src/libs/collect.c:1586 ../src/libs/collect.c:1600
+#: ../src/libs/collect.c:1990
 msgid "clear this rule"
 msgstr "supprimer cette condition"
 
-#: ../src/libs/collect.c:1580
+#: ../src/libs/collect.c:1591
 msgid "clear this rule or add new rules"
 msgstr "supprimer cette condition ou en ajouter une nouvelle"
 
-#: ../src/libs/collect.c:1985
+#: ../src/libs/collect.c:1996
 msgid "narrow down search"
 msgstr "affiner la recherche"
 
-#: ../src/libs/collect.c:1989
+#: ../src/libs/collect.c:2000
 msgid "add more images"
 msgstr "inclure des images"
 
-#: ../src/libs/collect.c:1993
+#: ../src/libs/collect.c:2004
 msgid "exclude images"
 msgstr "exclure des images"
 
-#: ../src/libs/collect.c:1999
+#: ../src/libs/collect.c:2010
 msgid "change to: and"
 msgstr "changer en \"et\""
 
-#: ../src/libs/collect.c:2003
+#: ../src/libs/collect.c:2014
 msgid "change to: or"
 msgstr "changer en \"ou\""
 
-#: ../src/libs/collect.c:2007
+#: ../src/libs/collect.c:2018
 msgid "change to: except"
 msgstr "changer en \"mais sans\""
 
-#: ../src/libs/collect.c:2052
+#: ../src/libs/collect.c:2063
 #, no-c-format
 msgid "type your query, use `%' as wildcard"
 msgstr ""
@@ -8758,6 +8770,16 @@ msgstr "photo"
 #: ../src/imageio/format/webp.c:316
 msgid "graphic"
 msgstr "graphique"
+
+#, fuzzy
+#~ msgctxt "mode"
+#~ msgid "automatic"
+#~ msgstr "auto"
+
+#, fuzzy
+#~ msgctxt "scale"
+#~ msgid "auto"
+#~ msgstr "auto"
 
 #~ msgid "passthrough"
 #~ msgstr "aucune"
