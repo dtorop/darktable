@@ -49,11 +49,7 @@ typedef struct dt_iop_flip_params_t
 }
 dt_iop_flip_params_t;
 
-typedef struct dt_iop_flip_data_t
-{
-  dt_image_orientation_t orientation;
-}
-dt_iop_flip_data_t;
+typedef struct dt_iop_flip_params_t dt_iop_flip_data_t;
 
 typedef struct dt_iop_flip_global_data_t
 {
@@ -246,8 +242,6 @@ void modify_roi_out(struct dt_iop_module_t *self, struct dt_dev_pixelpipe_iop_t 
     roi_out->width  = roi_in->height;
     roi_out->height = roi_in->width;
   }
-
-  piece->pipe->iflipped = d->orientation & ORIENTATION_SWAP_XY;
 }
 
 // 2nd pass: which roi would this operation need as input to fill the given output region?
@@ -278,7 +272,7 @@ void modify_roi_in(struct dt_iop_module_t *self, struct dt_dev_pixelpipe_iop_t *
   roi_in->height = aabb_in[3]-aabb_in[1]+1;
 
   // sanity check.
-  float w = piece->pipe->iwidth * roi_out->scale, h = piece->pipe->iheight * roi_out->scale;
+  float w = piece->buf_in.width * roi_out->scale, h = piece->buf_in.height * roi_out->scale;
   roi_in->x = CLAMP(roi_in->x, 0, (int) floorf(w));
   roi_in->y = CLAMP(roi_in->y, 0, (int) floorf(h));
   roi_in->width = CLAMP(roi_in->width, 1, (int) ceilf(w) - roi_in->x);
@@ -402,8 +396,12 @@ void reload_defaults(dt_iop_module_t *self)
 {
   dt_iop_flip_params_t tmp = (dt_iop_flip_params_t)
   {
-    ORIENTATION_NULL
+    .orientation = ORIENTATION_NULL
   };
+
+  // we might be called from presets update infrastructure => there is no image
+  if(!self->dev) goto end;
+
   self->default_enabled = 1;
 
   if(self->dev->image_storage.legacy_flip.user_flip != 0 &&
@@ -423,6 +421,8 @@ void reload_defaults(dt_iop_module_t *self)
     }
     sqlite3_finalize(stmt);
   }
+
+end:
   memcpy(self->params, &tmp, sizeof(dt_iop_flip_params_t));
   memcpy(self->default_params, &tmp, sizeof(dt_iop_flip_params_t));
 }
@@ -440,7 +440,7 @@ void init(dt_iop_module_t *module)
   module->default_enabled = 1;
   module->params_size = sizeof(dt_iop_flip_params_t);
   module->gui_data = NULL;
-  module->priority = 245; // module order created by iop_dependencies.py, do not edit!
+  module->priority = 266; // module order created by iop_dependencies.py, do not edit!
 }
 
 void cleanup(dt_iop_module_t *module)
