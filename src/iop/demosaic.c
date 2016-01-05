@@ -1090,10 +1090,10 @@ static void vng_interpolate(float *out, const float *const in, const dt_iop_roi_
         int y2 = *cp++, x2 = *cp++;
         int weight = *cp++;
         int grads = *cp++;
-        int color = fcol(row + y1, col + x1, filters4, xtrans);
-        if(fcol(row + y2, col + x2, filters4, xtrans) != color) continue;
+        int color = fcol(row + roi_in->y + y1, col + roi_in->x + x1, filters4, xtrans);
+        if(fcol(row + roi_in->y + y2, col + roi_in->x + x2, filters4, xtrans) != color) continue;
         int diag
-            = (fcol(row, col + 1, filters4, xtrans) == color && fcol(row + 1, col, filters4, xtrans) == color)
+            = (fcol(row + roi_in->y, col + roi_in->x + 1, filters4, xtrans) == color && fcol(row + roi_in->y + 1, col + roi_in->x, filters4, xtrans) == color)
                   ? 2
                   : 1;
         if(abs(y1 - y2) == diag && abs(x1 - x2) == diag) continue;
@@ -1110,9 +1110,9 @@ static void vng_interpolate(float *out, const float *const in, const dt_iop_roi_
       {
         int y = *cp++, x = *cp++;
         *ip++ = (y * width + x) * 4;
-        int color = fcol(row, col, filters4, xtrans);
-        if(fcol(row + y, col + x, filters4, xtrans) != color
-           && fcol(row + y * 2, col + x * 2, filters4, xtrans) == color)
+        int color = fcol(row + roi_in->y, col + roi_in->x, filters4, xtrans);
+        if(fcol(row + roi_in->y + y, col + roi_in->x + x, filters4, xtrans) != color
+           && fcol(row + roi_in->y + y * 2, col + roi_in->x + x * 2, filters4, xtrans) == color)
           *ip++ = (y * width + x) * 8 + color;
         else
           *ip++ = 0;
@@ -1153,7 +1153,7 @@ static void vng_interpolate(float *out, const float *const in, const dt_iop_roi_
       }
       float thold = gmin + (gmax * 0.5f);
       float sum[4] = { 0.0f };
-      int color = fcol(row, col, filters4, xtrans);
+      int color = fcol(row + roi_in->y, col + roi_in->x, filters4, xtrans);
       int num = 0;
       for(g = 0; g < 8; g++, ip += 2) /* Average the neighbors */
       {
