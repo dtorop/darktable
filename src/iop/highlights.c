@@ -409,14 +409,16 @@ static inline void _interpolate_color(const void *const ivoid, void *const ovoid
 static void process_lch_xtrans(
     const void *const ivoid,
     void *const ovoid,
+    float *const processed_maximum,
     const int width,
     const int height,
     const float clip,
     const dt_iop_roi_t *const roi_in,
     const uint8_t (*const xtrans)[6])
 {
+  float pix_max = 0.0f;
 #ifdef _OPENMP
-#pragma omp parallel for schedule(static) default(none)
+#pragma omp parallel for schedule(static) default(none) shared(pix_max)
 #endif
   for(int j = 0; j < height; j++)
   {
@@ -457,12 +459,19 @@ static void process_lch_xtrans(
           out[0] = b * m + (1.0f-b) * in[0];
         }
         else
+        {
           out[0] = in[0];
+        }
+        if (out[0] > pix_max) pix_max = out[0];
       }
       out++;
       in++;
     }
   }
+  // highlight reconstruction increases the processed_max of all
+  // channels to the max of the three, since its job is to reconstruct
+  // potentially white pixels in the full range from thin air.
+  for (int c = 0; c < 3; ++c) processed_maximum[c] = pix_max;
 }
 
 static void process_clip_plain(dt_dev_pixelpipe_iop_t *piece, const void *const ivoid, void *const ovoid,
@@ -620,7 +629,7 @@ void process(struct dt_iop_module_t *self, dt_dev_pixelpipe_iop_t *piece, const 
     case DT_IOP_HIGHLIGHTS_LCH:
       if(filters == 9u)
       {
-        process_lch_xtrans(ivoid, ovoid, roi_out->width, roi_out->height, clip, roi_in, self->dev->image_storage.xtrans);
+        process_lch_xtrans(ivoid, ovoid, piece->pipe->processed_maximum, roi_out->width, roi_out->height, clip, roi_in, self->dev->image_storage.xtrans);
         break;
       }
 #ifdef _OPENMP
