@@ -924,10 +924,11 @@ static void xtrans_markesteijn_interpolate(float *out, const float *const in,
             maxval = (maxval < hm[d] ? hm[d] : maxval);
           }
           maxval -= maxval >> 3;
+          // for multi-pass, pick more homogenous pass
           for(int d = 0; d < ndir - 4; d++)
-            if(hm[d] < hm[d + 4])
+            if(hm[d] <= hm[d + 4])
               hm[d] = 0;
-            else if(hm[d] > hm[d + 4])
+            else
               hm[d + 4] = 0;
           float avg[4] = { 0.0f };
           for(int d = 0; d < ndir; d++)
