@@ -982,8 +982,8 @@ void dt_iop_clip_and_zoom_mosaic_third_size_xtrans(uint16_t *const out, const ui
   const float px_footprint = 1.f / roi_out->scale;
   const int samples = round(px_footprint / 3);
 
-  // X-Trans RGB weighting averages to 2:5:2 for each 3x3 cell
-  static const float div[3] = { 2.0, 5.0, 2.0 };
+  // X-Trans RGB weighting for each 3x3 cell
+  static const int rgb_weights[3] = { 2, 5, 2 };
 
 #ifdef _OPENMP
 #pragma omp parallel for default(none) schedule(static)
@@ -1017,7 +1017,7 @@ void dt_iop_clip_and_zoom_mosaic_third_size_xtrans(uint16_t *const out, const ui
           num++;
         }
 
-      *outc = (uint16_t)(col / (num * div[c]));
+      *outc = (uint16_t)(col / (num * rgb_weights[c]));
     }
   }
 }
