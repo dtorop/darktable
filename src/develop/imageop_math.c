@@ -1016,7 +1016,7 @@ void dt_iop_clip_and_zoom_mosaic_third_size_xtrans(uint16_t *const out, const ui
           num++;
         }
 
-      *outc = (uint16_t)(col / (num * rgb_weights[c]));
+      *outc = (uint16_t)((float) col / (num * rgb_weights[c]));
     }
   }
 }
