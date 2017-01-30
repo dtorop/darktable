@@ -182,6 +182,16 @@ void dt_iop_clip_and_zoom_mosaic_half_size_plain(uint16_t *const out, const uint
                                                  const dt_iop_roi_t *const roi_in, const int32_t out_stride,
                                                  const int32_t in_stride, const uint32_t filters)
 {
+  /*
+   *TODO
+    - allocate a 1-channel buffer the size of roi_in
+    - for each mosaic color:
+    -   copy pixels of that color to temp buffer
+    -   interpolate remaining pixels (bicubic? prob. not nearest neighbor)
+    -   downscale from temp buffer to out with a gaussian/mitchell weighted sample as per pamscale
+    -   QUESTION: do need to interpolate all remaining pixels first or could interpolate/cache on fly as downscale with some sort of ring buffer, so don't need a temp buffer?
+    - free temp buffer
+  */
   // adjust to pixel region and don't sample more than scale/2 nbs!
   // pixel footprint on input buffer, radius:
   const float px_footprint = 1.f / roi_out->scale;
