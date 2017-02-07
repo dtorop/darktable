@@ -177,6 +177,119 @@ int dt_iop_clip_and_zoom_roi_cl(int devid, cl_mem dev_out, cl_mem dev_in, const 
 
 #endif
 
+// FIXME: copied from demosaic iop and converted it us uint16_t, if really use then make a library?
+// FIXME: change to use just roi, not roi_in/roi_out
+// FIXME: if output goes through gaussian library, then actually need to convert it back to float as output
+// NOTE: keeping xtrans code here, in case xtrans can work with subsample/bandlimit
+// FIXME: taken from demsaic, and converted to work on uint16_t, but this code originally came from dcraw, where it was designed for ints and has some optimizations which we could use
+static void lin_interpolate_i(uint16_t *out, const uint16_t *const in, const dt_iop_roi_t *const roi_out,
+                              const dt_iop_roi_t *const roi_in, const uint32_t filters,
+                              const uint8_t (*const xtrans)[6])
+{
+  const int colors = (filters == 9) ? 3 : 4;
+
+// border interpolate
+#ifdef _OPENMP
+#pragma omp parallel for default(none) shared(out) schedule(static)
+#endif
+  for(int row = 0; row < roi_out->height; row++)
+    for(int col = 0; col < roi_out->width; col++)
+    {
+      uint32_t sum[4] = { 0 };
+      uint8_t count[4] = { 0 };
+      if(col == 1 && row >= 1 && row < roi_out->height - 1) col = roi_out->width - 1;
+      // average all the adjoining pixels inside image by color
+      for(int y = row - 1; y != row + 2; y++)
+        for(int x = col - 1; x != col + 2; x++)
+          if(y >= 0 && x >= 0 && y < roi_in->height && x < roi_in->width)
+          {
+            const int f = fcol(y + roi_in->y, x + roi_in->x, filters, xtrans);
+            sum[f] += in[y * roi_in->width + x];
+            count[f]++;
+          }
+      const int f = fcol(row + roi_in->y, col + roi_in->x, filters, xtrans);
+      // for current cell, copy the current sensor's color data,
+      // interpolate the other two colors from surrounding pixels of
+      // their color
+      for(int c = 0; c < colors; c++)
+      {
+        if(c != f && count[c] != 0)
+          out[4 * (row * roi_out->width + col) + c] = sum[c] / count[c];
+        else
+          out[4 * (row * roi_out->width + col) + c] = in[row * roi_in->width + col];
+      }
+    }
+
+  // build interpolation lookup table which for a given offset in the sensor
+  // lists neighboring pixels from which to interpolate:
+  // NUM_PIXELS                 # of neighboring pixels to read
+  // for (1..NUM_PIXELS):
+  //   OFFSET                   # in bytes from current pixel
+  //   WEIGHT                   # how much weight to give this neighbor
+  //   COLOR                    # sensor color
+  // # weights of adjoining pixels not of this pixel's color
+  // COLORA TOT_WEIGHT
+  // COLORB TOT_WEIGHT
+  // COLORPIX                   # color of center pixel
+
+  int(*const lookup)[16][32] = malloc((size_t)16 * 16 * 32 * sizeof(int));
+
+  const int size = (filters == 9) ? 6 : 16;
+  for(int row = 0; row < size; row++)
+    for(int col = 0; col < size; col++)
+    {
+      int *ip = lookup[row][col] + 1;
+      int sum[4] = { 0 };
+      const int f = fcol(row + roi_in->y, col + roi_in->x, filters, xtrans);
+      // make list of adjoining pixel offsets by weight & color
+      for(int y = -1; y <= 1; y++)
+        for(int x = -1; x <= 1; x++)
+        {
+          int weight = 1 << ((y == 0) + (x == 0));
+          const int color = fcol(row + y + roi_in->y, col + x + roi_in->x, filters, xtrans);
+          if(color == f) continue;
+          *ip++ = (roi_in->width * y + x);
+          *ip++ = weight;
+          *ip++ = color;
+          sum[color] += weight;
+        }
+      lookup[row][col][0] = (ip - lookup[row][col]) / 3; /* # of neighboring pixels found */
+      for(int c = 0; c < colors; c++)
+        if(c != f)
+        {
+          *ip++ = c;
+          *ip++ = sum[c];
+        }
+      *ip = f;
+    }
+
+#ifdef _OPENMP
+#pragma omp parallel for default(none) shared(out) schedule(static)
+#endif
+  for(int row = 1; row < roi_out->height - 1; row++)
+  {
+    uint16_t *buf = out + 4 * roi_out->width * row + 4;
+    const uint16_t *buf_in = in + roi_in->width * row + 1;
+    for(int col = 1; col < roi_out->width - 1; col++)
+    {
+      uint32_t sum[4] = { 0 };
+      int *ip = lookup[row % size][col % size];
+      // for each adjoining pixel not of this pixel's color, sum up its weighted values
+      for(int i = *ip++; i--; ip += 3) sum[ip[2]] += buf_in[ip[0]] * ip[1];
+      // for each interpolated color, load it into the pixel
+      for(int i = colors; --i; ip += 2)
+        // FIXME: a bit of a hack -- original dcraw version uses left shifts to avoid worries about division by 0
+        // FIXME: does the lin_interpolate in demosaic divide by 0?
+        buf[*ip] = ip[1] ? (sum[ip[0]] / ip[1]) : 0;
+      buf[*ip] = *buf_in;
+      buf += 4;
+      buf_in++;
+    }
+  }
+
+  free(lookup);
+}
+
 void dt_iop_clip_and_zoom_mosaic_half_size_plain(uint16_t *const out, const uint16_t *const in,
                                                  const dt_iop_roi_t *const roi_out,
                                                  const dt_iop_roi_t *const roi_in, const int32_t out_stride,
@@ -207,21 +320,19 @@ void dt_iop_clip_and_zoom_mosaic_half_size_plain(uint16_t *const out, const uint
   }
   const int rggbx = trggbx, rggby = trggby;
 
-  // Create a reverse lookup of FC(): for each CFA color, a list of
-  // offsets from start of a 2x2 block at which to find that
-  // color. First index is color, second is to the list of offsets,
-  // preceded by the number of offsets.
-  int clut[4][3] = {{0}};
-  for(int y = 0; y < 2; ++y)
-    for(int x = 0; x < 2; ++x)
-    {
-      const int c = FC(y + rggby, x + rggbx, filters);
-      assert(clut[c][0] < 2);
-      clut[c][++clut[c][0]] = x + y * in_stride;
-    }
+  // FIXME: could interpolate each channel one at a time, then downscale each separately?
+  // FIXME: could interpolate, bandlimit, and downscale in one pass via a lookup, obviating need to allocate memory?
+  uint16_t *const interp = (uint16_t *)dt_alloc_align(16, (size_t)roi_in->width * roi_in->height * 4 * sizeof(uint16_t));
+  if(!interp)
+  {
+    printf("[dt_iop_clip_and_zoom_mosaic_half_size_plain] not able to allocate intermediary interpolation buffer\n");
+    return;
+  }
+  lin_interpolate_i(interp, in, roi_in, roi_in, filters, NULL);
+  // FIXME: gaussian blur this buffer
 
 #ifdef _OPENMP
-#pragma omp parallel for default(none) shared(clut) schedule(static)
+#pragma omp parallel for default(none) schedule(static)
 #endif
   for(int y = 0; y < roi_out->height; y++)
   {
@@ -244,17 +355,13 @@ void dt_iop_clip_and_zoom_mosaic_half_size_plain(uint16_t *const out, const uint
       for(int yy = miny; yy < maxy; yy += 2)
         for(int xx = minx; xx < maxx; xx += 2)
         {
-          col += in[clut[c][1] + xx + in_stride * yy];
+          col += interp[4 * xx + 4 * in_stride * yy + c];
           num++;
-          if (clut[c][0] == 2)
-          { // G in RGGB CFA
-            col += in[clut[c][2] + xx + in_stride * yy];
-            num++;
-          }
         }
       *outc = col / num;
     }
   }
+  free(interp);
 }
 
 #if defined(__SSE__)
