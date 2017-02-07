@@ -182,7 +182,7 @@ int dt_iop_clip_and_zoom_roi_cl(int devid, cl_mem dev_out, cl_mem dev_in, const 
 // FIXME: if output goes through gaussian library, then actually need to convert it back to float as output
 // NOTE: keeping xtrans code here, in case xtrans can work with subsample/bandlimit
 // FIXME: taken from demsaic, and converted to work on uint16_t, but this code originally came from dcraw, where it was designed for ints and has some optimizations which we could use
-static void lin_interpolate_i(uint16_t *out, const uint16_t *const in, const dt_iop_roi_t *const roi_out,
+static void lin_interpolate_i(float *out, const uint16_t *const in, const dt_iop_roi_t *const roi_out,
                               const dt_iop_roi_t *const roi_in, const uint32_t filters,
                               const uint8_t (*const xtrans)[6])
 {
@@ -195,7 +195,7 @@ static void lin_interpolate_i(uint16_t *out, const uint16_t *const in, const dt_
   for(int row = 0; row < roi_out->height; row++)
     for(int col = 0; col < roi_out->width; col++)
     {
-      uint32_t sum[4] = { 0 };
+      float sum[4] = { 0.0f };
       uint8_t count[4] = { 0 };
       if(col == 1 && row >= 1 && row < roi_out->height - 1) col = roi_out->width - 1;
       // average all the adjoining pixels inside image by color
@@ -268,11 +268,11 @@ static void lin_interpolate_i(uint16_t *out, const uint16_t *const in, const dt_
 #endif
   for(int row = 1; row < roi_out->height - 1; row++)
   {
-    uint16_t *buf = out + 4 * roi_out->width * row + 4;
+    float *buf = out + 4 * roi_out->width * row + 4;
     const uint16_t *buf_in = in + roi_in->width * row + 1;
     for(int col = 1; col < roi_out->width - 1; col++)
     {
-      uint32_t sum[4] = { 0 };
+      float sum[4] = { 0.0f };
       int *ip = lookup[row % size][col % size];
       // for each adjoining pixel not of this pixel's color, sum up its weighted values
       for(int i = *ip++; i--; ip += 3) sum[ip[2]] += buf_in[ip[0]] * ip[1];
@@ -280,7 +280,7 @@ static void lin_interpolate_i(uint16_t *out, const uint16_t *const in, const dt_
       for(int i = colors; --i; ip += 2)
         // FIXME: a bit of a hack -- original dcraw version uses left shifts to avoid worries about division by 0
         // FIXME: does the lin_interpolate in demosaic divide by 0?
-        buf[*ip] = ip[1] ? (sum[ip[0]] / ip[1]) : 0;
+        buf[*ip] = ip[1] ? (sum[ip[0]] / ip[1]) : 0.0f;
       buf[*ip] = *buf_in;
       buf += 4;
       buf_in++;
@@ -322,7 +322,7 @@ void dt_iop_clip_and_zoom_mosaic_half_size_plain(uint16_t *const out, const uint
 
   // FIXME: could interpolate each channel one at a time, then downscale each separately?
   // FIXME: could interpolate, bandlimit, and downscale in one pass via a lookup, obviating need to allocate memory?
-  uint16_t *const interp = (uint16_t *)dt_alloc_align(16, (size_t)roi_in->width * roi_in->height * 4 * sizeof(uint16_t));
+  float *const interp = (float *)dt_alloc_align(16, (size_t)roi_in->width * roi_in->height * 4 * sizeof(float));
   if(!interp)
   {
     printf("[dt_iop_clip_and_zoom_mosaic_half_size_plain] not able to allocate intermediary interpolation buffer\n");
@@ -350,7 +350,7 @@ void dt_iop_clip_and_zoom_mosaic_half_size_plain(uint16_t *const out, const uint
 
       const int c = FC(y, x, filters);
       int num = 0;
-      uint32_t col = 0;
+      float col = 0;
 
       for(int yy = miny; yy < maxy; yy += 2)
         for(int xx = minx; xx < maxx; xx += 2)
@@ -358,7 +358,7 @@ void dt_iop_clip_and_zoom_mosaic_half_size_plain(uint16_t *const out, const uint
           col += interp[4 * xx + 4 * in_stride * yy + c];
           num++;
         }
-      *outc = col / num;
+      *outc = (uint16_t)roundf(col / num);
     }
   }
   free(interp);
