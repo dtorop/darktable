@@ -32,6 +32,7 @@
 #include "common/darktable.h"        // for darktable, darktable_t, dt_code...
 #include "common/imageio.h"          // for FILTERS_ARE_4BAYER
 #include "common/interpolation.h"    // for dt_interpolation_new, dt_interp...
+#include "common/gaussian.h"
 #include "develop/imageop.h"         // for dt_iop_roi_t
 
 void dt_iop_flip_and_zoom_8(const uint8_t *in, int32_t iw, int32_t ih, uint8_t *out, int32_t ow, int32_t oh,
@@ -309,27 +310,37 @@ void dt_iop_clip_and_zoom_mosaic_half_size_plain(uint16_t *const out, const uint
   // pixel footprint on input buffer, radius:
   const float px_footprint = 1.f / roi_out->scale;
 
-  // move to origin point 01 of a 2x2 CFA block
-  // (RGGB=0112 or CYGM=0132)
-  int trggbx = 0, trggby = 0;
-  if(FC(trggby, trggbx + 1, filters) != 1) trggbx++;
-  if(FC(trggby, trggbx, filters) != 0)
-  {
-    trggbx = (trggbx + 1) & 1;
-    trggby++;
-  }
-  const int rggbx = trggbx, rggby = trggby;
-
   // FIXME: could interpolate each channel one at a time, then downscale each separately?
   // FIXME: could interpolate, bandlimit, and downscale in one pass via a lookup, obviating need to allocate memory?
-  float *const interp = (float *)dt_alloc_align(16, (size_t)roi_in->width * roi_in->height * 4 * sizeof(float));
-  if(!interp)
+  float *const buf = (float *)dt_alloc_align(16, (size_t)roi_in->width * roi_in->height * 4 * 2 * sizeof(float));
+  if(!buf)
   {
-    printf("[dt_iop_clip_and_zoom_mosaic_half_size_plain] not able to allocate intermediary interpolation buffer\n");
+    printf("[dt_iop_clip_and_zoom_mosaic_half_size_plain] not able to allocate intermediary buffer\n");
     return;
   }
+  float *const interp = buf;
+  float *const blur = buf + (size_t)roi_in->width * roi_in->height * 4;
   lin_interpolate_i(interp, in, roi_in, roi_in, filters, NULL);
-  // FIXME: gaussian blur this buffer
+
+  // FIXME: what is the real max/min of a raw file?
+  const float RGBmax[] = { INFINITY, INFINITY, INFINITY, INFINITY };
+  const float RGBmin[] = { 0.0f, 0.0f, 0.0f, 0.0f };
+  // FIXME: should colors always be 4, or 3 if RGGB?
+  const int channels = 4;
+  // FIXME: is this the right sigma?
+  const float sigma = px_footprint * 1.0f;
+  // FIXME: what is right order?
+  const dt_gaussian_order_t order = DT_IOP_GAUSSIAN_ZERO;
+  // FIXME: do want to use gaussian or bilateral or some other bandwidth limit function?
+  dt_gaussian_t *g = dt_gaussian_init(roi_in->width, roi_in->height, channels, RGBmax, RGBmin, sigma, order);
+  if(!g)
+  {
+    printf("[dt_iop_clip_and_zoom_mosaic_half_size_plain] not able to init gaussian\n");
+    free(buf);
+    return;
+  }
+  dt_gaussian_blur_4c(g, interp, blur);
+  dt_gaussian_free(g);
 
 #ifdef _OPENMP
 #pragma omp parallel for default(none) schedule(static)
@@ -337,31 +348,14 @@ void dt_iop_clip_and_zoom_mosaic_half_size_plain(uint16_t *const out, const uint
   for(int y = 0; y < roi_out->height; y++)
   {
     uint16_t *outc = out + out_stride * y;
-
-    const float fy = (y + roi_out->y) * px_footprint;
-    const int miny = (CLAMPS((int)floorf(fy - px_footprint), 0, roi_in->height-3) & ~1u) + rggby;
-    const int maxy = MIN(roi_in->height-1, (int)ceilf(fy + px_footprint));
-
+    const int fy = roundf((y + roi_out->y) * px_footprint);
     float fx = roi_out->x * px_footprint;
     for(int x = 0; x < roi_out->width; x++, fx += px_footprint, outc++)
-    {
-      const int minx = (CLAMPS((int)floorf(fx - px_footprint), 0, roi_in->width-3) & ~1u) + rggbx;
-      const int maxx = MIN(roi_in->width-1, (int)ceilf(fx + px_footprint));
-
-      const int c = FC(y, x, filters);
-      int num = 0;
-      float col = 0;
-
-      for(int yy = miny; yy < maxy; yy += 2)
-        for(int xx = minx; xx < maxx; xx += 2)
-        {
-          col += interp[4 * xx + 4 * in_stride * yy + c];
-          num++;
-        }
-      *outc = (uint16_t)roundf(col / num);
-    }
+      *outc = (uint16_t)blur[4 * (int)roundf(fx) + 4 * in_stride * fy + FC(y, x, filters)];
   }
-  free(interp);
+  free(buf);
+  // FIXME: highlight reconstruction fails for downsampled output. From LebedevRI: "The problem is, if you average a pixel slightly above clipping threshold (1.0, but here the threshold will be different per-channel, say 15000), and a pixel below threshold, the result will be below clipping threshold (thus highlight clipping won't touch it), but it also will be wrong, as you can see."
+  // TODO: perhaps, as in a prior version of downsample code, if are sampling various pixels and any is over a certain threshold, set all of them to that threshold?
 }
 
 #if defined(__SSE__)
