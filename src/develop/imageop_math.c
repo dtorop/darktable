@@ -178,14 +178,11 @@ int dt_iop_clip_and_zoom_roi_cl(int devid, cl_mem dev_out, cl_mem dev_in, const 
 
 #endif
 
-// FIXME: copied from demosaic iop and converted it us uint16_t, if really use then make a library?
-// FIXME: change to use just roi, not roi_in/roi_out
-// FIXME: if output goes through gaussian library, then actually need to convert it back to float as output
 // NOTE: keeping xtrans code here, in case xtrans can work with subsample/bandlimit
-// FIXME: taken from demsaic, and converted to work on uint16_t, but this code originally came from dcraw, where it was designed for ints and has some optimizations which we could use
-static void lin_interpolate_i(float *out, const uint16_t *const in, const dt_iop_roi_t *const roi_out,
-                              const dt_iop_roi_t *const roi_in, const uint32_t filters,
-                              const uint8_t (*const xtrans)[6])
+// FIXME: taken from demosaic, and converted to work on uint16_t, then back to outputing float, but this code originally came from dcraw, where it was designed for ints and has some optimizations which we could use if it stays with ints (which it probably won't)
+// FIXME: do need to factor in roi->x and roi->y, or can assume they are always 0?
+static void lin_interpolate_i(float *out, const uint16_t *const in, const dt_iop_roi_t *const roi,
+                              const uint32_t filters, const uint8_t (*const xtrans)[6])
 {
   const int colors = (filters == 9) ? 3 : 4;
 
@@ -193,31 +190,31 @@ static void lin_interpolate_i(float *out, const uint16_t *const in, const dt_iop
 #ifdef _OPENMP
 #pragma omp parallel for default(none) shared(out) schedule(static)
 #endif
-  for(int row = 0; row < roi_out->height; row++)
-    for(int col = 0; col < roi_out->width; col++)
+  for(int row = 0; row < roi->height; row++)
+    for(int col = 0; col < roi->width; col++)
     {
       float sum[4] = { 0.0f };
       uint8_t count[4] = { 0 };
-      if(col == 1 && row >= 1 && row < roi_out->height - 1) col = roi_out->width - 1;
+      if(col == 1 && row >= 1 && row < roi->height - 1) col = roi->width - 1;
       // average all the adjoining pixels inside image by color
       for(int y = row - 1; y != row + 2; y++)
         for(int x = col - 1; x != col + 2; x++)
-          if(y >= 0 && x >= 0 && y < roi_in->height && x < roi_in->width)
+          if(y >= 0 && x >= 0 && y < roi->height && x < roi->width)
           {
-            const int f = fcol(y + roi_in->y, x + roi_in->x, filters, xtrans);
-            sum[f] += in[y * roi_in->width + x];
+            const int f = fcol(y + roi->y, x + roi->x, filters, xtrans);
+            sum[f] += in[y * roi->width + x];
             count[f]++;
           }
-      const int f = fcol(row + roi_in->y, col + roi_in->x, filters, xtrans);
+      const int f = fcol(row + roi->y, col + roi->x, filters, xtrans);
       // for current cell, copy the current sensor's color data,
       // interpolate the other two colors from surrounding pixels of
       // their color
       for(int c = 0; c < colors; c++)
       {
         if(c != f && count[c] != 0)
-          out[4 * (row * roi_out->width + col) + c] = sum[c] / count[c];
+          out[4 * (row * roi->width + col) + c] = sum[c] / count[c];
         else
-          out[4 * (row * roi_out->width + col) + c] = in[row * roi_in->width + col];
+          out[4 * (row * roi->width + col) + c] = in[row * roi->width + col];
       }
     }
 
@@ -241,15 +238,15 @@ static void lin_interpolate_i(float *out, const uint16_t *const in, const dt_iop
     {
       int *ip = lookup[row][col] + 1;
       int sum[4] = { 0 };
-      const int f = fcol(row + roi_in->y, col + roi_in->x, filters, xtrans);
+      const int f = fcol(row + roi->y, col + roi->x, filters, xtrans);
       // make list of adjoining pixel offsets by weight & color
       for(int y = -1; y <= 1; y++)
         for(int x = -1; x <= 1; x++)
         {
           int weight = 1 << ((y == 0) + (x == 0));
-          const int color = fcol(row + y + roi_in->y, col + x + roi_in->x, filters, xtrans);
+          const int color = fcol(row + y + roi->y, col + x + roi->x, filters, xtrans);
           if(color == f) continue;
-          *ip++ = (roi_in->width * y + x);
+          *ip++ = (roi->width * y + x);
           *ip++ = weight;
           *ip++ = color;
           sum[color] += weight;
@@ -267,11 +264,11 @@ static void lin_interpolate_i(float *out, const uint16_t *const in, const dt_iop
 #ifdef _OPENMP
 #pragma omp parallel for default(none) shared(out) schedule(static)
 #endif
-  for(int row = 1; row < roi_out->height - 1; row++)
+  for(int row = 1; row < roi->height - 1; row++)
   {
-    float *buf = out + 4 * roi_out->width * row + 4;
-    const uint16_t *buf_in = in + roi_in->width * row + 1;
-    for(int col = 1; col < roi_out->width - 1; col++)
+    float *buf = out + 4 * roi->width * row + 4;
+    const uint16_t *buf_in = in + roi->width * row + 1;
+    for(int col = 1; col < roi->width - 1; col++)
     {
       float sum[4] = { 0.0f };
       int *ip = lookup[row % size][col % size];
@@ -291,6 +288,17 @@ static void lin_interpolate_i(float *out, const uint16_t *const in, const dt_iop
   free(lookup);
 }
 
+// Take an image mosaiced with a 2x2 CFA, reduce it in scale, and
+// output it mosaiced with the same CFA. The catch is that a straight
+// downscaling will produce edge artifacts which will look
+// particularly bad when the image is output mosaiced. Hence the image
+// needs to be filtered to bandlimit it and remove high frequency
+// detail. The best solution seems to be to Gaussian blur the image
+// while downsampling it. But the Gaussian blur must act per-channel,
+// and hence a quick demosaiced version of the image must be
+// calculated for the downscale to work.
+// QUESTION: is it possible to naively downsample each 2x2 block to one 4-channel pixel, then Gaussian blur with sigma tuned to the full downscale needed (hence px_footprint/2 for the downsampled), then downssample the result back to a CFA? -- and in the faster version, the Gaussian blur would know which pixel(s) to contribute to the blur, weighted by CFA position?
+// FIXME: the function name is no longer accurate
 void dt_iop_clip_and_zoom_mosaic_half_size_plain(uint16_t *const out, const uint16_t *const in,
                                                  const dt_iop_roi_t *const roi_out,
                                                  const dt_iop_roi_t *const roi_in, const int32_t out_stride,
@@ -320,18 +328,16 @@ void dt_iop_clip_and_zoom_mosaic_half_size_plain(uint16_t *const out, const uint
   }
   float *const interp = buf;
   float *const blur = buf + (size_t)roi_in->width * roi_in->height * 4;
-  lin_interpolate_i(interp, in, roi_in, roi_in, filters, NULL);
+  lin_interpolate_i(interp, in, roi_in, filters, NULL);
 
   // FIXME: what is the real max/min of a raw file?
   const float RGBmax[] = { INFINITY, INFINITY, INFINITY, INFINITY };
   const float RGBmin[] = { 0.0f, 0.0f, 0.0f, 0.0f };
-  // FIXME: should colors always be 4, or 3 if RGGB?
-  const int channels = 4;
-  // FIXME: is this the right sigma?
-  const float sigma = px_footprint * 1.0f;
-  // FIXME: what is right order?
+  const int channels = 4;  // even if RGGB, intemediary data is still 4 channel
+  const float sigma = px_footprint;
   const dt_gaussian_order_t order = DT_IOP_GAUSSIAN_ZERO;
   // FIXME: do want to use gaussian or bilateral or some other bandwidth limit function?
+  // FIXME: dt's gaussian is an IIR recursive implementation which is great for processing an entire image, but not much help if want to sample only every px_footprint pixels. Is there a better implementation for the downsampling case?
   dt_gaussian_t *g = dt_gaussian_init(roi_in->width, roi_in->height, channels, RGBmax, RGBmin, sigma, order);
   if(!g)
   {
