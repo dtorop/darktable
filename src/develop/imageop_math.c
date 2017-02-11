@@ -292,7 +292,7 @@ static void lin_interpolate_i(float *out, const uint16_t *const in, const dt_iop
 // zoom's implementation of Gaussian filter
 // FIXME: move inline into blur & decimate?
 // FIXME: should calculate as a double or a float?
-static float filt_gaussian(const float x)	/* Gaussian (infinite) */
+static float filt_gaussian(const float x, const float sigma)	/* Gaussian (infinite) */
 {
   // FIXME: precalculate constants as in Imagemagick?
   // this is with sigma = 1/2
@@ -300,7 +300,7 @@ static float filt_gaussian(const float x)	/* Gaussian (infinite) */
 }
 #else
 // imagemagick's implementation of Gaussian
-static float filt_gaussian(const float x)
+static float filt_gaussian(const float x, const float sigma)
 {
   /*
     Gaussian with a sigma = 1/2 (or as user specified)
@@ -332,13 +332,42 @@ static float filt_gaussian(const float x)
     without the filter 'missing' pixels because the support becomes too
     small.
   */
-  const float sigma = 1.0f/2.0f;
+  //const float sigma = 1.0f/2.0f;
   const float coeff1 = 1.0f/(2.0f * sigma * sigma);
   // QUESTION: this is optimized to remove multiplication as normalization gets rid of it anyhow?
   // FIXME: does need to be double?
   return(exp((double)(-coeff1*x*x)));
 }
 #endif
+
+// calculate weights for filter centered on pos, returning its actual width
+static int calc_weights(const int pos, const int max_pos,
+                        const float factor, const float support, const float scale,
+                        const float blur, const float sigma,
+                        float *const contrib_weight, int *const contrib_pix)
+{
+  // FIXME: is kernel close enough for each row (& col.) that can fake something constant and use that to multiply?
+  float density = 0.0f;
+  // FIXME: do need to keep adding 0.5f to go to middle of pixel?
+  const float bisect = (pos+0.5f)/factor;
+  const int start = MAX(bisect - support + 0.5f, 0.0f);
+  const int stop = MIN(bisect + support + 0.5f, max_pos);
+  const int filt_width = stop - start;
+  assert(filt_width > 0);
+  for (int n = 0; n < filt_width; ++n)
+  {
+    // FIXME: contrib_pix is just a sequence from start, hence instead of storing it could use a counter?
+    contrib_pix[n] = start + n;
+    contrib_weight[n] = filt_gaussian(scale * ((float) (start + n)-bisect+0.5f) / blur, sigma);
+    density += contrib_weight[n];
+  }
+  assert(density != 0.0f);
+  if ((pos % 10) == 0) printf("pos %d bisect %f start %d stop %d filt_width %d density %f\n", pos, bisect, start, stop, filt_width, density);
+  for (int i = 0; i < filt_width; ++i)
+    contrib_weight[i] /= density;  // FIXME: optimize by pre-calculating reciprocal of density?
+  if ((pos % 10) == 0) for (int n = 0; n < filt_width; ++n) printf("  %d: %f\n", contrib_pix[n], contrib_weight[n]);
+  return filt_width;
+}
 
 // Gaussian blur and downscale algorithm based on two-pass version in
 // Imagemagick, which goes back to Paul Heckbert's zoom
@@ -391,16 +420,17 @@ void blur_and_decimate(uint16_t *const out, const float *const interp,
   // time.
   // FIXME: use a smaller support?
   const float gaussian_suport = 2.0f;
-  const float blur = 1.0f;
+  const float blur = 1.0f; // 1.0f / roi_out->scale;
+  const float sigma = 1.0f / 2.0f;
   const float support = blur * gaussian_suport / factor;
   // too small support won't even result in nearest neighbor
   assert(support >= 0.5f);
   // FIXME: can just use factor? or roi_out->scale?
   const float scale = factor;
   const int kern_width = 2.0f * support + 3.0f;
-  printf("scale is %f support is %f kern_width is %d\n", scale, support, kern_width);
+  printf("scale is %f sigma is %f support is %f kern_width is %d\n", scale, sigma, support, kern_width);
 
-  // FIXME: intermediary buffer by Heckbert's zoom algorithm can be roi_in->width * filter width
+  // FIXME: intermediary buffer by Heckbert's zoom algorithm can be roi_in->width * filter width zoom.c:634
   // FIXME: only need 3 channel for RGGB, or does aligning on 4s counterbalance that?
   float *const buf = (float *)dt_alloc_align(16, ((size_t)roi_in->width * roi_out->height * 4 + kern_width) * sizeof(float) + kern_width * sizeof(int));
   if(!buf)
@@ -415,32 +445,14 @@ void blur_and_decimate(uint16_t *const out, const float *const interp,
   float *const contrib_weight = buf + ((size_t)roi_in->width * roi_out->height * 4);
   int *const contrib_pix = (int*)(contrib_weight + kern_width);
 
+  // FIXME: imagemagick uses epsilon, should here?
+
+  // Gaussian blur is separable
+  // FIXME: use formula on zoom.c:314 or just testing to see of xy or yx is faster
   // vertical filter
   for (int y=0; y < roi_out->height; y++)
   {
-    // FIXME: spin kernel calculation off into own function as is same for vert & hori cases except for max max limit is rows/cols and bisect depends on x/y?
-    // FIXME: is kernel close enough for each row (& col.) that can fake something constant and use that to multiply?
-    float density = 0.0f;
-    // FIXME: do need to keep adding 0.5f to go to middle of pixel?
-    const float bisect = (y+0.5f)/factor;
-    const int start = MAX(bisect - support + 0.5f, 0.0f);
-    const int stop = MIN(bisect + support + 0.5f, roi_in->height);
-    const int filt_width = stop - start;
-    assert(filt_width > 0);
-    for (int n = 0; n < filt_width; ++n)
-    {
-      // FIXME: contrib_pix is just a sequence from start, hence instead of storing it could use a counter?
-      contrib_pix[n] = start + n;
-      contrib_weight[n] = filt_gaussian(scale * ((float) (start + n)-bisect+0.5f) / blur);
-      density += contrib_weight[n];
-    }
-    assert(density != 0.0f);
-    //printf("y %d bisect %f start %d stop %d filt_width %d density %f\n", y, bisect, start, stop, filt_width, density);
-    if (density != 1.0f) // FIXME: always true?
-      for (int i = 0; i < filt_width; ++i)
-        contrib_weight[i] /= density;  // FIXME: optimize by pre-calculating reciprocal of density?
-    //for (int n = 0; n < filt_width; ++n) printf("  %d: %f\n", contrib_pix[n], contrib_weight[n]);
-
+    const int filt_width = calc_weights(y, roi_in->height, factor, support, scale, blur, sigma, contrib_weight, contrib_pix);
     float *outc = intermed + roi_in->width * y * 4;
     for (int x=0; x < roi_in->width; ++x)
     {
@@ -465,25 +477,7 @@ void blur_and_decimate(uint16_t *const out, const float *const interp,
   // horizontal filter
   for (int x=0; x < roi_out->width; x++)
   {
-    float density = 0.0f;
-    const float bisect = (x+0.5f)/factor;
-    const int start = MAX(bisect - support + 0.5f, 0.0f);
-    const int stop = MIN(bisect + support + 0.5f, roi_in->width);
-    const int filt_width = stop - start;
-    assert(filt_width > 0);
-    for (int n = 0; n < filt_width; ++n)
-    {
-      contrib_pix[n] = start + n;
-      contrib_weight[n] = filt_gaussian(scale * ((float) (start + n)-bisect+0.5f) / blur);
-      density += contrib_weight[n];
-    }
-    //printf("x %d bisect %f start %d stop %d filt_width %d density %f\n", x, bisect, start, stop, filt_width, density);
-    assert(density != 0.0f);
-    if (density != 1.0f)  // FIXME: always true?
-      for (int i = 0; i < filt_width; ++i)
-        contrib_weight[i] /= density;
-    //for (int n = 0; n < filt_width; ++n) printf("  %d: %f\n", contrib_pix[n], contrib_weight[n]);
-
+    const int filt_width = calc_weights(x, roi_in->width, factor, support, scale, blur, sigma, contrib_weight, contrib_pix);
     uint16_t *outc = out + x;
     for (int y=0; y < roi_out->height; ++y, outc += out_stride)
     {
