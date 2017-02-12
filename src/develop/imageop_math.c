@@ -298,7 +298,7 @@ static float filt_gaussian(const float x, const float sigma)
 // calculate weights for filter centered on pos, returning its actual width
 static int calc_weights(const int pos, const int max_pos, const float factor,
                         const float support, const float sigma,
-                        float *const contrib_weight, int *const contrib_pix)
+                        float *const weights, int *const first_pos)
 {
   // FIXME: is kernel close enough for each row (& col.) that can fake something constant and use that to multiply?
   float density = 0.0f;
@@ -310,17 +310,16 @@ static int calc_weights(const int pos, const int max_pos, const float factor,
   assert(filt_width > 0);
   for (int n = 0; n < filt_width; ++n)
   {
-    // FIXME: contrib_pix is just a sequence from start, hence instead of storing it could use a counter?
-    contrib_pix[n] = start + n;
     // FIXME: make filt_gaussian inline?
-    contrib_weight[n] = filt_gaussian((start + n)-bisect+0.5f, sigma);
-    density += contrib_weight[n];
+    weights[n] = filt_gaussian((start + n)-bisect+0.5f, sigma);
+    density += weights[n];
   }
   assert(density != 0.0f);
-  if ((pos % 10) == 0) printf("pos %d bisect %f start %d stop %d filt_width %d density %f\n", pos, bisect, start, stop, filt_width, density);
+  if ((pos % 100) == 0) printf("pos %d bisect %f start %d stop %d filt_width %d density %f\n", pos, bisect, start, stop, filt_width, density);
   for (int i = 0; i < filt_width; ++i)
-    contrib_weight[i] /= density;  // FIXME: optimize by pre-calculating reciprocal of density?
-  if ((pos % 10) == 0) for (int n = 0; n < filt_width; ++n) printf("  %d: %f\n", contrib_pix[n], contrib_weight[n]);
+    weights[i] /= density;  // FIXME: optimize by pre-calculating reciprocal of density?
+  if ((pos % 100) == 0) for (int n = 0; n < filt_width; ++n) printf("  %d: %f\n", start + n, weights[n]);
+  *first_pos = start;
   return filt_width;
 }
 
@@ -359,7 +358,7 @@ void blur_and_decimate(uint16_t *const out, const float *const interp,
 
   // FIXME: intermediary buffer by Heckbert's zoom algorithm can be roi_in->width * filter width zoom.c:634
   // FIXME: only need 3 channel for RGGB, or does aligning on 4s counterbalance that?
-  float *const buf = (float *)dt_alloc_align(16, ((size_t)roi_in->width * roi_out->height * 4 + kern_width) * sizeof(float) + kern_width * sizeof(int));
+  float *const buf = (float *)dt_alloc_align(16, ((size_t)roi_in->width * roi_out->height * 4 + kern_width) * sizeof(float));
   if(!buf)
   {
     printf("[blur_and_decimate] not able to allocate buffer\n");
@@ -367,8 +366,7 @@ void blur_and_decimate(uint16_t *const out, const float *const interp,
   }
   float *const intermed = buf;
 
-  float *const contrib_weight = buf + ((size_t)roi_in->width * roi_out->height * 4);
-  int *const contrib_pix = (int*)(contrib_weight + kern_width);
+  float *const weights = buf + ((size_t)roi_in->width * roi_out->height * 4);
 
   // FIXME: imagemagick uses epsilon, should here?
 
@@ -378,15 +376,16 @@ void blur_and_decimate(uint16_t *const out, const float *const interp,
   // vertical filter, downsample rows
   for (int y=0; y < roi_out->height; y++)
   {
-    const int filt_width = calc_weights(y, roi_in->height, roi_out->scale, support, sigma, contrib_weight, contrib_pix);
+    int starty;
+    const int filt_width = calc_weights(y, roi_in->height, roi_out->scale, support, sigma, weights, &starty);
     float *outp = intermed + roi_in->width * y * 4;
     for (int x=0; x < roi_in->width; ++x)
     {
       float sum[4] = { 0.0f };
-      const float *inp = interp + 4 * (contrib_pix[0] * roi_in->width + x);
+      const float *inp = interp + 4 * (starty * roi_in->width + x);
       for (int i=0; i < filt_width; ++i, inp += 4 * roi_in->width)
       {
-        const float weight = contrib_weight[i];  // FIXME: unneeded optimization?
+        const float weight = weights[i];  // FIXME: unneeded optimization?
         // FIXME: only need to go to three for all except CYGM?
         for (int c=0; c < 4; ++c)
           sum[c] += inp[c] * weight;
@@ -399,17 +398,17 @@ void blur_and_decimate(uint16_t *const out, const float *const interp,
   // horizontal filter, downsample columns
   for (int x=0; x < roi_out->width; x++)
   {
-    const int filt_width = calc_weights(x, roi_in->width, roi_out->scale, support, sigma, contrib_weight, contrib_pix);
+    int startx;
+    const int filt_width = calc_weights(x, roi_in->width, roi_out->scale, support, sigma, weights, &startx);
     uint16_t *outp = out + x;
     for (int y=0; y < roi_out->height; ++y, outp += out_stride)
     {
       // this time we output to a mosaic and use ints
       const int c = FC(y, x, filters);
       float sum = 0.0f;
-      const float *inp = intermed + 4 * (y * roi_in->width + contrib_pix[0]) + c;
+      const float *inp = intermed + 4 * (y * roi_in->width + startx) + c;
       for (int i=0; i < filt_width; ++i, inp += 4)
-        // FIXME: if always offset from 0 pixel, calculate contrib_pix that way
-        sum += *inp * contrib_weight[i];
+        sum += *inp * weights[i];
       *outp = (uint16_t)sum;
     }
   }
