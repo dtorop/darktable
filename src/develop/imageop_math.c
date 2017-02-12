@@ -296,7 +296,7 @@ static float filt_gaussian(const float x, const float sigma)	/* Gaussian (infini
 {
   // FIXME: precalculate constants as in Imagemagick?
   // this is with sigma = 1/2
-  return exp(-2.0f*x*x)*sqrt(2.0f/M_PI);
+  return expf(-2.0f*x*x)*sqrtf(2.0f/M_PI);
 }
 #else
 // imagemagick's implementation of Gaussian
@@ -337,6 +337,7 @@ static float filt_gaussian(const float x, const float sigma)
   // QUESTION: this is optimized to remove multiplication as normalization gets rid of it anyhow?
   // FIXME: does need to be double?
   return(exp((double)(-coeff1*x*x)));
+  //return(expf(-coeff1*x*x));
 }
 #endif
 
@@ -358,7 +359,8 @@ static int calc_weights(const int pos, const int max_pos,
   {
     // FIXME: contrib_pix is just a sequence from start, hence instead of storing it could use a counter?
     contrib_pix[n] = start + n;
-    contrib_weight[n] = filt_gaussian(scale * ((float) (start + n)-bisect+0.5f) / blur, sigma);
+    //contrib_weight[n] = filt_gaussian(scale * ((float) (start + n)-bisect+0.5f) / blur, sigma);
+    contrib_weight[n] = filt_gaussian(((float) (start + n)-bisect+0.5f) / blur, sigma);
     density += contrib_weight[n];
   }
   assert(density != 0.0f);
@@ -419,10 +421,19 @@ void blur_and_decimate(uint16_t *const out, const float *const interp,
   // 4*sigma. Larger support increases both quality and procesing
   // time.
   // FIXME: use a smaller support?
-  const float gaussian_suport = 2.0f;
+  // FIXME: Filter size should double for each ½ size reduction. -- are doing this?
   const float blur = 1.0f; // 1.0f / roi_out->scale;
-  const float sigma = 1.0f / 2.0f;
+  // FIXME: t = sigma*sigma where t is scale param, according to https://en.wikipedia.org/wiki/Scale_space_implementation#The_discrete_Gaussian_kernel?
+  // prior code used sigma = 1.f/roi_out->scale
+  //const float sigma = sqrtf(roi_out->scale); // 1.0f / 2.0f;
+  const float sigma = 1.f/roi_out->scale;
+  // FIXME: scale support with sigma?
+#if 0
+  const float gaussian_suport = 2.0f;
   const float support = blur * gaussian_suport / factor;
+#else
+  const float support = blur * 4.0f * sigma;
+#endif
   // too small support won't even result in nearest neighbor
   assert(support >= 0.5f);
   // FIXME: can just use factor? or roi_out->scale?
@@ -447,9 +458,10 @@ void blur_and_decimate(uint16_t *const out, const float *const interp,
 
   // FIXME: imagemagick uses epsilon, should here?
 
+  // FIXME: use OpenMP
   // Gaussian blur is separable
   // FIXME: use formula on zoom.c:314 or just testing to see of xy or yx is faster
-  // vertical filter
+  // vertical filter, downsample rows
   for (int y=0; y < roi_out->height; y++)
   {
     const int filt_width = calc_weights(y, roi_in->height, factor, support, scale, blur, sigma, contrib_weight, contrib_pix);
@@ -474,7 +486,7 @@ void blur_and_decimate(uint16_t *const out, const float *const interp,
     }
   }
 
-  // horizontal filter
+  // horizontal filter, downsample columns
   for (int x=0; x < roi_out->width; x++)
   {
     const int filt_width = calc_weights(x, roi_in->width, factor, support, scale, blur, sigma, contrib_weight, contrib_pix);
