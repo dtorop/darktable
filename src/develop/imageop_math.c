@@ -288,17 +288,10 @@ static void lin_interpolate_i(float *out, const uint16_t *const in, const dt_iop
   free(lookup);
 }
 
-// from imagemagick's implementation of Gaussian
-static float filt_gaussian(const float x, const float sigma)
-{
-  const float coeff1 = 1.0f/(2.0f * sigma * sigma);
-  return(expf(-coeff1*x*x));
-}
-
 // calculate weights for filter centered on pos, returning its actual width
-static int calc_weights(const int pos, const int max_pos, const float factor,
-                        const float support, const float sigma,
-                        float *const weights, int *const first_pos)
+static int gaussian_weights(const int pos, const int max_pos, const float factor,
+                            const float support, const float sigma,
+                            float *const weights, int *const first_pos)
 {
   // FIXME: is kernel close enough for each row (& col.) that can fake something constant and use that to multiply?
   float density = 0.0f;
@@ -307,11 +300,16 @@ static int calc_weights(const int pos, const int max_pos, const float factor,
   const int start = MAX(bisect - support + 0.5f, 0.0f);
   const int stop = MIN(bisect + support + 0.5f, max_pos);
   const int filt_width = stop - start;
+  const float gcoeff = 1.0f/(2.0f * sigma * sigma);  // FIXME: unneeded optimization?
   assert(filt_width > 0);
   for (int n = 0; n < filt_width; ++n)
   {
-    // FIXME: make filt_gaussian inline?
-    weights[n] = filt_gaussian((start + n)-bisect+0.5f, sigma);
+    const int x = (start + n)-bisect+0.5f;
+    // Gaussian formula is
+    //   exp( -(x^2)/((2.0*sigma^2) ) / (sqrt(2*PI)*sigma^2))
+    // but follow Imagemagick's resize and eliminate the divisor as it
+    // will get lost in normalization.
+    weights[n] = expf(-gcoeff*x*x);
     density += weights[n];
   }
   assert(density != 0.0f);
@@ -377,7 +375,7 @@ void blur_and_decimate(uint16_t *const out, const float *const interp,
   for (int y=0; y < roi_out->height; y++)
   {
     int starty;
-    const int filt_width = calc_weights(y, roi_in->height, roi_out->scale, support, sigma, weights, &starty);
+    const int filt_width = gaussian_weights(y, roi_in->height, roi_out->scale, support, sigma, weights, &starty);
     float *outp = intermed + roi_in->width * y * 4;
     for (int x=0; x < roi_in->width; ++x)
     {
@@ -399,7 +397,7 @@ void blur_and_decimate(uint16_t *const out, const float *const interp,
   for (int x=0; x < roi_out->width; x++)
   {
     int startx;
-    const int filt_width = calc_weights(x, roi_in->width, roi_out->scale, support, sigma, weights, &startx);
+    const int filt_width = gaussian_weights(x, roi_in->width, roi_out->scale, support, sigma, weights, &startx);
     uint16_t *outp = out + x;
     for (int y=0; y < roi_out->height; ++y, outp += out_stride)
     {
@@ -437,6 +435,7 @@ void dt_iop_clip_and_zoom_mosaic_half_size_plain(uint16_t *const out, const uint
   // TODO: can this code work for x-trans too with minimal modification and not a separate but similar function?
   // FIXME: could interpolate each channel one at a time, then downscale each separately? (in name of memory efficiency)
   // FIXME: could interpolate, bandlimit, and downscale in one pass via a lookup, obviating need to allocate memory?
+  // FIXME: could calculate interpolation in some sort of support-dimensioned ring buffer to save memory (and add complexity?)
   float *const interp = (float *)dt_alloc_align(16, (size_t)roi_in->width * roi_in->height * 4 * sizeof(float));
   if(!interp)
   {
