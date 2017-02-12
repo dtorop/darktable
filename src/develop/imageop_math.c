@@ -288,68 +288,21 @@ static void lin_interpolate_i(float *out, const uint16_t *const in, const dt_iop
   free(lookup);
 }
 
-#if 0
-// zoom's implementation of Gaussian filter
-// FIXME: move inline into blur & decimate?
-// FIXME: should calculate as a double or a float?
-static float filt_gaussian(const float x, const float sigma)	/* Gaussian (infinite) */
-{
-  // FIXME: precalculate constants as in Imagemagick?
-  // this is with sigma = 1/2
-  return expf(-2.0f*x*x)*sqrtf(2.0f/M_PI);
-}
-#else
-// imagemagick's implementation of Gaussian
+// from imagemagick's implementation of Gaussian
 static float filt_gaussian(const float x, const float sigma)
 {
-  /*
-    Gaussian with a sigma = 1/2 (or as user specified)
-
-    Gaussian Formula (1D) ...
-        exp( -(x^2)/((2.0*sigma^2) ) / (sqrt(2*PI)*sigma^2))
-
-    Gaussian Formula (2D) ...
-        exp( -(x^2+y^2)/(2.0*sigma^2) ) / (PI*sigma^2) )
-    or for radius
-        exp( -(r^2)/(2.0*sigma^2) ) / (PI*sigma^2) )
-
-    Note that it is only a change from 1-d to radial form is in the
-    normalization multiplier which is not needed or used when Gaussian is used
-    as a filter.
-
-    The constants are pre-calculated...
-
-        coeff[0]=sigma;
-        coeff[1]=1.0/(2.0*sigma^2);
-        coeff[2]=1.0/(sqrt(2*PI)*sigma^2);
-
-        exp( -coeff[1]*(x^2)) ) * coeff[2];
-
-    However the multiplier coeff[1] is need, the others are informative only.
-
-    This separates the gaussian 'sigma' value from the 'blur/support'
-    settings allowing for its use in special 'small sigma' gaussians,
-    without the filter 'missing' pixels because the support becomes too
-    small.
-  */
-  //const float sigma = 1.0f/2.0f;
   const float coeff1 = 1.0f/(2.0f * sigma * sigma);
-  // QUESTION: this is optimized to remove multiplication as normalization gets rid of it anyhow?
-  // FIXME: does need to be double?
-  return(exp((double)(-coeff1*x*x)));
-  //return(expf(-coeff1*x*x));
+  return(expf(-coeff1*x*x));
 }
-#endif
 
 // calculate weights for filter centered on pos, returning its actual width
-static int calc_weights(const int pos, const int max_pos,
-                        const float factor, const float support, const float scale,
-                        const float blur, const float sigma,
+static int calc_weights(const int pos, const int max_pos, const float factor,
+                        const float support, const float sigma,
                         float *const contrib_weight, int *const contrib_pix)
 {
   // FIXME: is kernel close enough for each row (& col.) that can fake something constant and use that to multiply?
   float density = 0.0f;
-  // FIXME: do need to keep adding 0.5f to go to middle of pixel?
+  // FIXME: do need to keep adding 0.5f to go to middle of pixel or can get away with being less accurate?
   const float bisect = (pos+0.5f)/factor;
   const int start = MAX(bisect - support + 0.5f, 0.0f);
   const int stop = MIN(bisect + support + 0.5f, max_pos);
@@ -359,8 +312,8 @@ static int calc_weights(const int pos, const int max_pos,
   {
     // FIXME: contrib_pix is just a sequence from start, hence instead of storing it could use a counter?
     contrib_pix[n] = start + n;
-    //contrib_weight[n] = filt_gaussian(scale * ((float) (start + n)-bisect+0.5f) / blur, sigma);
-    contrib_weight[n] = filt_gaussian(((float) (start + n)-bisect+0.5f) / blur, sigma);
+    // FIXME: make filt_gaussian inline?
+    contrib_weight[n] = filt_gaussian((start + n)-bisect+0.5f, sigma);
     density += contrib_weight[n];
   }
   assert(density != 0.0f);
@@ -382,64 +335,27 @@ void blur_and_decimate(uint16_t *const out, const float *const interp,
                        const dt_iop_roi_t *const roi_out, const dt_iop_roi_t *const roi_in,
                        const int32_t out_stride, const uint32_t filters)
 {
-  // resize algorithms seem to go back to Paul Heckbert's zoom
-  // - determine scaling factor, orig/dest, so going from 3000 to 1000 is factor 1/3 (resize.c2953)
-  // - work by rows (VerticalFilter) than cols (HorizontalFilter)
-  // - Vertical:
-  //   - scale is inverse of factor (e.g. 3) (resize.c:2447/2692)
-  //   - support is scale * support (e.g. 3*2 = 6?) (resize.c:2448/2693)
-  //   - scale is back to factor (e.g. 1/3) (resize.c:2472/2717)
-  //   - for each row of output:
-  //     - figure out bisect, position in original image of sample center (resize.c:2759)
-  //       this is y+0.5/y_factor
-  //     - figure out start/stop pixels of weighting (resize.c:2760-61)
-  //       which is position in original image +/- scaled support
-  //       [bisect-support+0.5,bisect+support+0.5]
-  //       e.g. [bisect-6+0.5, bisect+6+0.5]
-  //       hence at smaller scales sample more neighboring pixels for each output pixel
-  //     - calculate the input pixels & contributions of gaussian curve (resize.c:2764)
-  //     - normalize the contribution curve
-  //     - for each output column in that row
-  //       - read/weight the 5 or so pixels from input, weight them & save (resize.c:2814)
-  //   - this produces an intermediary buffer which is filtered/scaled vertically, but still prior width
-  // - Horizontal:
-  //    - same procedure as vertical to now produce a final buffer which is filtered/scaled both ways
-  //
-  // FIXME: should really filter horizontal first as most images wil be wider than tall?
-
-  // for a 4832x3228 image rescaled to 1346x900, factor is 0.27881, support is 7.173333, kern_width is 17
+  // FIXME: would filtering by horizontal first be any more speed/memory efficient?
   // TODO: see imagemagick resample.c:1325-1343 for one way to make a Gaussian LUT
-  // see https://www.imagemagick.org/Usage/filter/#gaussian for lots of info
-  const float factor = roi_out->scale;
-  printf("factor is %f roi_out->scale is %f\n", factor, roi_out->scale);
+  // TODO: see https://en.wikipedia.org/wiki/Scale_space_implementation#Finite-impulse-response_.28FIR.29_smoothers for another scheme
+  // TODO: check out Hanatos's Laplacian pyramid code as another alternative
 
   // Gaussian filter is IIR, but works to window with a box
   // filter. The radius of the filter should be close to non-zero
   // portions of the filter. Back in the day (zoom, pamscale, early
-  // imagemagick) support for Gaussian was 1.25. IM >v6.3.6-3 upped
-  // this to 1.5 or approx 3*sigma, IM > v6.6.5-0 uses 2 which is
-  // 4*sigma. Larger support increases both quality and procesing
-  // time.
+  // imagemagick) support for Gaussian with sigma 0.5 was 1.25. IM
+  // >v6.3.6-3 upped this to 1.5 or approx 3*sigma, IM > v6.6.5-0 uses
+  // 2 which is 4*sigma. Larger support increases both quality and
+  // procesing time.
   // FIXME: use a smaller support?
-  // FIXME: Filter size should double for each ½ size reduction. -- are doing this?
-  const float blur = 1.0f; // 1.0f / roi_out->scale;
-  // FIXME: t = sigma*sigma where t is scale param, according to https://en.wikipedia.org/wiki/Scale_space_implementation#The_discrete_Gaussian_kernel?
-  // prior code used sigma = 1.f/roi_out->scale
-  //const float sigma = sqrtf(roi_out->scale); // 1.0f / 2.0f;
-  const float sigma = 1.f/roi_out->scale;
-  // FIXME: scale support with sigma?
-#if 0
-  const float gaussian_suport = 2.0f;
-  const float support = blur * gaussian_suport / factor;
-#else
-  const float support = blur * 4.0f * sigma;
-#endif
+  const float sigma = 1.0f/roi_out->scale;
+  const float support_factor = 4.0f;
+  const float support = support_factor * sigma;
   // too small support won't even result in nearest neighbor
   assert(support >= 0.5f);
   // FIXME: can just use factor? or roi_out->scale?
-  const float scale = factor;
   const int kern_width = 2.0f * support + 3.0f;
-  printf("scale is %f sigma is %f support is %f kern_width is %d\n", scale, sigma, support, kern_width);
+  printf("roi_out->scale is %f sigma is %f support is %f kern_width is %d\n", roi_out->scale, sigma, support, kern_width);
 
   // FIXME: intermediary buffer by Heckbert's zoom algorithm can be roi_in->width * filter width zoom.c:634
   // FIXME: only need 3 channel for RGGB, or does aligning on 4s counterbalance that?
@@ -451,8 +367,6 @@ void blur_and_decimate(uint16_t *const out, const float *const interp,
   }
   float *const intermed = buf;
 
-  //const float contrib_weights[kern_width];
-  //const float contrib_pix[kern_width];
   float *const contrib_weight = buf + ((size_t)roi_in->width * roi_out->height * 4);
   int *const contrib_pix = (int*)(contrib_weight + kern_width);
 
@@ -464,34 +378,32 @@ void blur_and_decimate(uint16_t *const out, const float *const interp,
   // vertical filter, downsample rows
   for (int y=0; y < roi_out->height; y++)
   {
-    const int filt_width = calc_weights(y, roi_in->height, factor, support, scale, blur, sigma, contrib_weight, contrib_pix);
-    float *outc = intermed + roi_in->width * y * 4;
+    const int filt_width = calc_weights(y, roi_in->height, roi_out->scale, support, sigma, contrib_weight, contrib_pix);
+    float *outp = intermed + roi_in->width * y * 4;
     for (int x=0; x < roi_in->width; ++x)
     {
       float sum[4] = { 0.0f };
       for (int i=0; i < filt_width; ++i)
       {
         // FIXME: if always offset from 0 pixel, calculate contrib_pix that way
-        // FIXME: first line seems wrong, trying second -- if works can pull interpc init out of x loop
-        //const float *const interpc = interp + 4 * ((contrib_pix[i] - contrib_pix[0]) * roi_in->width + x);
-        // FIXME: s/interpc/inp/ s/outc/outp/
-        const float *const interpc = interp + 4 * (contrib_pix[i] * roi_in->width + x);
+        // FIXME: move inp out a loop level as it increases row-wise
+        const float *const inp = interp + 4 * (contrib_pix[i] * roi_in->width + x);
         const float weight = contrib_weight[i];  // FIXME: unneeded optimization?
         // FIXME: only need to go to three for all except CYGM?
         for (int c=0; c < 4; ++c)
-          sum[c] += weight * interpc[c];
+          sum[c] += weight * inp[c];
       }
-      for (int c=0; c < 4; ++c, ++outc)
-        *outc = sum[c];
+      for (int c=0; c < 4; ++c, ++outp)
+        *outp = sum[c];
     }
   }
 
   // horizontal filter, downsample columns
   for (int x=0; x < roi_out->width; x++)
   {
-    const int filt_width = calc_weights(x, roi_in->width, factor, support, scale, blur, sigma, contrib_weight, contrib_pix);
-    uint16_t *outc = out + x;
-    for (int y=0; y < roi_out->height; ++y, outc += out_stride)
+    const int filt_width = calc_weights(x, roi_in->width, roi_out->scale, support, sigma, contrib_weight, contrib_pix);
+    uint16_t *outp = out + x;
+    for (int y=0; y < roi_out->height; ++y, outp += out_stride)
     {
       // this time we output to a mosaic and use ints
       const int c = FC(y, x, filters);
@@ -499,16 +411,11 @@ void blur_and_decimate(uint16_t *const out, const float *const interp,
       for (int i=0; i < filt_width; ++i)
       {
         // FIXME: if always offset from 0 pixel, calculate contrib_pix that way
-        //const int j = y*(contrib_pix[filt_width-1] - contrib_pix[0] + 1) + (contrib_pix[i] - contrib_pix[0]);
-        // FIXME: s/intermedc/inp/ s/outc/outp/
-        // FIXME: if this works, pull out of loop and pre-offset by c?
-        //const float *const intermedc = intermed + 4 * (contrib_pix[i] + y * roi_out->width);
         const float weight = contrib_weight[i];  // FIXME: unneeded optimization
-        //sum += weight * intermed[4 * j + c];
+        // FIXME: pull intermed out of loop as pointer, as it increases by one for each row
         sum += weight * intermed[4 * (contrib_pix[i] + y * roi_in->width) + c];
       }
-      *outc = (uint16_t)sum;
-      //*outc = (c == 2) ? 10000 : 0;
+      *outp = (uint16_t)sum;
     }
   }
 
@@ -532,20 +439,9 @@ void dt_iop_clip_and_zoom_mosaic_half_size_plain(uint16_t *const out, const uint
                                                  const int32_t in_stride, const uint32_t filters)
 {
   // FIXME: if are calculating in floating point, could output as floats, not uint16_t? would require allocating a larger MIP_F output buffer
-  /*
-   *TODO
-    - allocate a 1-channel buffer the size of roi_in
-    - for each mosaic color:
-    -   copy pixels of that color to temp buffer
-    -   interpolate remaining pixels (bicubic? prob. not nearest neighbor)
-    -   downscale from temp buffer to out with a gaussian/mitchell weighted sample as per pamscale
-    -   QUESTION: do need to interpolate all remaining pixels first or could interpolate/cache on fly as downscale with some sort of ring buffer, so don't need a temp buffer?
-    - free temp buffer
-  */
-
   // FIXME: this code is slow, but not profiled in [dev_process_image], etc., make it be profiled
   // TODO: can this code work for x-trans too with minimal modification and not a separate but similar function?
-  // FIXME: could interpolate each channel one at a time, then downscale each separately?
+  // FIXME: could interpolate each channel one at a time, then downscale each separately? (in name of memory efficiency)
   // FIXME: could interpolate, bandlimit, and downscale in one pass via a lookup, obviating need to allocate memory?
   float *const interp = (float *)dt_alloc_align(16, (size_t)roi_in->width * roi_in->height * 4 * sizeof(float));
   if(!interp)
@@ -554,32 +450,7 @@ void dt_iop_clip_and_zoom_mosaic_half_size_plain(uint16_t *const out, const uint
     return;
   }
   lin_interpolate_i(interp, in, roi_in, filters, NULL);
-
   blur_and_decimate(out, interp, roi_out, roi_in, out_stride, filters);
-
-  /*
-  dt_gaussian_t *g = dt_gaussian_init(roi_in->width, roi_in->height, channels, RGBmax, RGBmin, sigma, order);
-  if(!g)
-  {
-    printf("[dt_iop_clip_and_zoom_mosaic_half_size_plain] not able to init gaussian\n");
-    free(buf);
-    return;
-  }
-  dt_gaussian_blur_4c(g, interp, blur);
-  dt_gaussian_free(g);
-
-#ifdef _OPENMP
-#pragma omp parallel for default(none) schedule(static)
-#endif
-  for(int y = 0; y < roi_out->height; y++)
-  {
-    uint16_t *outc = out + out_stride * y;
-    const int fy = roundf((y + roi_out->y) * px_footprint);
-    float fx = roi_out->x * px_footprint;
-    for(int x = 0; x < roi_out->width; x++, fx += px_footprint, outc++)
-      *outc = (uint16_t)blur[4 * (int)roundf(fx) + 4 * in_stride * fy + FC(y, x, filters)];
-  }
-  */
   dt_free_align(interp);
   // FIXME: highlight reconstruction fails for downsampled output. From LebedevRI: "The problem is, if you average a pixel slightly above clipping threshold (1.0, but here the threshold will be different per-channel, say 15000), and a pixel below threshold, the result will be below clipping threshold (thus highlight clipping won't touch it), but it also will be wrong, as you can see."
   // TODO: perhaps, as in a prior version of downsample code, if are sampling various pixels and any is over a certain threshold, set all of them to that threshold?
