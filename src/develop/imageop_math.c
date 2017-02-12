@@ -383,15 +383,13 @@ void blur_and_decimate(uint16_t *const out, const float *const interp,
     for (int x=0; x < roi_in->width; ++x)
     {
       float sum[4] = { 0.0f };
-      for (int i=0; i < filt_width; ++i)
+      const float *inp = interp + 4 * (contrib_pix[0] * roi_in->width + x);
+      for (int i=0; i < filt_width; ++i, inp += 4 * roi_in->width)
       {
-        // FIXME: if always offset from 0 pixel, calculate contrib_pix that way
-        // FIXME: move inp out a loop level as it increases row-wise
-        const float *const inp = interp + 4 * (contrib_pix[i] * roi_in->width + x);
         const float weight = contrib_weight[i];  // FIXME: unneeded optimization?
         // FIXME: only need to go to three for all except CYGM?
         for (int c=0; c < 4; ++c)
-          sum[c] += weight * inp[c];
+          sum[c] += inp[c] * weight;
       }
       for (int c=0; c < 4; ++c, ++outp)
         *outp = sum[c];
@@ -408,13 +406,10 @@ void blur_and_decimate(uint16_t *const out, const float *const interp,
       // this time we output to a mosaic and use ints
       const int c = FC(y, x, filters);
       float sum = 0.0f;
-      for (int i=0; i < filt_width; ++i)
-      {
+      const float *inp = intermed + 4 * (y * roi_in->width + contrib_pix[0]) + c;
+      for (int i=0; i < filt_width; ++i, inp += 4)
         // FIXME: if always offset from 0 pixel, calculate contrib_pix that way
-        const float weight = contrib_weight[i];  // FIXME: unneeded optimization
-        // FIXME: pull intermed out of loop as pointer, as it increases by one for each row
-        sum += weight * intermed[4 * (contrib_pix[i] + y * roi_in->width) + c];
-      }
+        sum += *inp * contrib_weight[i];
       *outp = (uint16_t)sum;
     }
   }
