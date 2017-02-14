@@ -344,13 +344,11 @@ void blur_and_decimate(uint16_t *const out, const float *const interp,
   // >v6.3.6-3 upped this to 1.5 or approx 3*sigma, IM > v6.6.5-0 uses
   // 2 which is 4*sigma. Larger support increases both quality and
   // procesing time.
-  // FIXME: use a smaller support?
   const float sigma = 1.0f/roi_out->scale;
-  const float support_factor = 4.0f;
+  const float support_factor = 2.5f;
   const float support = support_factor * sigma;
   // too small support won't even result in nearest neighbor
   assert(support >= 0.5f);
-  // FIXME: can just use factor? or roi_out->scale?
   const int kern_width = 2.0f * support + 3.0f;
   //printf("roi_out->scale is %f sigma is %f support is %f kern_width is %d\n", roi_out->scale, sigma, support, kern_width);
 
