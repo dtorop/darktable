@@ -293,8 +293,8 @@ static int gaussian_weights(const int pos, const int max_pos, const float factor
                             const float support, const float sigma,
                             float *const weights, int *const first_pos)
 {
-  // FIXME: is kernel close enough for each row (& col.) that can fake something constant and use that to multiply?
   float density = 0.0f;
+  // FIXME: there are not too many kernels produced over course of all rows/cols, is it worth caching them and returning the appropriate one?
   // FIXME: do need to keep adding 0.5f to go to middle of pixel or can get away with being less accurate?
   const float bisect = (pos+0.5f)/factor;
   const int start = MAX(bisect - support + 0.5f, 0.0f);
