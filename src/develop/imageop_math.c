@@ -434,6 +434,9 @@ void dt_iop_clip_and_zoom_mosaic_half_size_plain(uint16_t *const out, const uint
                                                  const dt_iop_roi_t *const roi_in, const int32_t out_stride,
                                                  const int32_t in_stride, const uint32_t filters)
 {
+  dt_times_t start;
+  dt_get_times(&start);
+
   // FIXME: if are calculating in floating point, could output as floats, not uint16_t? would require allocating a larger MIP_F output buffer
   // FIXME: this code is slow, but not profiled in [dev_process_image], etc., make it be profiled
   // TODO: can this code work for x-trans too with minimal modification and not a separate but similar function?
@@ -451,6 +454,8 @@ void dt_iop_clip_and_zoom_mosaic_half_size_plain(uint16_t *const out, const uint
   dt_free_align(interp);
   // FIXME: highlight reconstruction fails for downsampled output. From LebedevRI: "The problem is, if you average a pixel slightly above clipping threshold (1.0, but here the threshold will be different per-channel, say 15000), and a pixel below threshold, the result will be below clipping threshold (thus highlight clipping won't touch it), but it also will be wrong, as you can see."
   // TODO: perhaps, as in a prior version of downsample code, if are sampling various pixels and any is over a certain threshold, set all of them to that threshold?
+
+  dt_show_times(&start, "[dt_iop_clip_and_zoom_mosaic_half_size_plain]", "downscale mipf");
 }
 
 #if defined(__SSE__)
@@ -459,6 +464,9 @@ void dt_iop_clip_and_zoom_mosaic_half_size_sse2(uint16_t *const out, const uint1
                                                 const dt_iop_roi_t *const roi_in, const int32_t out_stride,
                                                 const int32_t in_stride, const uint32_t filters)
 {
+  dt_times_t start;
+  dt_get_times(&start);
+
   // adjust to pixel region and don't sample more than scale/2 nbs!
   // pixel footprint on input buffer, radius:
   const float px_footprint = 1.f / roi_out->scale;
@@ -645,6 +653,8 @@ void dt_iop_clip_and_zoom_mosaic_half_size_sse2(uint16_t *const out, const uint1
     }
   }
   _mm_sfence();
+
+  dt_show_times(&start, "[dt_iop_clip_and_zoom_mosaic_half_size_sse2]", "downscale mipf");
 }
 #endif
 
