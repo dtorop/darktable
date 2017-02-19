@@ -178,116 +178,6 @@ int dt_iop_clip_and_zoom_roi_cl(int devid, cl_mem dev_out, cl_mem dev_in, const 
 
 #endif
 
-// NOTE: keeping xtrans code here, in case xtrans can work with subsample/bandlimit
-// FIXME: taken from demosaic, and converted to work on uint16_t, then back to outputing float, but this code originally came from dcraw, where it was designed for ints and has some optimizations which we could use if it stays with ints (which it probably won't)
-// FIXME: do need to factor in roi->x and roi->y, or can assume they are always 0?
-static void lin_interpolate_i(float *out, const uint16_t *const in, const dt_iop_roi_t *const roi,
-                              const uint32_t filters, const uint8_t (*const xtrans)[6])
-{
-  const int colors = (filters == 9) ? 3 : 4;
-
-// border interpolate
-#ifdef _OPENMP
-#pragma omp parallel for default(none) shared(out) schedule(static)
-#endif
-  for(int row = 0; row < roi->height; row++)
-    for(int col = 0; col < roi->width; col++)
-    {
-      float sum[4] = { 0.0f };
-      uint8_t count[4] = { 0 };
-      if(col == 1 && row >= 1 && row < roi->height - 1) col = roi->width - 1;
-      // average all the adjoining pixels inside image by color
-      for(int y = row - 1; y != row + 2; y++)
-        for(int x = col - 1; x != col + 2; x++)
-          if(y >= 0 && x >= 0 && y < roi->height && x < roi->width)
-          {
-            const int f = fcol(y + roi->y, x + roi->x, filters, xtrans);
-            sum[f] += in[y * roi->width + x];
-            count[f]++;
-          }
-      const int f = fcol(row + roi->y, col + roi->x, filters, xtrans);
-      // for current cell, copy the current sensor's color data,
-      // interpolate the other two colors from surrounding pixels of
-      // their color
-      for(int c = 0; c < colors; c++)
-      {
-        if(c != f && count[c] != 0)
-          out[4 * (row * roi->width + col) + c] = sum[c] / count[c];
-        else
-          out[4 * (row * roi->width + col) + c] = in[row * roi->width + col];
-      }
-    }
-
-  // build interpolation lookup table which for a given offset in the sensor
-  // lists neighboring pixels from which to interpolate:
-  // NUM_PIXELS                 # of neighboring pixels to read
-  // for (1..NUM_PIXELS):
-  //   OFFSET                   # in bytes from current pixel
-  //   WEIGHT                   # how much weight to give this neighbor
-  //   COLOR                    # sensor color
-  // # weights of adjoining pixels not of this pixel's color
-  // COLORA TOT_WEIGHT
-  // COLORB TOT_WEIGHT
-  // COLORPIX                   # color of center pixel
-
-  int(*const lookup)[16][32] = malloc((size_t)16 * 16 * 32 * sizeof(int));
-
-  const int size = (filters == 9) ? 6 : 16;
-  for(int row = 0; row < size; row++)
-    for(int col = 0; col < size; col++)
-    {
-      int *ip = lookup[row][col] + 1;
-      int sum[4] = { 0 };
-      const int f = fcol(row + roi->y, col + roi->x, filters, xtrans);
-      // make list of adjoining pixel offsets by weight & color
-      for(int y = -1; y <= 1; y++)
-        for(int x = -1; x <= 1; x++)
-        {
-          int weight = 1 << ((y == 0) + (x == 0));
-          const int color = fcol(row + y + roi->y, col + x + roi->x, filters, xtrans);
-          if(color == f) continue;
-          *ip++ = (roi->width * y + x);
-          *ip++ = weight;
-          *ip++ = color;
-          sum[color] += weight;
-        }
-      lookup[row][col][0] = (ip - lookup[row][col]) / 3; /* # of neighboring pixels found */
-      for(int c = 0; c < colors; c++)
-        if(c != f)
-        {
-          *ip++ = c;
-          *ip++ = sum[c];
-        }
-      *ip = f;
-    }
-
-#ifdef _OPENMP
-#pragma omp parallel for default(none) shared(out) schedule(static)
-#endif
-  for(int row = 1; row < roi->height - 1; row++)
-  {
-    float *buf = out + 4 * roi->width * row + 4;
-    const uint16_t *buf_in = in + roi->width * row + 1;
-    for(int col = 1; col < roi->width - 1; col++)
-    {
-      float sum[4] = { 0.0f };
-      int *ip = lookup[row % size][col % size];
-      // for each adjoining pixel not of this pixel's color, sum up its weighted values
-      for(int i = *ip++; i--; ip += 3) sum[ip[2]] += buf_in[ip[0]] * ip[1];
-      // for each interpolated color, load it into the pixel
-      for(int i = colors; --i; ip += 2)
-        // FIXME: a bit of a hack -- original dcraw version uses left shifts to avoid worries about division by 0
-        // FIXME: does the lin_interpolate in demosaic divide by 0?
-        buf[*ip] = ip[1] ? (sum[ip[0]] / ip[1]) : 0.0f;
-      buf[*ip] = *buf_in;
-      buf += 4;
-      buf_in++;
-    }
-  }
-
-  free(lookup);
-}
-
 // calculate weights for filter centered on pos, returning its actual width
 static int gaussian_weights(const int pos, const int max_pos, const float factor,
                             const float support, const float sigma,
@@ -297,8 +187,9 @@ static int gaussian_weights(const int pos, const int max_pos, const float factor
   // FIXME: there are not too many kernels produced over course of all rows/cols, is it worth caching them and returning the appropriate one?
   // FIXME: do need to keep adding 0.5f to go to middle of pixel or can get away with being less accurate?
   const float bisect = (pos+0.5f)/factor;
-  const int start = MAX(bisect - support + 0.5f, 0.0f);
-  const int stop = MIN(bisect + support + 0.5f, max_pos);
+  // inset start/stop w/in [0,max_pos] as may be interpolating up to 1 pixel in either direction
+  const int start = MAX(bisect - support + 0.5f, 1);
+  const int stop = MIN(bisect + support + 0.5f, max_pos-1);
   const int filt_width = stop - start;
   const float gcoeff = 1.0f/(2.0f * sigma * sigma);  // FIXME: unneeded optimization?
   assert(filt_width > 0);
@@ -319,103 +210,6 @@ static int gaussian_weights(const int pos, const int max_pos, const float factor
   //if ((pos % 100) == 0) for (int n = 0; n < filt_width; ++n) printf("  %d: %f\n", start + n, weights[n]);
   *first_pos = start;
   return filt_width;
-}
-
-// Gaussian blur and downscale algorithm based on two-pass version in
-// Imagemagick, which goes back to Paul Heckbert's zoom
-// (https://www.cs.cmu.edu/~ph/src/zoom/). Another reference is
-// pamscale's implementation. The dt Gaussian blur in
-// src/common/gaussian.c is memory-efficient and fast, but calculates
-// a result for every input pixel, which is wasteful when used as a
-// pre-filter to decimating the result.
-void blur_and_decimate(uint16_t *const out, const float *const interp,
-                       const dt_iop_roi_t *const roi_out, const dt_iop_roi_t *const roi_in,
-                       const int32_t out_stride, const uint32_t filters)
-{
-  // FIXME: would filtering by horizontal first be any more speed/memory efficient?
-  // TODO: see imagemagick resample.c:1325-1343 for one way to make a Gaussian LUT
-  // TODO: see https://en.wikipedia.org/wiki/Scale_space_implementation#Finite-impulse-response_.28FIR.29_smoothers for another scheme
-  // TODO: check out Hanatos's Laplacian pyramid code as another alternative
-
-  // Gaussian filter is IIR, but works to window with a box
-  // filter. The radius of the filter should be close to non-zero
-  // portions of the filter. Back in the day (zoom, pamscale, early
-  // imagemagick) support for Gaussian with sigma 0.5 was 1.25. IM
-  // >v6.3.6-3 upped this to 1.5 or approx 3*sigma, IM > v6.6.5-0 uses
-  // 2 which is 4*sigma. Larger support increases both quality and
-  // procesing time.
-  const float sigma = 1.0f/roi_out->scale;
-  const float support_factor = 2.5f;
-  const float support = support_factor * sigma;
-  // too small support won't even result in nearest neighbor
-  assert(support >= 0.5f);
-  const int kern_width = 2.0f * support + 3.0f;
-  //printf("roi_out->scale is %f sigma is %f support is %f kern_width is %d\n", roi_out->scale, sigma, support, kern_width);
-
-  // FIXME: intermediary buffer by Heckbert's zoom algorithm can be roi_in->width * filter width zoom.c:634
-  // FIXME: only need 3 channel for RGGB, or does aligning on 4s counterbalance that?
-  float *const buf = (float *)dt_alloc_align(16, ((size_t)roi_in->width * roi_out->height * 4 + kern_width * dt_get_num_threads()) * sizeof(float));
-  if(!buf)
-  {
-    printf("[blur_and_decimate] not able to allocate buffer\n");
-    return;
-  }
-  float *const intermed = buf;
-  float *const weights = buf + ((size_t)roi_in->width * roi_out->height * 4);
-
-  // FIXME: imagemagick uses epsilon, should here?
-
-  // Gaussian blur is separable
-  // FIXME: use formula on zoom.c:314 or just testing to see of xy or yx is faster
-  // vertical filter, downsample rows
-#ifdef _OPENMP
-#pragma omp parallel for default(none) schedule(static)
-#endif
-  for (int y=0; y < roi_out->height; y++)
-  {
-    int starty;
-    float *const w = weights + dt_get_thread_num() * kern_width;
-    const int filt_width = gaussian_weights(y, roi_in->height, roi_out->scale, support, sigma, w, &starty);
-    float *outp = intermed + roi_in->width * y * 4;
-    for (int x=0; x < roi_in->width; ++x)
-    {
-      float sum[4] = { 0.0f };
-      const float *inp = interp + 4 * (starty * roi_in->width + x);
-      for (int i=0; i < filt_width; ++i, inp += 4 * roi_in->width)
-      {
-        const float weight = w[i];  // FIXME: unneeded optimization?
-        // FIXME: only need to go to three for all except CYGM?
-        for (int c=0; c < 4; ++c)
-          sum[c] += inp[c] * weight;
-      }
-      for (int c=0; c < 4; ++c, ++outp)
-        *outp = sum[c];
-    }
-  }
-
-  // horizontal filter, downsample columns
-#ifdef _OPENMP
-#pragma omp parallel for default(none) schedule(static)
-#endif
-  for (int x=0; x < roi_out->width; x++)
-  {
-    int startx;
-    float *const w = weights + dt_get_thread_num() * kern_width;
-    const int filt_width = gaussian_weights(x, roi_in->width, roi_out->scale, support, sigma, w, &startx);
-    uint16_t *outp = out + x;
-    for (int y=0; y < roi_out->height; ++y, outp += out_stride)
-    {
-      // this time we output to a mosaic and use ints
-      const int c = FC(y, x, filters);
-      float sum = 0.0f;
-      const float *inp = intermed + 4 * (y * roi_in->width + startx) + c;
-      for (int i=0; i < filt_width; ++i, inp += 4)
-        sum += *inp * w[i];
-      *outp = (uint16_t)sum;
-    }
-  }
-
-  dt_free_align(buf);
 }
 
 // Take an image mosaiced with a 2x2 CFA, reduce it in scale, and
@@ -441,20 +235,183 @@ void dt_iop_clip_and_zoom_mosaic_half_size_plain(uint16_t *const out, const uint
   // FIXME: this code is slow, but not profiled in [dev_process_image], etc., make it be profiled
   // TODO: can this code work for x-trans too with minimal modification and not a separate but similar function?
   // FIXME: could interpolate each channel one at a time, then downscale each separately? (in name of memory efficiency)
-  // FIXME: could interpolate, bandlimit, and downscale in one pass via a lookup, obviating need to allocate memory?
-  // FIXME: could calculate interpolation in some sort of support-dimensioned ring buffer to save memory (and add complexity?)
-  float *const interp = (float *)dt_alloc_align(16, (size_t)roi_in->width * roi_in->height * 4 * sizeof(float));
-  if(!interp)
+
+  // TODO: see imagemagick resample.c:1325-1343 for one way to make a Gaussian LUT
+  // TODO: see https://en.wikipedia.org/wiki/Scale_space_implementation#Finite-impulse-response_.28FIR.29_smoothers for another scheme
+  // TODO: check out Hanatos's Laplacian pyramid code as another alternative
+
+  // Gaussian blur and downscale algorithm based on two-pass version
+  // in Imagemagick, which goes back to Paul Heckbert's zoom
+  // (https://www.cs.cmu.edu/~ph/src/zoom/). Another reference is
+  // pamscale's implementation. The dt Gaussian blur in
+  // src/common/gaussian.c is memory-efficient and fast, but
+  // calculates a result for every input pixel, which is wasteful when
+  // used as a pre-filter to decimating the result.
+
+  // Gaussian filter is IIR, but works to window with a box
+  // filter. The radius of the filter should be close to non-zero
+  // portions of the filter. Back in the day (zoom, pamscale, early
+  // imagemagick) support for Gaussian with sigma 0.5 was 1.25. IM
+  // >v6.3.6-3 upped this to 1.5 or approx 3*sigma, IM > v6.6.5-0 uses
+  // 2 which is 4*sigma. Larger support increases both quality and
+  // procesing time.
+  const float sigma = 1.0f/roi_out->scale;
+  const float support_factor = 2.5f;
+  const float support = support_factor * sigma;
+  // too small support won't even result in nearest neighbor
+  assert(support >= 0.5f);
+  const int kern_width = 2.0f * support + 3.0f;
+  //printf("roi_out->scale is %f sigma is %f support is %f kern_width is %d\n", roi_out->scale, sigma, support, kern_width);
+
+  // FIXME: intermediary buffer by Heckbert's zoom algorithm can be roi_in->width * filter width zoom.c:634
+  // FIXME: only need 3 channel for RGGB, or does aligning on 4s counterbalance that?
+  const size_t intermed_len_f = (size_t)roi_in->width * roi_out->height;
+  const size_t kernel_len_f = (size_t)kern_width * dt_get_num_threads();
+  const size_t lookup_len_i = (size_t)16 * 16 * 32;
+  void *const buf = (void *)dt_alloc_align(16, (intermed_len_f + kernel_len_f) * sizeof(float) + lookup_len_i * sizeof(int));
+  if(!buf)
   {
-    printf("[dt_iop_clip_and_zoom_mosaic_half_size_plain] not able to allocate intermediary buffer\n");
+    printf("[blur_and_decimate] not able to allocate buffer\n");
     return;
   }
-  lin_interpolate_i(interp, in, roi_in, filters, NULL);
-  blur_and_decimate(out, interp, roi_out, roi_in, out_stride, filters);
-  dt_free_align(interp);
+  float *const intermed = buf;
+  float *const weights = intermed + intermed_len_f;
+  int(*const lookup)[16][32] = buf + sizeof(float) * (intermed_len_f + kernel_len_f);
+
+  // NOTE: keeping xtrans code here, in case xtrans can work with subsample/bandlimit
+  const int colors = (filters == 9) ? 3 : 4;
+
+  // build interpolation lookup table which for a given offset in the sensor
+  // lists neighboring pixels from which to interpolate:
+  // COLORPIX                   # color of center pixel
+  // NUM_PIXELS                 # of neighboring pixels to read
+  // for (1..NUM_PIXELS):
+  //   OFFSET                   # in bytes from current pixel
+  //   WEIGHT                   # how much weight to give this neighbor
+  //   COLOR                    # sensor color
+  // # weights of adjoining pixels not of this pixel's color
+  // COLORA TOT_WEIGHT
+  // COLORB TOT_WEIGHT
+  const int size = (filters == 9) ? 6 : 16;
+  for(int row = 0; row < size; row++)
+    for(int col = 0; col < size; col++)
+    {
+      int *ip = lookup[row][col] + 2;
+      int sum[4] = { 0 };
+      // FIXME: do need to factor in roi->x and roi->y, or can assume they are always 0?
+      //const int f = fcol(row, col, filters, xtrans);
+      const int f = FC(row, col, filters);
+      lookup[row][col][0] = f;
+      // make list of adjoining pixel offsets by weight & color
+      for(int y = -1; y <= 1; y++)
+        for(int x = -1; x <= 1; x++)
+        {
+          int weight = 1 << ((y == 0) + (x == 0));
+          //const int color = fcol(row + y, col + x, filters, xtrans);
+          const int color = FC(row + y, col + x, filters);
+          if(color == f) continue;
+          // FIXME: does this offset ever need to be roi_out->width?
+          *ip++ = (roi_in->width * y + x);
+          *ip++ = weight;
+          *ip++ = color;
+          sum[color] += weight;
+        }
+      lookup[row][col][1] = (ip - lookup[row][col]) / 3; /* # of neighboring pixels found */
+      for(int c = 0; c < colors; c++)
+        if(c != f)
+        {
+          *ip++ = c;
+          *ip++ = sum[c];
+        }
+      // FIXME: seperate output by pixel colors
+    }
+
+  // FIXME: imagemagick uses epsilon, should here?
+
+  // Gaussian blur is separable
+  // vertical filter, downsample rows, mosaiced int -> mosaiced float
+#ifdef _OPENMP
+#pragma omp parallel for default(none) schedule(static)
+#endif
+  for (int y=0; y < roi_out->height; y++)
+  {
+    int starty;
+    float *const w = weights + dt_get_thread_num() * kern_width;
+    const int filt_width = gaussian_weights(y, roi_in->height, roi_out->scale, support, sigma, w, &starty);
+    float *outp = intermed + roi_in->width * y;
+    // FIXME: how to handle first/last column without special edge interpolation?
+    for (int x=1; x < roi_in->width-1; ++x, ++outp)
+    {
+      const int c = FC(y, x, filters);
+      float sum = 0.0f;
+      // FIXME: this assume roi_in->width == in_stride as the offsets in lookup depend on former
+      const uint16_t *inp = in + starty * in_stride + x;
+      for (int i=0, yy = starty; i < filt_width; ++i, ++yy, inp += in_stride)
+      {
+        // FIXME: lookup should be separated by mosaic color
+        int *ip = lookup[yy % size][x % size];
+        if (*ip++ == c)
+        { // source and destination are same CFA color
+          sum += *inp * w[i];
+        }
+        else
+        { // need to interpolate
+          float sc = 0.0f;
+          for(int l = *ip++; l--; ip += 3)
+            if (ip[2] == c)
+              sc += inp[ip[0]] * ip[1];
+          for(int l = colors; --l; ip += 2)
+            // FIXME: does the lin_interpolate in demosaic divide by 0?
+            if (c == *ip)
+              sum += w[i] * sc / ip[1];
+        }
+      }
+      *outp = sum;
+    }
+  }
+
+  // horizontal filter, downsample columns, mosaiced float -> mosaiced int
+#ifdef _OPENMP
+#pragma omp parallel for default(none) schedule(static)
+#endif
+  for (int x=0; x < roi_out->width; x++)
+  {
+    int startx;
+    float *const w = weights + dt_get_thread_num() * kern_width;
+    const int filt_width = gaussian_weights(x, roi_in->width, roi_out->scale, support, sigma, w, &startx);
+    uint16_t *outp = out + x;
+    // FIXME: how to handle first/last column without special edge interpolation?
+    for (int y=1; y < roi_out->height-1; ++y, outp += out_stride)
+    {
+      const int c = FC(y, x, filters);
+      float sum = 0.0f;
+      const float *inp = intermed + y * roi_in->width + startx;
+      for (int i=0, xx = startx; i < filt_width; ++i, ++xx, inp++)
+      {
+        int *ip = lookup[y % size][xx % size];
+        if (*ip++ == c)
+        {
+          sum += *inp * w[i];
+        }
+        else
+        {
+          float sc = 0.0f;
+          for(int l = *ip++; l--; ip += 3)
+            if (ip[2] == c)
+              sc += inp[ip[0]] * ip[1];
+          for(int l = colors; --l; ip += 2)
+            if (c == *ip)
+              sum += w[i] * sc / ip[1];
+        }
+      }
+      *outp = (uint16_t)sum;
+    }
+  }
+
   // FIXME: highlight reconstruction fails for downsampled output. From LebedevRI: "The problem is, if you average a pixel slightly above clipping threshold (1.0, but here the threshold will be different per-channel, say 15000), and a pixel below threshold, the result will be below clipping threshold (thus highlight clipping won't touch it), but it also will be wrong, as you can see."
   // TODO: perhaps, as in a prior version of downsample code, if are sampling various pixels and any is over a certain threshold, set all of them to that threshold?
 
+  dt_free_align(buf);
   dt_show_times(&start, "[dt_iop_clip_and_zoom_mosaic_half_size_plain]", "downscale mipf");
 }
 
