@@ -350,10 +350,12 @@ void dt_iop_clip_and_zoom_mosaic_half_size_plain(uint16_t *const out, const uint
       float sum = 0.0f;
       // FIXME: this assume roi_in->width == in_stride as the offsets in lookup depend on former
       const uint16_t *inp = in + starty * in_stride + x;
-      // FIXME: as know CFA repeats every other cell, can that make things faster?
-      for (int i=0, yy = starty; i < filt_width; ++i, ++yy, inp += in_stride)
+      // CFA repeats every other cell
+      const int (*const look_ab[2]) = {lookup[starty % lsize][x % lsize][c],
+                                       lookup[(starty+1) % lsize][x % lsize][c]};
+      for (int i=0; i < filt_width; ++i, inp += in_stride)
       {
-        int *ip = lookup[yy % lsize][x % lsize][c];
+        const int *ip = look_ab[i%2];
         const int count = *ip++;
         uint32_t acc = 0;
         for(int n = count; n--; ++ip)
@@ -382,7 +384,7 @@ void dt_iop_clip_and_zoom_mosaic_half_size_plain(uint16_t *const out, const uint
       const float *inp = intermed + y * roi_in->width + startx;
       for (int i=0, xx = startx; i < filt_width; ++i, ++xx, inp++)
       {
-        int *ip = lookup[y % lsize][xx % lsize][c];
+        const int *ip = lookup[y % lsize][xx % lsize][c];
         const int count = *ip++;
         float acc = 0.0f;
         for(int n = count; n--; ++ip)
