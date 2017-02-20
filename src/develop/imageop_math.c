@@ -280,9 +280,8 @@ void dt_iop_clip_and_zoom_mosaic_half_size_plain(uint16_t *const out, const uint
   float *const intermed = buf;
   float *const weights = intermed + intermed_len_f;
   float(*const lookup_f)[2][4][4] = (void *)(weights + kernel_len_f);
-  // FIXME: just offset from lookup_f
   // FIXME: should type really be size_t?
-  int(*const lookup_i)[2][4][5] = buf + sizeof(float) * (intermed_len_f + kernel_len_f + lookup_len_f);
+  int(*const lookup_i)[2][4][5] = (void *)((float *)lookup_f + lookup_len_f);
 
   // NOTE: keeping xtrans code here, in case xtrans can work with subsample/bandlimit
   const int colors = (filters == 9) ? 3 : 4;
@@ -365,7 +364,7 @@ void dt_iop_clip_and_zoom_mosaic_half_size_plain(uint16_t *const out, const uint
     int starty;
     float *const w = weights + dt_get_thread_num() * kern_width;
     const int filt_width = gaussian_weights(y, roi_in->height, roi_out->scale, support, sigma, w, &starty);
-    float *outp = intermed + roi_in->width * y;
+    float *outp = intermed + roi_in->width * y + 1;
     // FIXME: how to handle first/last column without special edge interpolation? - probably do a special run for them, just copying over nearest value of same color from input
     for (int x=1; x < roi_in->width-1; ++x, ++outp)
     {
@@ -395,7 +394,7 @@ void dt_iop_clip_and_zoom_mosaic_half_size_plain(uint16_t *const out, const uint
     int startx;
     float *const w = weights + dt_get_thread_num() * kern_width;
     const int filt_width = gaussian_weights(x, roi_in->width, roi_out->scale, support, sigma, w, &startx);
-    uint16_t *outp = out + x;
+    uint16_t *outp = out + x + out_stride;
     // FIXME: how to handle first/last column without special edge interpolation? -- porbably do a special run for them, copying over nearest value of same color from intermed
     for (int y=1; y < roi_out->height-1; ++y, outp += out_stride)
     {
