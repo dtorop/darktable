@@ -267,8 +267,11 @@ void dt_iop_clip_and_zoom_mosaic_half_size_plain(uint16_t *const out, const uint
   // FIXME: only need 3 channel for RGGB, or does aligning on 4s counterbalance that?
   const size_t intermed_len_f = (size_t)roi_in->width * roi_out->height;
   const size_t kernel_len_f = (size_t)kern_width * dt_get_num_threads();
-  const size_t lookup_len_i = (size_t)16 * 16 * 32;
-  void *const buf = (void *)dt_alloc_align(16, (intermed_len_f + kernel_len_f) * sizeof(float) + lookup_len_i * sizeof(int));
+  // FIXME: why was this 16x16? and make at least 6x6 if use for x-trans
+
+  const size_t lookup_len_i = (size_t)2 * 2 * 4 * 5;
+  const size_t lookup_len_f = (size_t)2 * 2 * 4 * 4;
+  void *const buf = (void *)dt_alloc_align(16, (intermed_len_f + kernel_len_f + lookup_len_f) * sizeof(float) + lookup_len_i * sizeof(int));
   if(!buf)
   {
     printf("[blur_and_decimate] not able to allocate buffer\n");
@@ -276,55 +279,79 @@ void dt_iop_clip_and_zoom_mosaic_half_size_plain(uint16_t *const out, const uint
   }
   float *const intermed = buf;
   float *const weights = intermed + intermed_len_f;
-  int(*const lookup)[16][32] = buf + sizeof(float) * (intermed_len_f + kernel_len_f);
+  float(*const lookup_f)[2][4][4] = (void *)(weights + kernel_len_f);
+  // FIXME: just offset from lookup_f
+  // FIXME: should type really be size_t?
+  int(*const lookup_i)[2][4][5] = buf + sizeof(float) * (intermed_len_f + kernel_len_f + lookup_len_f);
 
   // NOTE: keeping xtrans code here, in case xtrans can work with subsample/bandlimit
   const int colors = (filters == 9) ? 3 : 4;
 
-  // build interpolation lookup table which for a given offset in the sensor
-  // lists neighboring pixels from which to interpolate:
-  // COLORPIX                   # color of center pixel
-  // NUM_PIXELS                 # of neighboring pixels to read
-  // for (1..NUM_PIXELS):
-  //   OFFSET                   # in bytes from current pixel
-  //   WEIGHT                   # how much weight to give this neighbor
-  //   COLOR                    # sensor color
-  // # weights of adjoining pixels not of this pixel's color
-  // COLORA TOT_WEIGHT
-  // COLORB TOT_WEIGHT
-  const int size = (filters == 9) ? 6 : 16;
-  for(int row = 0; row < size; row++)
-    for(int col = 0; col < size; col++)
+  // build interpolation lookup which for a given offset in CFA
+  // lists neighboring pixels from which to interpolate
+  //   lookup_i[row][col][color]:
+  //     NUM_PIXELS               # of neighboring pixels to read
+  //     for (1..NUM_PIXELS):
+  //       offset                 # in bytes from current pixel
+  //   lookup_f[row][col][color]:
+  //     for (1..NUM_PIXELS):
+  //       weight                 # normalized, for correspond lookup_i offset
+
+  // FIXME: store color of current cell in lookup?
+  // FIXME: if don't need to interpolate, set NUM_PIXELS to 0 or one entry with offset 0 and weight 1?
+  // FIXME: why is this 16x16 for a 2x2 CFA instead of 2x2?
+  //const int size = (filters == 9) ? 6 : 2;
+  const int lsize = 2;
+  for(int row = 0; row < lsize; row++)
+    for(int col = 0; col < lsize; col++)
     {
-      int *ip = lookup[row][col] + 2;
+      // FIXME: set pointers to current row/col
+      //int(*const ip)[5] = lookup_i[row][col]
+      //float(*const ip)[4] = lookup_f[row][col]
+      //int *ip = lookup[row][col] + 2;
       int sum[4] = { 0 };
-      // FIXME: do need to factor in roi->x and roi->y, or can assume they are always 0?
+      // FIXME: just reference straight to lookup
+      int count[4] = { 0 };
       //const int f = fcol(row, col, filters, xtrans);
       const int f = FC(row, col, filters);
-      lookup[row][col][0] = f;
-      // make list of adjoining pixel offsets by weight & color
+      //lookup[row][col][0] = f;
+      // make lists of adjoining pixel offsets by weight
       for(int y = -1; y <= 1; y++)
         for(int x = -1; x <= 1; x++)
         {
+          // FIXME: should type be float here?
           int weight = 1 << ((y == 0) + (x == 0));
           //const int color = fcol(row + y, col + x, filters, xtrans);
-          const int color = FC(row + y, col + x, filters);
-          if(color == f) continue;
-          // FIXME: does this offset ever need to be roi_out->width?
-          *ip++ = (roi_in->width * y + x);
-          *ip++ = weight;
-          *ip++ = color;
-          sum[color] += weight;
+          const int c = FC(row + y, col + x, filters);
+          // for same color lookup, use center pixel
+          if((c == f) && (weight != 4)) continue;
+          if(count[c] > 4) {
+            printf("[dt_iop_clip_and_zoom_mosaic_half_size_plain] too many offsets for a CFA color\n");
+            continue;
+          }
+          // FIXME: roi_in->width should be in_stride?
+          lookup_i[row][col][c][count[c]+1] = (roi_in->width * y + x);
+          lookup_f[row][col][c][count[c]] = weight;
+          sum[c] += weight;
+          count[c]++;
         }
-      lookup[row][col][1] = (ip - lookup[row][col]) / 3; /* # of neighboring pixels found */
+      // normalize weights and store counts
       for(int c = 0; c < colors; c++)
-        if(c != f)
-        {
-          *ip++ = c;
-          *ip++ = sum[c];
-        }
-      // FIXME: seperate output by pixel colors
+      {
+        lookup_i[row][col][c][0] = count[c];
+        for(int i = 0; i < count[c]; i++)
+          lookup_f[row][col][c][i] /= sum[c];
+      }
     }
+  for(int row = 0; row < lsize; row++)
+    for(int col = 0; col < lsize; col++)
+      for(int c = 0; c < colors; c++)
+      {
+        printf("[%d,%d,%d]: (%d)", row, col, c, lookup_i[row][col][c][0]);
+        for(int i=0; i < lookup_i[row][col][c][0]; ++i)
+          printf(" %d,%f", lookup_i[row][col][c][i+1], lookup_f[row][col][c][i]);
+        printf("\n");
+      }
 
   // FIXME: imagemagick uses epsilon, should here?
 
@@ -339,7 +366,7 @@ void dt_iop_clip_and_zoom_mosaic_half_size_plain(uint16_t *const out, const uint
     float *const w = weights + dt_get_thread_num() * kern_width;
     const int filt_width = gaussian_weights(y, roi_in->height, roi_out->scale, support, sigma, w, &starty);
     float *outp = intermed + roi_in->width * y;
-    // FIXME: how to handle first/last column without special edge interpolation?
+    // FIXME: how to handle first/last column without special edge interpolation? - probably do a special run for them, just copying over nearest value of same color from input
     for (int x=1; x < roi_in->width-1; ++x, ++outp)
     {
       const int c = FC(y, x, filters);
@@ -348,23 +375,12 @@ void dt_iop_clip_and_zoom_mosaic_half_size_plain(uint16_t *const out, const uint
       const uint16_t *inp = in + starty * in_stride + x;
       for (int i=0, yy = starty; i < filt_width; ++i, ++yy, inp += in_stride)
       {
-        // FIXME: lookup should be separated by mosaic color
-        int *ip = lookup[yy % size][x % size];
-        if (*ip++ == c)
-        { // source and destination are same CFA color
-          sum += *inp * w[i];
-        }
-        else
-        { // need to interpolate
-          float sc = 0.0f;
-          for(int l = *ip++; l--; ip += 3)
-            if (ip[2] == c)
-              sc += inp[ip[0]] * ip[1];
-          for(int l = colors; --l; ip += 2)
-            // FIXME: does the lin_interpolate in demosaic divide by 0?
-            if (c == *ip)
-              sum += w[i] * sc / ip[1];
-        }
+        int *ip = lookup_i[yy % lsize][x % lsize][c];
+        float *fp = lookup_f[yy % lsize][x % lsize][c];
+        float acc = 0.0f;
+        for(int n=*ip++; n--; ip++, fp++)
+          acc += *fp * inp[*ip];
+        sum += w[i] * acc;
       }
       *outp = sum;
     }
@@ -380,7 +396,7 @@ void dt_iop_clip_and_zoom_mosaic_half_size_plain(uint16_t *const out, const uint
     float *const w = weights + dt_get_thread_num() * kern_width;
     const int filt_width = gaussian_weights(x, roi_in->width, roi_out->scale, support, sigma, w, &startx);
     uint16_t *outp = out + x;
-    // FIXME: how to handle first/last column without special edge interpolation?
+    // FIXME: how to handle first/last column without special edge interpolation? -- porbably do a special run for them, copying over nearest value of same color from intermed
     for (int y=1; y < roi_out->height-1; ++y, outp += out_stride)
     {
       const int c = FC(y, x, filters);
@@ -388,21 +404,12 @@ void dt_iop_clip_and_zoom_mosaic_half_size_plain(uint16_t *const out, const uint
       const float *inp = intermed + y * roi_in->width + startx;
       for (int i=0, xx = startx; i < filt_width; ++i, ++xx, inp++)
       {
-        int *ip = lookup[y % size][xx % size];
-        if (*ip++ == c)
-        {
-          sum += *inp * w[i];
-        }
-        else
-        {
-          float sc = 0.0f;
-          for(int l = *ip++; l--; ip += 3)
-            if (ip[2] == c)
-              sc += inp[ip[0]] * ip[1];
-          for(int l = colors; --l; ip += 2)
-            if (c == *ip)
-              sum += w[i] * sc / ip[1];
-        }
+        int *ip = lookup_i[y % lsize][xx % lsize][c];
+        float *fp = lookup_f[y % lsize][xx % lsize][c];
+        float acc = 0.0f;
+        for(int n=*ip++; n--; ip++, fp++)
+          acc += *fp * inp[*ip];
+        sum += w[i] * acc;
       }
       *outp = (uint16_t)sum;
     }
