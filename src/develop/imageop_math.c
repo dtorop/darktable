@@ -269,9 +269,8 @@ void dt_iop_clip_and_zoom_mosaic_half_size_plain(uint16_t *const out, const uint
   const size_t kernel_len_f = (size_t)kern_width * dt_get_num_threads();
   // FIXME: why was this 16x16? and make at least 6x6 if use for x-trans
 
-  const size_t lookup_len_i = (size_t)2 * 2 * 4 * 5;
-  const size_t lookup_len_f = (size_t)2 * 2 * 4 * 4;
-  void *const buf = (void *)dt_alloc_align(16, (intermed_len_f + kernel_len_f + lookup_len_f) * sizeof(float) + lookup_len_i * sizeof(int));
+  const size_t lookup_len_i = (size_t)2 * 2 * 4 * 9;
+  void *const buf = (void *)dt_alloc_align(16, (intermed_len_f + kernel_len_f) * sizeof(float) + lookup_len_i * sizeof(int));
   if(!buf)
   {
     printf("[blur_and_decimate] not able to allocate buffer\n");
@@ -279,78 +278,74 @@ void dt_iop_clip_and_zoom_mosaic_half_size_plain(uint16_t *const out, const uint
   }
   float *const intermed = buf;
   float *const weights = intermed + intermed_len_f;
-  float(*const lookup_f)[2][4][4] = (void *)(weights + kernel_len_f);
   // FIXME: should type really be size_t?
-  int(*const lookup_i)[2][4][5] = (void *)((float *)lookup_f + lookup_len_f);
+  int(*const lookup)[2][4][9] = (void *)(weights + kernel_len_f);
 
   // NOTE: keeping xtrans code here, in case xtrans can work with subsample/bandlimit
   const int colors = (filters == 9) ? 3 : 4;
 
   // build interpolation lookup which for a given offset in CFA
   // lists neighboring pixels from which to interpolate
-  //   lookup_i[row][col][color]:
+  //   lookup[row][col][color]:
   //     NUM_PIXELS               # of neighboring pixels to read
   //     for (1..NUM_PIXELS):
   //       offset                 # in bytes from current pixel
-  //   lookup_f[row][col][color]:
-  //     for (1..NUM_PIXELS):
-  //       weight                 # normalized, for correspond lookup_i offset
+  //       weight_recip           # 1, 2, 4 for weights 1, 0.5, 0.25
+  // FIXME: all pixels will have same weight, recip_weight=NUM_PIXELS
 
   // FIXME: store color of current cell in lookup?
-  // FIXME: if don't need to interpolate, set NUM_PIXELS to 0 or one entry with offset 0 and weight 1?
-  // FIXME: why is this 16x16 for a 2x2 CFA instead of 2x2?
-  //const int size = (filters == 9) ? 6 : 2;
+  // FIXME: why in dcraw is this a 16x16 for a 2x2 CFA instead of 2x2? is this an optimization?
+  //const int size = (filters == 9) ? 6 : 16;
   const int lsize = 2;
   for(int row = 0; row < lsize; row++)
     for(int col = 0; col < lsize; col++)
     {
       // FIXME: set pointers to current row/col
-      //int(*const ip)[5] = lookup_i[row][col]
-      //float(*const ip)[4] = lookup_f[row][col]
-      //int *ip = lookup[row][col] + 2;
+      //int(*const ip)[9] = lookup[row][col]
       int sum[4] = { 0 };
       // FIXME: just reference straight to lookup
       int count[4] = { 0 };
-      //const int f = fcol(row, col, filters, xtrans);
       const int f = FC(row, col, filters);
-      //lookup[row][col][0] = f;
       // make lists of adjoining pixel offsets by weight
       for(int y = -1; y <= 1; y++)
         for(int x = -1; x <= 1; x++)
         {
-          // FIXME: should type be float here?
+          // FIXME: don't need to keep track of weight/sum, as we know it from count
           int weight = 1 << ((y == 0) + (x == 0));
-          //const int color = fcol(row + y, col + x, filters, xtrans);
           const int c = FC(row + y, col + x, filters);
-          // for same color lookup, use center pixel
+          // for same color lookup, don't interpolate, only use center pixel
           if((c == f) && (weight != 4)) continue;
           if(count[c] > 4) {
             printf("[dt_iop_clip_and_zoom_mosaic_half_size_plain] too many offsets for a CFA color\n");
             continue;
           }
           // FIXME: roi_in->width should be in_stride?
-          lookup_i[row][col][c][count[c]+1] = (roi_in->width * y + x);
-          lookup_f[row][col][c][count[c]] = weight;
+          lookup[row][col][c][(count[c]*2)+1] = (roi_in->width * y + x);
+          lookup[row][col][c][(count[c]*2)+2] = weight;
           sum[c] += weight;
           count[c]++;
         }
       // normalize weights and store counts
       for(int c = 0; c < colors; c++)
       {
-        lookup_i[row][col][c][0] = count[c];
-        for(int i = 0; i < count[c]; i++)
-          lookup_f[row][col][c][i] /= sum[c];
+        int *ip = lookup[row][col][c];
+        *ip++ = count[c];
+        for(int i = 0; i < count[c]; i++, ip += 2)
+          ip[1] = sum[c] / ip[1];
       }
     }
+#if 0
   for(int row = 0; row < lsize; row++)
     for(int col = 0; col < lsize; col++)
       for(int c = 0; c < colors; c++)
       {
-        printf("[%d,%d,%d]: (%d)", row, col, c, lookup_i[row][col][c][0]);
-        for(int i=0; i < lookup_i[row][col][c][0]; ++i)
-          printf(" %d,%f", lookup_i[row][col][c][i+1], lookup_f[row][col][c][i]);
+        int *ip = lookup[row][col][c];
+        printf("[%d,%d,%d]: (%d)", row, col, c, *ip);
+        for(int i=*ip++; i--; ip += 2)
+          printf(" %d,%d", ip[0], ip[1]);
         printf("\n");
       }
+#endif
 
   // FIXME: imagemagick uses epsilon, should here?
 
@@ -372,13 +367,13 @@ void dt_iop_clip_and_zoom_mosaic_half_size_plain(uint16_t *const out, const uint
       float sum = 0.0f;
       // FIXME: this assume roi_in->width == in_stride as the offsets in lookup depend on former
       const uint16_t *inp = in + starty * in_stride + x;
+      // FIXME: as know CFA repeats every other cell, can that make things faster?
       for (int i=0, yy = starty; i < filt_width; ++i, ++yy, inp += in_stride)
       {
-        int *ip = lookup_i[yy % lsize][x % lsize][c];
-        float *fp = lookup_f[yy % lsize][x % lsize][c];
+        int *ip = lookup[yy % lsize][x % lsize][c];
         float acc = 0.0f;
-        for(int n=*ip++; n--; ip++, fp++)
-          acc += *fp * inp[*ip];
+        for(int n=*ip++; n--; ip += 2)
+          acc += inp[ip[0]] / (float)ip[1];
         sum += w[i] * acc;
       }
       *outp = sum;
@@ -403,11 +398,10 @@ void dt_iop_clip_and_zoom_mosaic_half_size_plain(uint16_t *const out, const uint
       const float *inp = intermed + y * roi_in->width + startx;
       for (int i=0, xx = startx; i < filt_width; ++i, ++xx, inp++)
       {
-        int *ip = lookup_i[y % lsize][xx % lsize][c];
-        float *fp = lookup_f[y % lsize][xx % lsize][c];
+        int *ip = lookup[y % lsize][xx % lsize][c];
         float acc = 0.0f;
-        for(int n=*ip++; n--; ip++, fp++)
-          acc += *fp * inp[*ip];
+        for(int n=*ip++; n--; ip += 2)
+          acc += inp[ip[0]] / (float)ip[1];
         sum += w[i] * acc;
       }
       *outp = (uint16_t)sum;
