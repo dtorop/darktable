@@ -214,13 +214,13 @@ static int gaussian_weights(const int pos, const int max_pos, const float factor
 
 // Take an image mosaiced with a 2x2 CFA, reduce it in scale, and
 // output it mosaiced with the same CFA. The catch is that a straight
-// downscaling will produce edge artifacts which will look
-// particularly bad when the image is output mosaiced. Hence the image
-// needs to be filtered to bandlimit it and remove high frequency
-// detail. The best solution seems to be to Gaussian blur the image
-// while downsampling it. But the Gaussian blur must act per-channel,
-// and hence a quick demosaiced version of the image must be
-// calculated for the downscale to work.
+// downscaling will produce edge artifacts which look particularly bad
+// when the image is output mosaiced. Hence the image needs to be
+// filtered to bandlimit it and remove high frequency detail. The best
+// solution seems to be to Gaussian blur the image while downsampling
+// it. But the Gaussian blur must act per-channel, and hence an
+// on-they-fly demosaiced version of the image is calculated for the
+// downscale to work.
 // QUESTION: is it possible to naively downsample each 2x2 block to one 4-channel pixel, then Gaussian blur with sigma tuned to the full downscale needed (hence px_footprint/2 for the downsampled), then downssample the result back to a CFA? -- and in the faster version, the Gaussian blur would know which pixel(s) to contribute to the blur, weighted by CFA position?
 // FIXME: the function name is no longer accurate
 void dt_iop_clip_and_zoom_mosaic_half_size_plain(uint16_t *const out, const uint16_t *const in,
@@ -258,8 +258,6 @@ void dt_iop_clip_and_zoom_mosaic_half_size_plain(uint16_t *const out, const uint
   const float sigma = 1.0f/roi_out->scale;
   const float support_factor = 2.5f;
   const float support = support_factor * sigma;
-  // too small support won't even result in nearest neighbor
-  assert(support >= 0.5f);
   const int kern_width = 2.0f * support + 3.0f;
   //printf("roi_out->scale is %f sigma is %f support is %f kern_width is %d\n", roi_out->scale, sigma, support, kern_width);
 
@@ -280,23 +278,18 @@ void dt_iop_clip_and_zoom_mosaic_half_size_plain(uint16_t *const out, const uint
   // FIXME: should type really be size_t?
   int(*const lookup)[2][4][5] = (void *)(weights + kernel_len_f);
 
-  // build interpolation lookup which for a given offset in CFA
-  // lists neighboring pixels from which to interpolate
-  //   lookup[row][col][color]:
-  //     NUM_PIXELS               # of neighboring pixels to read
-  //     for (1..NUM_PIXELS):
-  //       offset                 # in bytes from current pixel
-  // The assumption is that for a CFA cell will have either 2 or 4
-  // same-colored neighbors in a symmetrical pattern, or it'll use its
-  // own value (stored as NUM_PIXELS=1 and offset=0), hence can weight
-  // pixels by dividing by NUM_PIXELS.
+  // Build lookup which for a given point in the CFA lists neighboring
+  // pixels from which to interpolate various colors. Each
+  // lookup[row][col][color] contains a list of offsets preceded by
+  // the length of the list. The assumption is that for each color,
+  // the CFA cell will either be that color, or will have either 2 or
+  // 4 neighbors of that color in a symmetrical pattern. Hence can
+  // weight pixels by dividing by the list's length.
   //const int size = (filters == 9) ? 6 : 16;
   const int lsize = 2;
   for(int row = 0; row < lsize; row++)
     for(int col = 0; col < lsize; col++)
     {
-      // FIXME: set pointers to current row/col
-      //int(*const ip)[5] = lookup[row][col]
       const int f = FC(row, col, filters);
       // make lists of adjoining pixels by color
       for(int y = -1; y <= 1; y++)
@@ -306,11 +299,11 @@ void dt_iop_clip_and_zoom_mosaic_half_size_plain(uint16_t *const out, const uint
           // for same color lookup, don't interpolate, only use center pixel
           if((c == f) && (x || y)) continue;
           const int count = ++lookup[row][col][c][0];
-          // FIXME: roi_in->width should be in_stride?
           if(count > 4) {
             printf("[dt_iop_clip_and_zoom_mosaic_half_size_plain] too many offsets for a CFA color\n");
             return;
           }
+          // FIXME: roi_in->width should be in_stride?
           lookup[row][col][c][count] = (roi_in->width * y + x);
         }
     }
@@ -335,7 +328,7 @@ void dt_iop_clip_and_zoom_mosaic_half_size_plain(uint16_t *const out, const uint
   // Gaussian blur is separable
   // vertical filter, downsample rows, mosaiced int -> mosaiced float
 #ifdef _OPENMP
-#pragma omp parallel for default(none) schedule(static)
+#pragma omp parallel for default(none) schedule(dynamic)
 #endif
   for (int y=0; y < roi_out->height; y++)
   {
@@ -368,7 +361,7 @@ void dt_iop_clip_and_zoom_mosaic_half_size_plain(uint16_t *const out, const uint
 
   // horizontal filter, downsample columns, mosaiced float -> mosaiced int
 #ifdef _OPENMP
-#pragma omp parallel for default(none) schedule(static)
+#pragma omp parallel for default(none) schedule(dynamic)
 #endif
   for (int x=0; x < roi_out->width; x++)
   {
