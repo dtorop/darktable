@@ -248,13 +248,11 @@ _print_button_clicked (GtkWidget *widget, gpointer user_data)
 
   const int high_quality = 1;
   const int upscale = 1;
-  dt_colorspaces_color_profile_type_t icc_type = dt_conf_get_int("plugins/print/print/icctype");
-  gchar *icc_filename = dt_conf_get_string("plugins/print/print/iccprofile");
-  dt_iop_color_intent_t icc_intent = dt_conf_get_int("plugins/print/print/iccintent");
-  const dt_colorspaces_color_profile_t *buf_profile = dt_colorspaces_get_output_profile(imgid, icc_type, icc_filename);
+  // handle first choice being "image settings"
+  dt_iop_color_intent_t icc_intent = (ps->v_intent == -1 ? DT_INTENT_LAST : ps->v_intent);
+  const dt_colorspaces_color_profile_t *buf_profile = dt_colorspaces_get_output_profile(imgid, ps->v_icctype, ps->v_iccprofile);
   dt_imageio_export_with_flags(imgid, "unused", &buf, (dt_imageio_module_data_t *)&dat, 1, 0, high_quality, upscale, 0,
-                               NULL, FALSE, icc_type, icc_filename, icc_intent,  NULL, NULL, 1, 1);
-  g_free(icc_filename);
+                               NULL, FALSE, ps->v_icctype, ps->v_iccprofile, icc_intent,  NULL, NULL, 1, 1);
 
   // after exporting we know the real size of the image, compute the layout
 
@@ -1298,7 +1296,8 @@ gui_init (dt_lib_module_t *self)
   dt_bauhaus_combobox_add(d->intent, _("absolute colorimetric"));
   gtk_box_pack_start(GTK_BOX(self->widget), GTK_WIDGET(d->intent), TRUE, TRUE, 0);
 
-  dt_bauhaus_combobox_set(d->intent, dt_conf_get_int("plugins/print/print/iccintent") + 1);
+  d->v_intent = dt_conf_get_int("plugins/print/print/iccintent");
+  dt_bauhaus_combobox_set(d->intent, d->v_intent + 1);
 
   g_signal_connect (G_OBJECT (d->intent), "value-changed", G_CALLBACK (_intent_callback), (gpointer)self);
 
