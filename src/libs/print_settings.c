@@ -941,46 +941,40 @@ static void _print_settings_activate_or_update_callback(gpointer instance,gpoint
   _set_orientation (ps);
 }
 
+static GList* _profile_list_append(GList *list, const dt_colorspaces_color_profile_type_t type,
+                                   const char *name, const char *filename)
+{
+  dt_lib_export_profile_t *prof = (dt_lib_export_profile_t *)g_malloc0(sizeof(dt_lib_export_profile_t));
+  prof->type = type;
+  if(filename)
+  {
+    g_strlcpy(prof->name, name, sizeof(prof->name));
+    g_strlcpy(prof->filename, filename, sizeof(prof->filename));
+  }
+  else
+  {
+    dt_utf8_strlcpy(prof->name, name, sizeof(prof->name));
+  }
+  prof->pos = -2;
+  prof->ppos = -2;
+  return g_list_append(list, prof);
+}
+
 static GList* _get_profiles ()
 {
   //  Create list of profiles
   GList *list = NULL;
 
-  dt_lib_export_profile_t *prof = (dt_lib_export_profile_t *)g_malloc0(sizeof(dt_lib_export_profile_t));
-  prof->type = DT_COLORSPACE_SRGB;
-  dt_utf8_strlcpy(prof->name, _("sRGB (web-safe)"), sizeof(prof->name));
-  prof->pos = -2;
-  prof->ppos = -2;
-  list = g_list_append(list, prof);
-
-  prof = (dt_lib_export_profile_t *)g_malloc0(sizeof(dt_lib_export_profile_t));
-  prof->type = DT_COLORSPACE_ADOBERGB;
-  dt_utf8_strlcpy(prof->name, _("Adobe RGB (compatible)"), sizeof(prof->name));
-  prof->pos = -2;
-  prof->ppos = -2;
-  list = g_list_append(list, prof);
-
-  prof = (dt_lib_export_profile_t *)g_malloc0(sizeof(dt_lib_export_profile_t));
-  prof->type = DT_COLORSPACE_LIN_REC2020;
-  dt_utf8_strlcpy(prof->name, _("linear REC2020 RGB"), sizeof(prof->name));
-  prof->pos = -2;
-  prof->ppos = -2;
-  list = g_list_append(list, prof);
+  list = _profile_list_append(list, DT_COLORSPACE_SRGB, _("sRGB (web-safe)"), NULL);
+  list = _profile_list_append(list, DT_COLORSPACE_ADOBERGB, _("Adobe RGB (compatible)"), NULL);
+  list = _profile_list_append(list, DT_COLORSPACE_LIN_REC2020, _("linear REC2020 RGB"), NULL);
 
   // add the profiles from datadir/color/out/*.icc
   for(GList *iter = darktable.color_profiles->profiles; iter; iter = g_list_next(iter))
   {
     dt_colorspaces_color_profile_t *p = (dt_colorspaces_color_profile_t *)iter->data;
     if(p->type == DT_COLORSPACE_FILE)
-    {
-      prof = (dt_lib_export_profile_t *)g_malloc0(sizeof(dt_lib_export_profile_t));
-      g_strlcpy(prof->name, p->name, sizeof(prof->name));
-      g_strlcpy(prof->filename, p->filename, sizeof(prof->filename));
-      prof->type = DT_COLORSPACE_FILE;
-      prof->pos = -2;
-      prof->ppos = -2;
-      list = g_list_append(list, prof);
-    }
+      list = _profile_list_append(list, DT_COLORSPACE_FILE, p->name, p->filename);
   }
 
   return list;
