@@ -83,6 +83,8 @@ typedef struct dt_lib_print_job_t
 {
   int imgid;
   gchar *job_title;
+  gchar title_disp[30];
+  gchar prntr_disp[25];
   dt_print_info_t prt;
   gchar* style;
   gboolean style_append, black_point_compensation;
@@ -238,7 +240,7 @@ static int _print_job_run(dt_job_t *job)
 
   // let the user know something is happening
   dt_control_job_set_progress(job, 0.05);
-  dt_control_log(_("processing `%s' for `%s'"), params->job_title, params->prt.printer.name);
+  dt_control_log(_("processing `%s' for `%s'"), params->title_disp, params->prntr_disp);
 
   const int high_quality = 1;
   const int upscale = 1;
@@ -350,7 +352,8 @@ static int _print_job_run(dt_job_t *job)
 
   // send to CUPS
 
-  dt_print_file (params->imgid, params->pdf_filename, params->job_title, &params->prt);
+  dt_print_file (params->imgid, params->pdf_filename,
+                 params->job_title, params->title_disp, params->prntr_disp, &params->prt);
   dt_control_job_set_progress(job, 1.0);
 
   // add tag for this image
@@ -432,8 +435,13 @@ _print_button_clicked (GtkWidget *widget, gpointer user_data)
     params->job_title = g_strdup(img->filename);
     dt_image_cache_read_release(darktable.image_cache, img);
   }
-  // FIXME: ellipsize title/printer as the export completed message is ellipsized
-  gchar *message = g_strdup_printf(_("processing `%s' for `%s'"), params->job_title, params->prt.printer.name);
+
+  if (g_strlcpy(params->title_disp, params->job_title, sizeof(params->title_disp)) >= sizeof(params->title_disp))
+    g_strlcpy(&params->title_disp[sizeof(params->title_disp)-3], "..", 3);
+  if (g_strlcpy(params->prntr_disp, params->prt.printer.name, sizeof(params->prntr_disp)) >= sizeof(params->prntr_disp))
+    g_strlcpy(&params->prntr_disp[sizeof(params->prntr_disp)-3], "..", 3);
+
+  gchar *message = g_strdup_printf(_("processing `%s' for `%s'"), params->title_disp, params->prntr_disp);
   dt_control_job_add_progress(job, message, TRUE);
   g_free(message);
 

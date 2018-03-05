@@ -387,7 +387,7 @@ dt_medium_info_t *dt_get_medium(GList *media, const char *name)
   return result;
 }
 
-void dt_print_file(const int32_t imgid, const char *filename, const char *job_title, const dt_print_info_t *pinfo)
+void dt_print_file(const int32_t imgid, const char *filename, const char *job_title, const char *title_disp, const char *prntr_disp, const dt_print_info_t *pinfo)
 {
   // first for safety check that filename exists and is readable
 
@@ -541,22 +541,11 @@ void dt_print_file(const int32_t imgid, const char *filename, const char *job_ti
 
   const int job_id = cupsPrintFile(pinfo->printer.name, filename, job_title, num_options, options);
 
-  {
-    char *title = (char *)job_title + strlen(job_title) - 30;
-    char *printer = (char *)pinfo->printer.name + strlen(pinfo->printer.name) - 25;
+  if (job_id == 0)
+    dt_control_log(_("error while printing `%s' on `%s'"), title_disp, prntr_disp);
+  else
+    dt_control_log(_("printing `%s' on `%s'"), title_disp, prntr_disp);
 
-    if (title < job_title) title = (char *)job_title;
-    if (printer < pinfo->printer.name) printer = (char *)pinfo->printer.name;
-
-    if (job_id == 0)
-      dt_control_log(_("error while printing `%s%s' on `%s%s'"),
-                     title == job_title ? "" : "..", title,
-                     printer == pinfo->printer.name ? "" : "..", printer);
-    else
-      dt_control_log(_("printing `%s%s' on `%s%s'"),
-                     title == job_title ? "" : "..", title,
-                     printer == pinfo->printer.name ? "" : "..", printer);
-  }
   cupsFreeOptions (num_options, options);
 }
 
