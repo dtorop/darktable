@@ -352,30 +352,29 @@ static gboolean _lib_histogram_draw_callback(GtkWidget *widget, cairo_t *crf, gp
 
       if(d->waveform_type == DT_LIB_HISTOGRAM_WAVEFORM_OVERLAID)
       {
-        uint8_t *w = calloc(waveform_stride * waveform_height * 4, sizeof(uint8_t));
+        cairo_scale(cr, (double)width/waveform_width, (double)height/waveform_height);
+        cairo_set_operator(cr, CAIRO_OPERATOR_ADD);
+        uint8_t *w = malloc(waveform_stride * waveform_height * 4 * sizeof(uint8_t));
         for(int k = 0; k < 3; k++)
           if(mask[k])
           {
+            memset(w, 0, waveform_stride * waveform_height * 4);
             uint8_t *in = hist_wav + waveform_stride * waveform_height * k;
             for(int y = 0; y < waveform_height; ++y)
               for(int x = 0; x < waveform_width; ++x)
               {
                 w[(y * waveform_stride + x) * 4 + k] = in[y * waveform_stride + x];
                 // setting the alpha helps especially to make the blue channel visible
-                w[(y * waveform_stride + x) * 4 + 3] = MAX(w[(y * waveform_stride + x) * 4 + 3],in[y * waveform_stride + x]);
+                w[(y * waveform_stride + x) * 4 + 3] = in[y * waveform_stride + x];
               }
-          }
 
-        cairo_surface_t *source
-                = cairo_image_surface_create_for_data(w, CAIRO_FORMAT_ARGB32,
-                                                      waveform_width, waveform_height, waveform_stride*4);
-        // FIXME: why don't need to think about ppd?
-        //cairo_scale(cr, darktable.gui->ppd*width/waveform_width, darktable.gui->ppd*height/waveform_height);
-        cairo_scale(cr, (double)width/waveform_width, (double)height/waveform_height);
-        cairo_set_source_surface(cr, source, 0.0, 0.0);
-        cairo_set_operator(cr, CAIRO_OPERATOR_OVER);
-        cairo_paint(cr);
-        cairo_surface_destroy(source);
+            cairo_surface_t *source
+                    = cairo_image_surface_create_for_data(w, CAIRO_FORMAT_ARGB32,
+                                                          waveform_width, waveform_height, waveform_stride*4);
+            cairo_set_source_surface(cr, source, 0.0, 0.0);
+            cairo_paint(cr);
+            cairo_surface_destroy(source);
+          }
         free(w);
       }
       else
