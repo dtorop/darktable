@@ -132,11 +132,11 @@ static void _draw_type_toggle(cairo_t *cr, float x, float y, float width, float 
   switch(type)
   {
     case DT_DEV_SCOPE_HISTOGRAM:
-      cairo_curve_to(cr, 0.2 * width, height - 2.0 * border, 0.2 * width, 2.0 * border,
+      cairo_curve_to(cr, 0.3 * width, height - 2.0 * border, 0.3 * width, 2.0 * border,
                      0.5 * width, 2.0 * border);
-      cairo_curve_to(cr, 0.8 * width, 2.0 * border, 0.8 * width, height - 2.0 * border, 
+      cairo_curve_to(cr, 0.7 * width, 2.0 * border, 0.7 * width, height - 2.0 * border, 
                      width - 2.0 * border, height - 2.0 * border);
-      cairo_stroke(cr);
+      cairo_fill(cr);
       break;
     case DT_DEV_SCOPE_WAVEFORM:
     {
