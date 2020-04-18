@@ -379,9 +379,6 @@ static gboolean _lib_histogram_draw_callback(GtkWidget *widget, cairo_t *crf, gp
           {
             cairo_save(cr);
             cairo_set_source_rgb(cr, k==0, k==1, k==2);
-            // FIXME: useful to clip?
-            cairo_rectangle(cr, 0, 0, waveform_width, waveform_height);
-            cairo_clip(cr);
             cairo_surface_t *alpha
                 = cairo_image_surface_create_for_data(hist_wav + waveform_stride * waveform_height * (2-k),
                                                       CAIRO_FORMAT_A8, waveform_width, waveform_height, waveform_stride);
