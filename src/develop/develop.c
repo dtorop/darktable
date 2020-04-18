@@ -143,8 +143,10 @@ void dt_dev_init(dt_develop_t *dev, int32_t gui_attached)
     dev->histogram_waveform_height = 175;
     // NOTE: this should be cairo_format_stride_for_width(CAIRO_FORMAT_A8, dev->histogram_waveform_width),
     // but as mipmap widths are already reasonable, don't enforce UI things here
-    dev->histogram_waveform_stride = dev->histogram_waveform_width;
-    dev->histogram_waveform = (uint8_t *)calloc(dev->histogram_waveform_height * dev->histogram_waveform_stride * 3, sizeof(uint8_t));
+    //dev->histogram_waveform_stride = dev->histogram_waveform_width;
+    dev->histogram_waveform_stride = cairo_format_stride_for_width(CAIRO_FORMAT_A8, dev->histogram_waveform_width);
+    dev->histogram_waveform = dt_alloc_align(64, dev->histogram_waveform_height * dev->histogram_waveform_stride * 3 * sizeof(uint8_t));
+    memset(dev->histogram_waveform, 0, sizeof(uint8_t) * dev->histogram_waveform_height * dev->histogram_waveform_stride * 3);
   }
 
   dev->iop_instance = 0;
