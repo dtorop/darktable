@@ -80,6 +80,7 @@ typedef enum dt_dev_scope_type_t
 {
   DT_DEV_SCOPE_HISTOGRAM = 0,
   DT_DEV_SCOPE_WAVEFORM,
+  DT_DEV_SCOPE_VECTORSCOPE,
   DT_DEV_SCOPE_N // needs to be the last one
 } dt_dev_scope_type_t;
 
@@ -199,6 +200,8 @@ typedef struct dt_develop_t
   uint32_t histogram_max, histogram_pre_tonecurve_max, histogram_pre_levels_max;
   uint8_t *histogram_waveform;
   uint32_t histogram_waveform_width, histogram_waveform_height, histogram_waveform_stride;
+  uint8_t *histogram_vectorscope;
+  uint32_t histogram_vectorscope_width, histogram_vectorscope_height, histogram_vectorscope_stride;
   dt_dev_scope_type_t scope_type;
   dt_dev_histogram_type_t histogram_type;
 

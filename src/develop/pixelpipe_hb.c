@@ -1104,6 +1104,59 @@ static void _pixelpipe_final_histogram_waveform(dt_develop_t *dev, const float *
   }
 }
 
+static void _pixelpipe_final_histogram_vectorscope(dt_develop_t *dev, const float *const input, const dt_iop_roi_t *roi_in)
+{
+  dt_times_t start_time = { 0 };
+  if(darktable.unmuted & DT_DEBUG_PERF) dt_get_times(&start_time);
+
+  const int vs_width = dev->histogram_vectorscope_width;
+  const int vs_height = dev->histogram_vectorscope_height;
+  const int vs_stride = dev->histogram_vectorscope_stride;
+  uint8_t *const vs = dev->histogram_vectorscope;
+
+  uint32_t *buf = calloc(vs_width * vs_height, sizeof(uint32_t));
+  memset(vs, 0, sizeof(uint8_t) * vs_height * vs_stride);
+
+  // count u and v into bins
+  for(int in_y = 0; in_y < roi_in->height; in_y++)
+  {
+    for(int in_x = 0; in_x < roi_in->width; in_x++)
+    {
+      const float *const in = input + 4 * (in_y*roi_in->width + in_x);
+      // Convert to perceptual YPbPr colorspace
+      // cribbed from demosaic_markesteijn.cl
+      // currently this is extra-naive
+      const float Y = 0.2627f * in[0] + 0.6780f * in[1] + 0.0593f * in[2];
+      const float u = (in[2] - Y) * 0.56433f;
+      const float v = (in[0] - Y) * 0.67815f;
+      const int out_x = CLAMP((u + 0.5f) * vs_width, 0, vs_width-1);
+      const int out_y = CLAMP((v + 0.5f) * vs_height, 0, vs_height-1);
+      buf[out_y * vs_width + out_x]++;
+    }
+  }
+
+  for(int out_y = 0; out_y < vs_height; out_y++)
+  {
+    const uint32_t *const in = buf + vs_width * out_y;
+    uint8_t *const out = vs + (vs_stride * out_y);
+    for(int out_x = 0; out_x < vs_width; out_x++)
+    {
+      const uint32_t v = in[out_x];
+      // FIXME: scale (logarithmically) the lightness
+      out[out_x] = v ? 255 : 0;
+    }
+  }
+
+  free(buf);
+
+  if(darktable.unmuted & DT_DEBUG_PERF)
+  {
+    dt_times_t end_time = { 0 };
+    dt_get_times(&end_time);
+    fprintf(stderr, "final histogram vectorscope took %.3f secs (%.3f CPU)\n", end_time.clock - start_time.clock, end_time.user - start_time.user);
+  }
+}
+
 // returns 1 if blend process need the module default colorspace
 static int _transform_for_blend(dt_iop_module_t *self, dt_dev_pixelpipe_iop_t *piece, const int cst_in, const int cst_out)
 {
@@ -2572,9 +2625,12 @@ post_process_collect_info:
       // this HAS to be done on the float input data, otherwise we get really ugly artifacts due to rounding
       // issues when putting colors into the bins.
       // FIXME: is above comment true now that waveform is scaled via Cairo?
-      if(input && dev->scope_type == DT_DEV_SCOPE_WAVEFORM)
+      if(input)
       {
-        _pixelpipe_final_histogram_waveform(dev, (const float *const )input, &roi_in);
+        if(dev->scope_type == DT_DEV_SCOPE_WAVEFORM)
+          _pixelpipe_final_histogram_waveform(dev, (const float *const )input, &roi_in);
+        if(dev->scope_type == DT_DEV_SCOPE_VECTORSCOPE)
+          _pixelpipe_final_histogram_vectorscope(dev, (const float *const )input, &roi_in);
       }
 
       dt_pthread_mutex_unlock(&pipe->busy_mutex);

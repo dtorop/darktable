@@ -47,7 +47,7 @@
 #define DT_DEV_AVERAGE_DELAY_COUNT 5
 #define DT_IOP_ORDER_INFO (darktable.unmuted & DT_DEBUG_IOPORDER)
 
-const gchar *dt_dev_scope_type_names[DT_DEV_SCOPE_N] = { "histogram", "waveform" };
+const gchar *dt_dev_scope_type_names[DT_DEV_SCOPE_N] = { "histogram", "waveform", "vectorscope" };
 
 void dt_dev_init(dt_develop_t *dev, int32_t gui_attached)
 {
@@ -156,6 +156,12 @@ void dt_dev_init(dt_develop_t *dev, int32_t gui_attached)
     // to be safe, and the histogram is for the sake of UI, after all
     dev->histogram_waveform_stride = cairo_format_stride_for_width(CAIRO_FORMAT_A8, dev->histogram_waveform_width);
     dev->histogram_waveform = calloc(dev->histogram_waveform_height * dev->histogram_waveform_stride * 3, sizeof(uint8_t));
+
+    dev->histogram_vectorscope_width = 350;
+    // FIXME: this is square, only specify width?
+    dev->histogram_vectorscope_height = 350;
+    dev->histogram_vectorscope_stride = cairo_format_stride_for_width(CAIRO_FORMAT_A8, dev->histogram_vectorscope_width);
+    dev->histogram_vectorscope = calloc(dev->histogram_vectorscope_height * dev->histogram_vectorscope_stride, sizeof(uint8_t));
   }
 
   dev->iop_instance = 0;

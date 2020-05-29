@@ -376,6 +376,37 @@ static void _lib_histogram_draw_rgb_parade(cairo_t *cr, int width, int height, c
   free(wav);
 }
 
+static void _lib_histogram_draw_vectorscope(cairo_t *cr, int width, int height)
+{
+  dt_develop_t *dev = darktable.develop;
+
+  dt_pthread_mutex_lock(&dev->preview_pipe_mutex);
+  const int vs_width = dev->histogram_vectorscope_width;
+  const int vs_height = dev->histogram_vectorscope_height;
+  const gint vs_stride = dev->histogram_vectorscope_stride;
+  const size_t histsize = sizeof(uint8_t) * vs_height * vs_stride;
+  uint8_t *vs = malloc(histsize);
+  if(vs) memcpy(vs, dev->histogram_vectorscope, histsize);
+  dt_pthread_mutex_unlock(&dev->preview_pipe_mutex);
+  if(vs == NULL) return;
+
+  // FIXME: should keep this square, not spread to width -- and not assume that histogram is always in landscape proportions
+  cairo_scale(cr, (double)width/(vs_width*3), (double)height/vs_height);
+  // FIXME should be _OVER?
+  cairo_set_operator(cr, CAIRO_OPERATOR_ADD);
+
+  //cairo_save(cr);
+  cairo_set_source_rgb(cr, 1., 1., 1.);
+  cairo_surface_t *alpha
+    = cairo_image_surface_create_for_data(vs, CAIRO_FORMAT_A8,
+                                          vs_width, vs_height, vs_stride);
+  cairo_mask_surface(cr, alpha, 0, 0);
+  cairo_surface_destroy(alpha);
+  //cairo_restore(cr);
+
+  free(vs);
+}
+
 static gboolean _lib_histogram_draw_callback(GtkWidget *widget, cairo_t *crf, gpointer user_data)
 {
   dt_lib_module_t *self = (dt_lib_module_t *)user_data;
@@ -402,6 +433,7 @@ static gboolean _lib_histogram_draw_callback(GtkWidget *widget, cairo_t *crf, gp
   cairo_restore(cr);
 
   // exposure change regions
+  // FIXME: vectorscope should have saturation change region
   if(d->highlight == DT_LIB_HISTOGRAM_HIGHLIGHT_BLACK_POINT)
   {
     cairo_set_source_rgb(cr, .5, .5, .5);
@@ -424,6 +456,7 @@ static gboolean _lib_histogram_draw_callback(GtkWidget *widget, cairo_t *crf, gp
   // draw grid
   set_color(cr, darktable.bauhaus->graph_grid);
 
+  // FIXME: make polar coordinate grid lines for vectorscope
   if(dev->scope_type == DT_DEV_SCOPE_WAVEFORM)
     dt_draw_waveform_lines(cr, 0, 0, width, height);
   else
@@ -445,6 +478,9 @@ static gboolean _lib_histogram_draw_callback(GtkWidget *widget, cairo_t *crf, gp
         else
           _lib_histogram_draw_rgb_parade(cr, width, height, mask);
         break;
+      case DT_DEV_SCOPE_VECTORSCOPE:
+        _lib_histogram_draw_vectorscope(cr, width, height);
+        break;
       case DT_DEV_SCOPE_N:
         g_assert_not_reached();
     }
@@ -463,9 +499,14 @@ static gboolean _lib_histogram_draw_callback(GtkWidget *widget, cairo_t *crf, gp
       case DT_DEV_SCOPE_WAVEFORM:
         _draw_waveform_mode_toggle(cr, d->mode_x, d->button_y, d->button_w, d->button_h, d->waveform_type);
         break;
+      case DT_DEV_SCOPE_VECTORSCOPE:
+        // FIXME: make vectorscope toggle image
+        _draw_waveform_mode_toggle(cr, d->mode_x, d->button_y, d->button_w, d->button_h, d->waveform_type);
+        break;
       case DT_DEV_SCOPE_N:
         g_assert_not_reached();
     }
+    // FIXME: no rgb buttons for vectorscope
     cairo_set_source_rgba(cr, 1.0, 0.0, 0.0, 0.33);
     _draw_color_toggle(cr, d->red_x, d->button_y, d->button_w, d->button_h, d->red);
     cairo_set_source_rgba(cr, 0.0, 1.0, 0.0, 0.33);
@@ -498,6 +539,7 @@ static gboolean _lib_histogram_motion_notify_callback(GtkWidget *widget, GdkEven
   gtk_widget_get_allocation(widget, &allocation);
   if(d->dragging)
   {
+    // FIXME: dragging the vectorscope should change saturation
     const float diff = dev->scope_type == DT_DEV_SCOPE_WAVEFORM ? d->button_down_y - event->y
                                                                 : event->x - d->button_down_x;
     const int range = dev->scope_type == DT_DEV_SCOPE_WAVEFORM ? allocation.height
@@ -535,6 +577,9 @@ static gboolean _lib_histogram_motion_notify_callback(GtkWidget *widget, GdkEven
           gtk_widget_set_tooltip_text(widget, _("set mode to waveform"));
           break;
         case DT_DEV_SCOPE_WAVEFORM:
+          gtk_widget_set_tooltip_text(widget, _("set mode to vectorscope"));
+          break;
+        case DT_DEV_SCOPE_VECTORSCOPE:
           gtk_widget_set_tooltip_text(widget, _("set mode to histogram"));
           break;
         case DT_DEV_SCOPE_N:
@@ -572,6 +617,9 @@ static gboolean _lib_histogram_motion_notify_callback(GtkWidget *widget, GdkEven
               g_assert_not_reached();
           }
           break;
+        case DT_DEV_SCOPE_VECTORSCOPE:
+          // FIXME: this should probably flip between scaled/unscaled view
+          break;
         case DT_DEV_SCOPE_N:
           g_assert_not_reached();
       }
@@ -592,6 +640,7 @@ static gboolean _lib_histogram_motion_notify_callback(GtkWidget *widget, GdkEven
       d->highlight = DT_LIB_HISTOGRAM_HIGHLIGHT_BLUE;
       gtk_widget_set_tooltip_text(widget, d->blue ? _("click to hide blue channel") : _("click to show blue channel"));
     }
+    // FIXME: add DT_LIB_HISTOGRAM_HIGHLIGHT_SATURATION
     else if((posx < 0.2f && dev->scope_type == DT_DEV_SCOPE_HISTOGRAM) ||
             (posy > 7.0f/9.0f && dev->scope_type == DT_DEV_SCOPE_WAVEFORM))
     {
@@ -655,7 +704,7 @@ static gboolean _lib_histogram_button_press_callback(GtkWidget *widget, GdkEvent
                          dt_dev_scope_type_names[dev->scope_type]);
       // we need to reprocess the preview pipe
       // FIXME: can we only make the regular histogram if we're drawing it? if so then reprocess the preview pipe when switch to that as well
-      if(dev->scope_type == DT_DEV_SCOPE_WAVEFORM)
+      if(dev->scope_type == DT_DEV_SCOPE_WAVEFORM || dev->scope_type == DT_DEV_SCOPE_VECTORSCOPE)
       {
         dt_dev_process_preview(dev);
       }
@@ -673,6 +722,9 @@ static gboolean _lib_histogram_button_press_callback(GtkWidget *widget, GdkEvent
           d->waveform_type = (d->waveform_type + 1) % DT_LIB_HISTOGRAM_WAVEFORM_N;
           dt_conf_set_string("plugins/darkroom/histogram/waveform",
                              dt_lib_histogram_waveform_type_names[d->waveform_type]);
+          break;
+        case DT_DEV_SCOPE_VECTORSCOPE:
+          // FIXME: this should probably scale the scope
           break;
         case DT_DEV_SCOPE_N:
           g_assert_not_reached();
