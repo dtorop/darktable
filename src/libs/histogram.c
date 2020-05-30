@@ -390,10 +390,11 @@ static void _lib_histogram_draw_vectorscope(cairo_t *cr, int width, int height)
   dt_pthread_mutex_unlock(&dev->preview_pipe_mutex);
   if(vs == NULL) return;
 
-  // FIXME: should keep this square, not spread to width -- and not assume that histogram is always in landscape proportions
-  cairo_scale(cr, (double)width/(vs_width*3), (double)height/vs_height);
-  // FIXME should be _OVER?
-  cairo_set_operator(cr, CAIRO_OPERATOR_ADD);
+  const int min_size = MIN(width, height);
+  cairo_translate(cr, (width - min_size) / 2., (height - min_size) / 2.);
+  cairo_scale(cr, (double)min_size/vs_width, (double)min_size/vs_height);
+  // FIXME: vectorscope should be brighter and the grid overlay should be more visible
+  cairo_set_operator(cr, CAIRO_OPERATOR_OVERLAY);
 
   //cairo_save(cr);
   cairo_set_source_rgb(cr, 1., 1., 1.);
@@ -405,6 +406,25 @@ static void _lib_histogram_draw_vectorscope(cairo_t *cr, int width, int height)
   //cairo_restore(cr);
 
   free(vs);
+}
+
+static void _lib_histogram_draw_vectorscope_lines(cairo_t *cr, const int width, const int height)
+{
+  const int min_size = MIN(width, height);
+
+  cairo_save(cr);
+  cairo_translate(cr, width/2., height/2.);
+
+  cairo_arc(cr, 0., 0., min_size/2., 0., M_PI * 2.);
+  cairo_stroke(cr);
+
+  const float w_ctr = min_size / 30.0f;
+  dt_draw_line(cr, -w_ctr, 0.0f, w_ctr, 0.0f);
+  cairo_stroke(cr);
+  dt_draw_line(cr, 0.0f, -w_ctr, 0.0f, w_ctr);
+  cairo_stroke(cr);
+
+  cairo_restore(cr);
 }
 
 static gboolean _lib_histogram_draw_callback(GtkWidget *widget, cairo_t *crf, gpointer user_data)
@@ -456,13 +476,25 @@ static gboolean _lib_histogram_draw_callback(GtkWidget *widget, cairo_t *crf, gp
   // draw grid
   set_color(cr, darktable.bauhaus->graph_grid);
 
-  // FIXME: make polar coordinate grid lines for vectorscope
-  if(dev->scope_type == DT_DEV_SCOPE_WAVEFORM)
-    dt_draw_waveform_lines(cr, 0, 0, width, height);
-  else
-    dt_draw_grid(cr, 4, 0, 0, width, height);
+  switch(dev->scope_type)
+  {
+    case DT_DEV_SCOPE_HISTOGRAM:
+      dt_draw_grid(cr, 4, 0, 0, width, height);
+      break;
+    case DT_DEV_SCOPE_WAVEFORM:
+      // FIXME: this is only used in lib/histogram.c, make a local function?
+      dt_draw_waveform_lines(cr, 0, 0, width, height);
+      break;
+    case DT_DEV_SCOPE_VECTORSCOPE:
+      // FIXME: draw this after vectorscope image, so that it overlays the image?
+      _lib_histogram_draw_vectorscope_lines(cr, width, height);
+      break;
+    case DT_DEV_SCOPE_N:
+      g_assert_not_reached();
+    }
 
   // draw scope
+  // FIXME: combine with the grid drawing code?
   if(dev->image_storage.id == dev->preview_pipe->output_imgid)
   {
     cairo_save(cr);
