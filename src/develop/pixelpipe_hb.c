@@ -1121,6 +1121,7 @@ static void _pixelpipe_final_histogram_vectorscope(dt_develop_t *dev, const floa
   memset(vs, 0, sizeof(uint8_t) * vs_height * vs_stride);
 
   uint32_t maxcol = 0;
+  float minYuv[3] = {FLT_MAX,FLT_MAX,FLT_MAX}, maxYuv[3] = {FLT_MIN,FLT_MIN,FLT_MIN};
   // count u and v into bins
   // FIXME: use OpenMP
   for(int in_y = 0; in_y < roi_in->height; in_y++)
@@ -1134,10 +1135,17 @@ static void _pixelpipe_final_histogram_vectorscope(dt_develop_t *dev, const floa
       const float Y = 0.2627f * in[0] + 0.6780f * in[1] + 0.0593f * in[2];
       const float u = (in[2] - Y) * 0.56433f;
       const float v = (in[0] - Y) * 0.67815f;
-      const int out_x = CLAMP((u + 0.5f) * vs_width, 0, vs_width-1);
-      const int out_y = CLAMP((v + 0.5f) * vs_height, 0, vs_height-1);
+      // FIXME: what is the right scale factor for u & v?
+      const int out_x = CLAMP((u * 4.0f + 0.5f) * vs_width, 0, vs_width-1);
+      const int out_y = CLAMP((v * 4.0f + 0.5f) * vs_height, 0, vs_height-1);
       buf[out_y * vs_width + out_x]++;
       maxcol = MAX(buf[out_y * vs_width + out_x], maxcol);
+      minYuv[0] = MIN(minYuv[0], Y);
+      minYuv[1] = MIN(minYuv[1], u);
+      minYuv[2] = MIN(minYuv[2], v);
+      maxYuv[0] = MAX(maxYuv[0], Y);
+      maxYuv[1] = MAX(maxYuv[1], u);
+      maxYuv[2] = MAX(maxYuv[2], v);
     }
   }
 
@@ -1145,6 +1153,7 @@ static void _pixelpipe_final_histogram_vectorscope(dt_develop_t *dev, const floa
   const float scale = (vs_width * vs_height) / (roi_in->width * roi_in->height * 255.0f);
   const float gamma = 1.0f / 1.5f;
   printf("maxcol %d scale %f scaled maxcol %f gamma corrected %f\n", maxcol, scale, maxcol * scale, powf(maxcol * scale, gamma));
+  printf("minYuv %f, %f, %f maxYuv %f, %f, %f\n", minYuv[0], minYuv[1], minYuv[2], maxYuv[0], maxYuv[1], maxYuv[2]);
 
   // FIXME: use OpenMP
   for(int out_y = 0; out_y < vs_height; out_y++)
