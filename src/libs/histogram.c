@@ -433,7 +433,7 @@ static gboolean _lib_histogram_draw_callback(GtkWidget *widget, cairo_t *crf, gp
   cairo_restore(cr);
 
   // exposure change regions
-  // FIXME: vectorscope should have saturation change region
+  // FIXME: vectorscope should have white balance change region
   if(d->highlight == DT_LIB_HISTOGRAM_HIGHLIGHT_BLACK_POINT)
   {
     cairo_set_source_rgb(cr, .5, .5, .5);
@@ -539,7 +539,7 @@ static gboolean _lib_histogram_motion_notify_callback(GtkWidget *widget, GdkEven
   gtk_widget_get_allocation(widget, &allocation);
   if(d->dragging)
   {
-    // FIXME: dragging the vectorscope should change saturation
+    // FIXME: dragging the vectorscope should change white balance
     const float diff = dev->scope_type == DT_DEV_SCOPE_WAVEFORM ? d->button_down_y - event->y
                                                                 : event->x - d->button_down_x;
     const int range = dev->scope_type == DT_DEV_SCOPE_WAVEFORM ? allocation.height
@@ -640,7 +640,7 @@ static gboolean _lib_histogram_motion_notify_callback(GtkWidget *widget, GdkEven
       d->highlight = DT_LIB_HISTOGRAM_HIGHLIGHT_BLUE;
       gtk_widget_set_tooltip_text(widget, d->blue ? _("click to hide blue channel") : _("click to show blue channel"));
     }
-    // FIXME: add DT_LIB_HISTOGRAM_HIGHLIGHT_SATURATION
+    // FIXME: add DT_LIB_HISTOGRAM_HIGHLIGHT_WHITE_BALANCE
     else if((posx < 0.2f && dev->scope_type == DT_DEV_SCOPE_HISTOGRAM) ||
             (posy > 7.0f/9.0f && dev->scope_type == DT_DEV_SCOPE_WAVEFORM))
     {

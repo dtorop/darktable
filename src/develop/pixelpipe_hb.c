@@ -1051,11 +1051,12 @@ static void _pixelpipe_final_histogram_waveform(dt_develop_t *dev, const float *
   // saturated/clips.
 
   // new scale factor to do about the same as the old one for 1MP views, but scale to hidpi
-  const float scale = 0.5 * 1e6f/(roi_in->height*roi_in->width) *
-    (waveform_width*waveform_height) / (350.0f*233.)
+  const float scale = 0.5f * 1e6f/(roi_in->height*roi_in->width) *
+    (waveform_width*waveform_height) / (350.0f*233.0f)
     / 255.0f; // normalization to 0..1 for gamma correction
-  const float gamma = 1.0 / 1.5; // TODO make this settable from the gui?
-  //uint32_t mincol[3] = {UINT32_MAX,UINT32_MAX,UINT32_MAX}, maxcol[3] = {0,0,0};
+  printf("waveform scale %f\n", scale);
+  const float gamma = 1.0f / 1.5f; // TODO make this settable from the gui?
+  uint16_t mincol[3] = {UINT16_MAX,UINT16_MAX,UINT16_MAX}, maxcol[3] = {0,0,0};
   // even bin_width 12 and height 900 image gives 10,800 byte cache, more normal will ~1K
   const int cache_size = (roi_in->height * bin_width) + 1;
   uint8_t *cache = (uint8_t *)calloc(cache_size, sizeof(uint8_t));
@@ -1063,6 +1064,7 @@ static void _pixelpipe_final_histogram_waveform(dt_develop_t *dev, const float *
 #ifdef _OPENMP
 #pragma omp parallel for SIMD() default(none) \
   dt_omp_firstprivate(waveform_width, waveform_height, waveform_stride, buf, waveform, cache, scale, gamma) \
+  reduction(max:maxcol) reduction(min:mincol) \
   schedule(static) collapse(2)
 #endif
   for(int k = 0; k < 3; k++)
@@ -1073,8 +1075,8 @@ static void _pixelpipe_final_histogram_waveform(dt_develop_t *dev, const float *
       uint8_t *const out = waveform + (waveform_stride * (waveform_height * k + out_y));
       for(int out_x = 0; out_x < waveform_width; out_x++)
       {
-        //mincol[k] = MIN(mincol[k], in[k]);
-        //maxcol[k] = MAX(maxcol[k], in[k]);
+        mincol[k] = MIN(mincol[k], in[out_x * 3]);
+        maxcol[k] = MAX(maxcol[k], in[out_x * 3]);
         const uint16_t v = in[out_x * 3];
         // cache XORd result so common casees cached and cache misses are quick to find
         if(!cache[v])
@@ -1091,7 +1093,8 @@ static void _pixelpipe_final_histogram_waveform(dt_develop_t *dev, const float *
       }
     }
   }
-  //printf("mincol %d,%d,%d maxcol %d,%d,%d\n", mincol[0], mincol[1], mincol[2], maxcol[0], maxcol[1], maxcol[2]);
+  printf("mincol %d,%d,%d maxcol %d,%d,%d\n", mincol[0], mincol[1], mincol[2], maxcol[0], maxcol[1], maxcol[2]);
+  printf("max scaled %f,%f,%f gamma corrected %f,%f,%f\n", maxcol[0] * scale, maxcol[1] * scale, maxcol[2] * scale, powf(maxcol[0] * scale, gamma), powf(maxcol[1] * scale, gamma), powf(maxcol[2] * scale, gamma));
 
   free(cache);
   free(buf);
@@ -1117,7 +1120,9 @@ static void _pixelpipe_final_histogram_vectorscope(dt_develop_t *dev, const floa
   uint32_t *buf = calloc(vs_width * vs_height, sizeof(uint32_t));
   memset(vs, 0, sizeof(uint8_t) * vs_height * vs_stride);
 
+  uint32_t maxcol = 0;
   // count u and v into bins
+  // FIXME: use OpenMP
   for(int in_y = 0; in_y < roi_in->height; in_y++)
   {
     for(int in_x = 0; in_x < roi_in->width; in_x++)
@@ -1132,9 +1137,16 @@ static void _pixelpipe_final_histogram_vectorscope(dt_develop_t *dev, const floa
       const int out_x = CLAMP((u + 0.5f) * vs_width, 0, vs_width-1);
       const int out_y = CLAMP((v + 0.5f) * vs_height, 0, vs_height-1);
       buf[out_y * vs_width + out_x]++;
+      maxcol = MAX(buf[out_y * vs_width + out_x], maxcol);
     }
   }
 
+  printf("vs_width %d vs_height %d roi_in->width %d roi_in_height %d\n", vs_width, vs_height, roi_in->width, roi_in->height);
+  const float scale = (vs_width * vs_height) / (roi_in->width * roi_in->height * 255.0f);
+  const float gamma = 1.0f / 1.5f;
+  printf("maxcol %d scale %f scaled maxcol %f gamma corrected %f\n", maxcol, scale, maxcol * scale, powf(maxcol * scale, gamma));
+
+  // FIXME: use OpenMP
   for(int out_y = 0; out_y < vs_height; out_y++)
   {
     const uint32_t *const in = buf + vs_width * out_y;
@@ -1142,8 +1154,8 @@ static void _pixelpipe_final_histogram_vectorscope(dt_develop_t *dev, const floa
     for(int out_x = 0; out_x < vs_width; out_x++)
     {
       const uint32_t v = in[out_x];
-      // FIXME: scale (logarithmically) the lightness
-      out[out_x] = v ? 255 : 0;
+      // FIXME: use cache
+      out[out_x] = CLAMP(powf(v * scale, gamma) * 255.0, 0, 255);
     }
   }
 
