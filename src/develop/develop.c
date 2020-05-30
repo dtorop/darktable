@@ -85,6 +85,8 @@ void dt_dev_init(dt_develop_t *dev, int32_t gui_attached)
     dev->scope_type = DT_DEV_SCOPE_HISTOGRAM;
   else if(g_strcmp0(mode, "waveform") == 0)
     dev->scope_type = DT_DEV_SCOPE_WAVEFORM;
+  else if(g_strcmp0(mode, "vectorscope") == 0)
+    dev->scope_type = DT_DEV_SCOPE_VECTORSCOPE;
   else if(g_strcmp0(mode, "linear") == 0)
   { // update legacy conf
     dev->scope_type = DT_DEV_SCOPE_HISTOGRAM;
