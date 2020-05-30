@@ -284,6 +284,7 @@ static void _lib_histogram_draw_histogram(cairo_t *cr, int width, int height, co
 
   const float hist_max = dev->histogram_type == DT_DEV_HISTOGRAM_LINEAR ? dev->histogram_max
                                                                         : logf(1.0 + dev->histogram_max);
+  cairo_save(cr);
   cairo_translate(cr, 0, height);
   cairo_scale(cr, width / 255.0, -(height - 10) / hist_max);
   cairo_set_operator(cr, CAIRO_OPERATOR_ADD);
@@ -295,8 +296,7 @@ static void _lib_histogram_draw_histogram(cairo_t *cr, int width, int height, co
       dt_draw_histogram_8(cr, hist, 4, k, dev->histogram_type == DT_DEV_HISTOGRAM_LINEAR);
     }
   cairo_set_operator(cr, CAIRO_OPERATOR_SOURCE);
-
-  // FIXME: just free if it isn't aligned
+  cairo_restore(cr);
   free(hist);
 }
 
@@ -326,6 +326,7 @@ static void _lib_histogram_draw_waveform(cairo_t *cr, int width, int height, con
   // latter, at the cost of some extra code (and comments) and of
   // making the color channel selector work by hand.
 
+  cairo_save(cr);
   cairo_surface_t *source
       = dt_cairo_image_surface_create_for_data(wav, CAIRO_FORMAT_RGB24,
                                                wf_width, wf_height, wf_stride * 4);
@@ -334,6 +335,7 @@ static void _lib_histogram_draw_waveform(cairo_t *cr, int width, int height, con
   cairo_set_operator(cr, CAIRO_OPERATOR_ADD);
   cairo_paint(cr);
   cairo_surface_destroy(source);
+  cairo_restore(cr);
 
   free(wav);
 }
@@ -352,6 +354,7 @@ static void _lib_histogram_draw_rgb_parade(cairo_t *cr, int width, int height, c
   dt_pthread_mutex_unlock(&dev->preview_pipe_mutex);
   if(wav == NULL) return;
 
+  cairo_save(cr);
   // don't multiply by ppd as the source isn't screen pixels (though the mask is pixels)
   cairo_scale(cr, (double)width/(wf_width*3), (double)height/wf_height);
   // this makes the blue come in more than CAIRO_OPERATOR_ADD, as it can go darker than the background
@@ -372,6 +375,7 @@ static void _lib_histogram_draw_rgb_parade(cairo_t *cr, int width, int height, c
     }
     cairo_translate(cr, wf_width, 0);
   }
+  cairo_restore(cr);
 
   free(wav);
 }
@@ -391,19 +395,18 @@ static void _lib_histogram_draw_vectorscope(cairo_t *cr, int width, int height)
   if(vs == NULL) return;
 
   const int min_size = MIN(width, height);
+  cairo_save(cr);
   cairo_translate(cr, (width - min_size) / 2., (height - min_size) / 2.);
   cairo_scale(cr, (double)min_size/vs_width, (double)min_size/vs_height);
-  // FIXME: vectorscope should be brighter and the grid overlay should be more visible
-  cairo_set_operator(cr, CAIRO_OPERATOR_OVERLAY);
+  cairo_set_operator(cr, CAIRO_OPERATOR_ADD);
 
-  //cairo_save(cr);
   cairo_set_source_rgb(cr, 1., 1., 1.);
   cairo_surface_t *alpha
     = cairo_image_surface_create_for_data(vs, CAIRO_FORMAT_A8,
                                           vs_width, vs_height, vs_stride);
   cairo_mask_surface(cr, alpha, 0, 0);
   cairo_surface_destroy(alpha);
-  //cairo_restore(cr);
+  cairo_restore(cr);
 
   free(vs);
 }
@@ -411,17 +414,20 @@ static void _lib_histogram_draw_vectorscope(cairo_t *cr, int width, int height)
 static void _lib_histogram_draw_vectorscope_lines(cairo_t *cr, const int width, const int height)
 {
   const int min_size = MIN(width, height);
+  const float w_ctr = min_size / 30.0f;
+  // FIXME: should this vary with ppd?
+  const double dashes = 4.0;
 
   cairo_save(cr);
   cairo_translate(cr, width/2., height/2.);
 
-  cairo_arc(cr, 0., 0., min_size/2., 0., M_PI * 2.);
-  cairo_stroke(cr);
-
-  const float w_ctr = min_size / 30.0f;
   dt_draw_line(cr, -w_ctr, 0.0f, w_ctr, 0.0f);
   cairo_stroke(cr);
   dt_draw_line(cr, 0.0f, -w_ctr, 0.0f, w_ctr);
+  cairo_stroke(cr);
+
+  cairo_set_dash(cr, &dashes, 1, 0.);
+  cairo_arc(cr, 0., 0., min_size/2., 0., M_PI * 2.);
   cairo_stroke(cr);
 
   cairo_restore(cr);
@@ -473,38 +479,21 @@ static gboolean _lib_histogram_draw_callback(GtkWidget *widget, cairo_t *crf, gp
     cairo_fill(cr);
   }
 
-  // draw grid
-  set_color(cr, darktable.bauhaus->graph_grid);
-
-  switch(dev->scope_type)
-  {
-    case DT_DEV_SCOPE_HISTOGRAM:
-      dt_draw_grid(cr, 4, 0, 0, width, height);
-      break;
-    case DT_DEV_SCOPE_WAVEFORM:
-      // FIXME: this is only used in lib/histogram.c, make a local function?
-      dt_draw_waveform_lines(cr, 0, 0, width, height);
-      break;
-    case DT_DEV_SCOPE_VECTORSCOPE:
-      // FIXME: draw this after vectorscope image, so that it overlays the image?
-      _lib_histogram_draw_vectorscope_lines(cr, width, height);
-      break;
-    case DT_DEV_SCOPE_N:
-      g_assert_not_reached();
-    }
-
-  // draw scope
-  // FIXME: combine with the grid drawing code?
+  // draw grid and scope
   if(dev->image_storage.id == dev->preview_pipe->output_imgid)
   {
-    cairo_save(cr);
     uint8_t mask[3] = { d->red, d->green, d->blue };
     switch(dev->scope_type)
     {
       case DT_DEV_SCOPE_HISTOGRAM:
+        set_color(cr, darktable.bauhaus->graph_grid);
+        dt_draw_grid(cr, 4, 0, 0, width, height);
         _lib_histogram_draw_histogram(cr, width, height, mask);
         break;
       case DT_DEV_SCOPE_WAVEFORM:
+        set_color(cr, darktable.bauhaus->graph_grid);
+        // FIXME: this is only used in lib/histogram.c, make a local function?
+        dt_draw_waveform_lines(cr, 0, 0, width, height);
         if(d->waveform_type == DT_LIB_HISTOGRAM_WAVEFORM_OVERLAID)
           _lib_histogram_draw_waveform(cr, width, height, mask);
         else
@@ -512,11 +501,12 @@ static gboolean _lib_histogram_draw_callback(GtkWidget *widget, cairo_t *crf, gp
         break;
       case DT_DEV_SCOPE_VECTORSCOPE:
         _lib_histogram_draw_vectorscope(cr, width, height);
+        set_color(cr, darktable.bauhaus->graph_grid);
+        _lib_histogram_draw_vectorscope_lines(cr, width, height);
         break;
       case DT_DEV_SCOPE_N:
         g_assert_not_reached();
     }
-    cairo_restore(cr);
   }
 
   // buttons to control the display of the histogram: linear/log, r, g, b
