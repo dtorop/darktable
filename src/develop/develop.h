@@ -91,6 +91,14 @@ typedef enum dt_dev_histogram_type_t
   DT_DEV_HISTOGRAM_N // needs to be the last one
 } dt_dev_histogram_type_t;
 
+typedef enum dt_dev_vectorscope_color_type_t
+{
+  DT_DEV_VECTORSCOPE_COLOR_WHITE = 0,
+  DT_DEV_VECTORSCOPE_COLOR_50PCT,
+  DT_DEV_VECTORSCOPE_COLOR_AVG,
+  DT_DEV_VECTORSCOPE_COLOR_N // needs to be the last one
+} dt_dev_vectorscope_color_type_t;
+
 typedef enum dt_dev_transform_direction_t
 {
   DT_DEV_TRANSFORM_DIR_ALL = 0,
@@ -200,10 +208,12 @@ typedef struct dt_develop_t
   uint32_t histogram_max, histogram_pre_tonecurve_max, histogram_pre_levels_max;
   uint8_t *histogram_waveform;
   uint32_t histogram_waveform_width, histogram_waveform_height, histogram_waveform_stride;
-  uint8_t *histogram_vectorscope;
-  uint32_t histogram_vectorscope_width, histogram_vectorscope_height, histogram_vectorscope_stride;
+  // FIXME: do need alpha and img, or can just use an image with alpha?
+  uint8_t *vectorscope_alpha, *vectorscope_img;
+  uint32_t vectorscope_width, vectorscope_height, vectorscope_alpha_stride, vectorscope_img_stride;
   dt_dev_scope_type_t scope_type;
   dt_dev_histogram_type_t histogram_type;
+  dt_dev_vectorscope_color_type_t vectorscope_color;
 
   // list of forms iop can use for masks or whatever
   GList *forms;

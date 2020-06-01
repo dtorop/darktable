@@ -106,6 +106,10 @@ void dt_dev_init(dt_develop_t *dev, int32_t gui_attached)
   else if(g_strcmp0(histogram_type, "logarithmic") == 0)
     dev->histogram_type = DT_DEV_HISTOGRAM_LOGARITHMIC;
   g_free(histogram_type);
+  // FIXME: make this configurable
+  // FIXME: just choose one that looks good, instead of configurable?
+  //gchar *vectorscope_color = dt_conf_get_string("plugins/darkroom/histogram/vectorscope/color");
+  dev->vectorscope_color = DT_DEV_VECTORSCOPE_COLOR_WHITE;
   gchar *preview_downsample = dt_conf_get_string("preview_downsampling");
   dev->preview_downsampling =
     (g_strcmp0(preview_downsample, "original") == 0) ? 1.0f
@@ -159,11 +163,13 @@ void dt_dev_init(dt_develop_t *dev, int32_t gui_attached)
     dev->histogram_waveform_stride = cairo_format_stride_for_width(CAIRO_FORMAT_A8, dev->histogram_waveform_width);
     dev->histogram_waveform = calloc(dev->histogram_waveform_height * dev->histogram_waveform_stride * 3, sizeof(uint8_t));
 
-    dev->histogram_vectorscope_width = 350;
+    dev->vectorscope_width = 350;
     // FIXME: this is square, only specify width?
-    dev->histogram_vectorscope_height = 350;
-    dev->histogram_vectorscope_stride = cairo_format_stride_for_width(CAIRO_FORMAT_A8, dev->histogram_vectorscope_width);
-    dev->histogram_vectorscope = calloc(dev->histogram_vectorscope_height * dev->histogram_vectorscope_stride, sizeof(uint8_t));
+    dev->vectorscope_height = 350;
+    dev->vectorscope_alpha_stride = cairo_format_stride_for_width(CAIRO_FORMAT_A8, dev->vectorscope_width);
+    dev->vectorscope_alpha = calloc(dev->vectorscope_height * dev->vectorscope_alpha_stride, sizeof(uint8_t));
+    dev->vectorscope_img_stride = cairo_format_stride_for_width(CAIRO_FORMAT_RGB24, dev->vectorscope_width*4);
+    dev->vectorscope_img = calloc(dev->vectorscope_height * dev->vectorscope_img_stride, sizeof(uint8_t));
   }
 
   dev->iop_instance = 0;

@@ -385,30 +385,46 @@ static void _lib_histogram_draw_vectorscope(cairo_t *cr, int width, int height)
   dt_develop_t *dev = darktable.develop;
 
   dt_pthread_mutex_lock(&dev->preview_pipe_mutex);
-  const int vs_width = dev->histogram_vectorscope_width;
-  const int vs_height = dev->histogram_vectorscope_height;
-  const gint vs_stride = dev->histogram_vectorscope_stride;
-  const size_t histsize = sizeof(uint8_t) * vs_height * vs_stride;
-  uint8_t *vs = malloc(histsize);
-  if(vs) memcpy(vs, dev->histogram_vectorscope, histsize);
+  const int vs_width = dev->vectorscope_width;
+  const int vs_height = dev->vectorscope_height;
+  const gint vs_alpha_stride = dev->vectorscope_alpha_stride;
+  const gint vs_img_stride = dev->vectorscope_img_stride;
+  const size_t alpha_size = sizeof(uint8_t) * vs_height * vs_alpha_stride;
+  const size_t img_size = sizeof(uint8_t) * vs_height * vs_img_stride;
+  uint8_t *vs_alpha = malloc(alpha_size);
+  uint8_t *vs_img = malloc(img_size);
+  if(vs_alpha) memcpy(vs_alpha, dev->vectorscope_alpha, alpha_size);
+  if(vs_img) memcpy(vs_img, dev->vectorscope_img, img_size);
   dt_pthread_mutex_unlock(&dev->preview_pipe_mutex);
-  if(vs == NULL) return;
+  if(vs_alpha == NULL || vs_img == NULL)
+  {
+    free(vs_alpha);
+    free(vs_img);
+  }
 
   const int min_size = MIN(width, height);
   cairo_save(cr);
   cairo_translate(cr, (width - min_size) / 2., (height - min_size) / 2.);
-  cairo_scale(cr, (double)min_size/vs_width, (double)min_size/vs_height);
+  // FIXME: use ppd?
+  // FIXME: do need to cast to double if use ppd?
+  cairo_scale(cr, darktable.gui->ppd*(double)min_size/vs_width, darktable.gui->ppd*(double)min_size/vs_height);
   cairo_set_operator(cr, CAIRO_OPERATOR_ADD);
 
-  cairo_set_source_rgb(cr, 1., 1., 1.);
+  cairo_surface_t *source
+    = dt_cairo_image_surface_create_for_data(vs_img, CAIRO_FORMAT_RGB24,
+                                             vs_width, vs_height, vs_img_stride);
   cairo_surface_t *alpha
-    = cairo_image_surface_create_for_data(vs, CAIRO_FORMAT_A8,
-                                          vs_width, vs_height, vs_stride);
-  cairo_mask_surface(cr, alpha, 0, 0);
+    = dt_cairo_image_surface_create_for_data(vs_alpha, CAIRO_FORMAT_A8,
+                                             vs_width, vs_height, vs_alpha_stride);
+  cairo_set_source_surface(cr, source, 0.0, 0.0);
+  cairo_mask_surface(cr, alpha, 0.0, 0.0);
+  //cairo_paint(cr);
+  cairo_surface_destroy(source);
   cairo_surface_destroy(alpha);
   cairo_restore(cr);
 
-  free(vs);
+  free(vs_alpha);
+  free(vs_img);
 }
 
 static void _lib_histogram_draw_vectorscope_lines(cairo_t *cr, const int width, const int height)
@@ -509,9 +525,10 @@ static gboolean _lib_histogram_draw_callback(GtkWidget *widget, cairo_t *crf, gp
     }
   }
 
-  // buttons to control the display of the histogram: linear/log, r, g, b
+  // buttons to control the display of the histogram: scope type, mode, r, g, b
   if(d->highlight != DT_LIB_HISTOGRAM_HIGHLIGHT_NONE)
   {
+    // FIXME: make vectorscope toggle image
     _draw_type_toggle(cr, d->type_x, d->button_y, d->button_w, d->button_h, dev->scope_type);
     switch(dev->scope_type)
     {
@@ -522,13 +539,13 @@ static gboolean _lib_histogram_draw_callback(GtkWidget *widget, cairo_t *crf, gp
         _draw_waveform_mode_toggle(cr, d->mode_x, d->button_y, d->button_w, d->button_h, d->waveform_type);
         break;
       case DT_DEV_SCOPE_VECTORSCOPE:
-        // FIXME: make vectorscope toggle image
+        // FIXME: make vectorscope mode toggle image -- whether to display in grayscale and/or which color
         _draw_waveform_mode_toggle(cr, d->mode_x, d->button_y, d->button_w, d->button_h, d->waveform_type);
         break;
       case DT_DEV_SCOPE_N:
         g_assert_not_reached();
     }
-    // FIXME: no rgb buttons for vectorscope
+    // FIXME: no rgb buttons for vectorscope -- instead choose scale, axis (uv, uY, Yv), colorspace
     cairo_set_source_rgba(cr, 1.0, 0.0, 0.0, 0.33);
     _draw_color_toggle(cr, d->red_x, d->button_y, d->button_w, d->button_h, d->red);
     cairo_set_source_rgba(cr, 0.0, 1.0, 0.0, 0.33);
@@ -747,6 +764,10 @@ static gboolean _lib_histogram_button_press_callback(GtkWidget *widget, GdkEvent
           break;
         case DT_DEV_SCOPE_VECTORSCOPE:
           // FIXME: this should probably scale the scope
+          dev->vectorscope_color = (dev->vectorscope_color + 1) % DT_DEV_VECTORSCOPE_COLOR_N;
+          // FIXME: should set conf
+          // FIXME: may only need to reprocess when switch between two color variants
+          dt_dev_process_preview(dev);
           break;
         case DT_DEV_SCOPE_N:
           g_assert_not_reached();

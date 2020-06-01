@@ -1083,7 +1083,7 @@ static void _pixelpipe_final_histogram_waveform(dt_develop_t *dev, const float *
         {
           // multiple threads may be writing to cache[v], but as
           // they're writing the same value, don't declare omp atomic
-          cache[v] = (uint8_t)(CLAMP(powf(v * scale, gamma) * 255.0, 0, 255)) ^ 1;
+          cache[v] = (uint8_t)(CLAMP(powf(v * scale, gamma) * 255.0f, 0, 255)) ^ 1;
         }
         out[out_x] = cache[v] ^ 1;
         //               if(in[k] == 0)
@@ -1112,16 +1112,22 @@ static void _pixelpipe_final_histogram_vectorscope(dt_develop_t *dev, const floa
   dt_times_t start_time = { 0 };
   if(darktable.unmuted & DT_DEBUG_PERF) dt_get_times(&start_time);
 
-  const int vs_width = dev->histogram_vectorscope_width;
-  const int vs_height = dev->histogram_vectorscope_height;
-  const int vs_stride = dev->histogram_vectorscope_stride;
-  uint8_t *const vs = dev->histogram_vectorscope;
+  const int vs_width = dev->vectorscope_width;
+  const int vs_height = dev->vectorscope_height;
+  const int vs_alpha_stride = dev->vectorscope_alpha_stride;
+  const int vs_img_stride = dev->vectorscope_img_stride;
+  uint8_t *const vs_alpha = dev->vectorscope_alpha;
+  uint8_t *const vs_img = dev->vectorscope_img;
 
-  uint32_t *buf = calloc(vs_width * vs_height, sizeof(uint32_t));
-  memset(vs, 0, sizeof(uint8_t) * vs_height * vs_stride);
+  uint32_t *count = calloc(vs_width * vs_height, sizeof(uint32_t));
+  float *sum = calloc(vs_width * vs_height, sizeof(float));
+  memset(vs_alpha, 0, sizeof(uint8_t) * vs_height * vs_alpha_stride);
+  memset(vs_img, 0, sizeof(uint8_t) * vs_height * vs_img_stride);
 
-  uint32_t maxcol = 0;
+  uint32_t maxcount = 0;
   float minYuv[3] = {FLT_MAX,FLT_MAX,FLT_MAX}, maxYuv[3] = {FLT_MIN,FLT_MIN,FLT_MIN};
+  // FIXME: what is the right scale factor for u & v? -- don't scale here, make scalable in UI?
+  const float uv_scale = 4.0f;
   // count u and v into bins
   // FIXME: use OpenMP
   for(int in_y = 0; in_y < roi_in->height; in_y++)
@@ -1130,16 +1136,23 @@ static void _pixelpipe_final_histogram_vectorscope(dt_develop_t *dev, const floa
     {
       const float *const in = input + 4 * (in_y*roi_in->width + in_x);
       // Convert to perceptual YPbPr colorspace
-      // cribbed from demosaic_markesteijn.cl
       // currently this is extra-naive
-      const float Y = 0.2627f * in[0] + 0.6780f * in[1] + 0.0593f * in[2];
-      const float u = (in[2] - Y) * 0.56433f;
-      const float v = (in[0] - Y) * 0.67815f;
-      // FIXME: what is the right scale factor for u & v?
-      const int out_x = CLAMP((u * 4.0f + 0.5f) * vs_width, 0, vs_width-1);
-      const int out_y = CLAMP((v * 4.0f + 0.5f) * vs_height, 0, vs_height-1);
-      buf[out_y * vs_width + out_x]++;
-      maxcol = MAX(buf[out_y * vs_width + out_x], maxcol);
+      // FIXME: figure out right constants or make chooseable via UI
+      // cribbed from demosaic_markesteijn.cl
+      //const float Y = 0.2627f * in[0] + 0.6780f * in[1] + 0.0593f * in[2];
+      //const float u = (in[2] - Y) * 0.56433f;
+      //const float v = (in[0] - Y) * 0.67815f;
+      // constants from imageop_math.c -- REC. 601?
+      const float Y = 0.299 * in[0] + 0.587 * in[1] + 0.114 * in[2];
+      const float u = -0.147 * in[0] - 0.289 * in[1] + 0.437 * in[2];
+      const float v = 0.615 * in[0] - 0.515 * in[1] - 0.100 * in[2];
+      // FIXME: should round rather than clamp?
+      const int out_x = CLAMP((u * uv_scale + 0.5f) * vs_width, 0, vs_width-1);
+      const int out_y = CLAMP((v * uv_scale + 0.5f) * vs_height, 0, vs_height-1);
+      count[out_y * vs_width + out_x]++;
+      // FIXME: only need to keep sum if calculating average Y
+      sum[out_y * vs_width + out_x] += Y;
+      maxcount = MAX(count[out_y * vs_width + out_x], maxcount);
       minYuv[0] = MIN(minYuv[0], Y);
       minYuv[1] = MIN(minYuv[1], u);
       minYuv[2] = MIN(minYuv[2], v);
@@ -1150,25 +1163,51 @@ static void _pixelpipe_final_histogram_vectorscope(dt_develop_t *dev, const floa
   }
 
   printf("vs_width %d vs_height %d roi_in->width %d roi_in_height %d\n", vs_width, vs_height, roi_in->width, roi_in->height);
-  const float scale = (vs_width * vs_height) / (roi_in->width * roi_in->height * 255.0f);
+  const float scale = 4.0f * (vs_width * vs_height) / (roi_in->width * roi_in->height * 255.0f);
   const float gamma = 1.0f / 1.5f;
-  printf("maxcol %d scale %f scaled maxcol %f gamma corrected %f\n", maxcol, scale, maxcol * scale, powf(maxcol * scale, gamma));
+  printf("maxcol %d scale %f scaled maxcol %f gamma corrected %f\n", maxcount, scale, maxcount * scale, powf(maxcount * scale, gamma));
   printf("minYuv %f, %f, %f maxYuv %f, %f, %f\n", minYuv[0], minYuv[1], minYuv[2], maxYuv[0], maxYuv[1], maxYuv[2]);
 
   // FIXME: use OpenMP
   for(int out_y = 0; out_y < vs_height; out_y++)
   {
-    const uint32_t *const in = buf + vs_width * out_y;
-    uint8_t *const out = vs + (vs_stride * out_y);
+    const uint32_t *const in_count = count + vs_width * out_y;
+    const float *const in_sum = sum + vs_width * out_y;
+    uint8_t *const out_alpha = vs_alpha + (vs_alpha_stride * out_y);
+    uint8_t *const out_img = vs_img + (vs_img_stride * out_y);
     for(int out_x = 0; out_x < vs_width; out_x++)
     {
-      const uint32_t v = in[out_x];
+      const uint32_t c = in_count[out_x];
       // FIXME: use cache
-      out[out_x] = CLAMP(powf(v * scale, gamma) * 255.0, 0, 255);
+      out_alpha[out_x] = CLAMP(powf(c * scale, gamma) * 255.0f, 0, 255);
+      // FIXME: can just memset this, or better yet use a solid color when drawing with alpha
+      if(dev->vectorscope_color == DT_DEV_VECTORSCOPE_COLOR_WHITE)
+      {
+        out_img[out_x*4] = out_img[out_x*4+1] = out_img[out_x*4+2] = 255;
+      }
+      else
+      {
+        const float Y = dev->vectorscope_color == DT_DEV_VECTORSCOPE_COLOR_50PCT ? 0.5f : in_sum[out_x] / c;
+        const float u = (((float)out_x / vs_width) - 0.5f) / uv_scale;
+        const float v = (((float)out_y / vs_height) - 0.5f) / uv_scale;
+        // FIXME/NOTE: these are the primaries from dt_iop_YCbCr_to_RGB
+        const float r = Y + 1.140 * v;
+        const float g = Y - 0.394 * u - 0.581 * v;
+        const float b = Y + 2.028 * u;
+        // FIXME/NOTE: these are primaries from dcraw
+        //rgb[0] = yuv[b] + 1.370705*yuv[3];
+        //rgb[1] = yuv[b] - 0.337633*yuv[2] - 0.698001*yuv[3];
+        //rgb[2] = yuv[b] + 1.732446*yuv[2];
+        // FIXME: do need to clamp these?
+        out_img[out_x*4] = CLAMP(r*255.0f, 0, 255);
+        out_img[out_x*4+1] = CLAMP(g*255.0f, 0, 255);
+        out_img[out_x*4+2] = CLAMP(b*255.0f, 0, 255);
+      }
     }
   }
 
-  free(buf);
+  free(count);
+  free(sum);
 
   if(darktable.unmuted & DT_DEBUG_PERF)
   {
