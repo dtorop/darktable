@@ -105,7 +105,7 @@ typedef enum dt_dev_vectorscope_colorspace_t
 {
   DT_DEV_VECTORSCOPE_COLORSPACE_601 = 0,
   DT_DEV_VECTORSCOPE_COLORSPACE_709,
-  // FIXME: add 2020?
+  DT_DEV_VECTORSCOPE_COLORSPACE_2020,
   // FIXME: add Lab?
   DT_DEV_VECTORSCOPE_COLORSPACE_N // needs to be the last one
 } dt_dev_vectorscope_colorspace_t;

@@ -311,7 +311,7 @@ static void _draw_vectorscope_color_toggle(cairo_t *cr, float x, float y, float 
       cairo_rectangle(cr, border, border, width - 2.0 * border, height * 0.25 - border);
       cairo_fill(cr);
       break;
-    default:
+    case DT_DEV_VECTORSCOPE_COLOR_N:
       g_assert_not_reached();
   }
   cairo_restore(cr);
@@ -751,7 +751,7 @@ static gboolean _lib_histogram_motion_notify_callback(GtkWidget *widget, GdkEven
             case DT_DEV_HISTOGRAM_LINEAR:
               gtk_widget_set_tooltip_text(widget, _("set mode to logarithmic"));
               break;
-            default:
+            case DT_DEV_HISTOGRAM_N:
               g_assert_not_reached();
           }
           break;
@@ -764,7 +764,7 @@ static gboolean _lib_histogram_motion_notify_callback(GtkWidget *widget, GdkEven
             case DT_LIB_HISTOGRAM_WAVEFORM_PARADE:
               gtk_widget_set_tooltip_text(widget, _("set mode to waveform"));
               break;
-            default:
+            case DT_LIB_HISTOGRAM_WAVEFORM_N:
               g_assert_not_reached();
           }
           break;
@@ -786,7 +786,7 @@ static gboolean _lib_histogram_motion_notify_callback(GtkWidget *widget, GdkEven
             case DT_DEV_VECTORSCOPE_COLOR_MAX:
               gtk_widget_set_tooltip_text(widget, _("set to monochrome"));
               break;
-            default:
+            case DT_DEV_VECTORSCOPE_COLOR_N:
               g_assert_not_reached();
           }
           break;
@@ -800,10 +800,20 @@ static gboolean _lib_histogram_motion_notify_callback(GtkWidget *widget, GdkEven
       d->highlight = DT_LIB_HISTOGRAM_HIGHLIGHT_RED;
       if(dev->scope_type == DT_DEV_SCOPE_VECTORSCOPE)
       {
-        if(dev->vectorscope_colorspace == DT_DEV_VECTORSCOPE_COLORSPACE_601)
-          gtk_widget_set_tooltip_text(widget, _("switch to Rec.709"));
-        else
-          gtk_widget_set_tooltip_text(widget, _("switch to Rec.601"));
+        switch(dev->vectorscope_colorspace)
+        {
+          case DT_DEV_VECTORSCOPE_COLORSPACE_601:
+            gtk_widget_set_tooltip_text(widget, _("switch to Rec.709"));
+            break;
+          case DT_DEV_VECTORSCOPE_COLORSPACE_709:
+            gtk_widget_set_tooltip_text(widget, _("switch to Rec.2020"));
+            break;
+          case DT_DEV_VECTORSCOPE_COLORSPACE_2020:
+            gtk_widget_set_tooltip_text(widget, _("switch to Rec.601"));
+            break;
+          case DT_DEV_VECTORSCOPE_COLORSPACE_N:
+            g_assert_not_reached();
+        }
       }
       else
       {
@@ -827,7 +837,7 @@ static gboolean _lib_histogram_motion_notify_callback(GtkWidget *widget, GdkEven
             case DT_LIB_HISTOGRAM_VS_SCALE_X4:
               gtk_widget_set_tooltip_text(widget, _("set scale to x1"));
               break;
-            default:
+            case DT_LIB_HISTOGRAM_VS_SCALE_N:
               g_assert_not_reached();
           }
       }
