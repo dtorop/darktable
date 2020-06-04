@@ -101,6 +101,15 @@ typedef enum dt_dev_vectorscope_color_type_t
   DT_DEV_VECTORSCOPE_COLOR_N // needs to be the last one
 } dt_dev_vectorscope_color_type_t;
 
+typedef enum dt_dev_vectorscope_colorspace_t
+{
+  DT_DEV_VECTORSCOPE_COLORSPACE_601 = 0,
+  DT_DEV_VECTORSCOPE_COLORSPACE_709,
+  // FIXME: add 2020?
+  // FIXME: add Lab?
+  DT_DEV_VECTORSCOPE_COLORSPACE_N // needs to be the last one
+} dt_dev_vectorscope_colorspace_t;
+
 typedef enum dt_dev_transform_direction_t
 {
   DT_DEV_TRANSFORM_DIR_ALL = 0,
@@ -216,6 +225,7 @@ typedef struct dt_develop_t
   dt_dev_scope_type_t scope_type;
   dt_dev_histogram_type_t histogram_type;
   dt_dev_vectorscope_color_type_t vectorscope_color;
+  dt_dev_vectorscope_colorspace_t vectorscope_colorspace;
 
   // list of forms iop can use for masks or whatever
   GList *forms;

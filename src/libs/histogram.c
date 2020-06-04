@@ -43,6 +43,7 @@ typedef enum dt_lib_histogram_highlight_t
   DT_LIB_HISTOGRAM_HIGHLIGHT_RED,
   DT_LIB_HISTOGRAM_HIGHLIGHT_GREEN,
   DT_LIB_HISTOGRAM_HIGHLIGHT_BLUE,
+  DT_LIB_HISTOGRAM_HIGHLIGHT_VECTORSCOPE,
 } dt_lib_histogram_highlight_t;
 
 typedef enum dt_lib_histogram_waveform_type_t
@@ -113,7 +114,8 @@ static void _draw_color_toggle(cairo_t *cr, float x, float y, float width, float
   cairo_stroke(cr);
 }
 
-static void _draw_type_toggle(cairo_t *cr, float x, float y, float width, float height, int type)
+static void _draw_type_toggle(cairo_t *cr, float x, float y, float width, float height,
+                              dt_dev_scope_type_t type)
 {
   cairo_save(cr);
   cairo_translate(cr, x, y);
@@ -129,10 +131,10 @@ static void _draw_type_toggle(cairo_t *cr, float x, float y, float width, float 
 
   // icon
   cairo_set_source_rgba(cr, 1.0, 1.0, 1.0, 0.5);
-  cairo_move_to(cr, 2.0 * border, height - 2.0 * border);
   switch(type)
   {
     case DT_DEV_SCOPE_HISTOGRAM:
+      cairo_move_to(cr, 2.0 * border, height - 2.0 * border);
       cairo_curve_to(cr, 0.3 * width, height - 2.0 * border, 0.3 * width, 2.0 * border,
                      0.5 * width, 2.0 * border);
       cairo_curve_to(cr, 0.7 * width, 2.0 * border, 0.7 * width, height - 2.0 * border, 
@@ -171,11 +173,20 @@ static void _draw_type_toggle(cairo_t *cr, float x, float y, float width, float 
       cairo_pattern_destroy(pattern);
       break;
     }
+    case DT_DEV_SCOPE_VECTORSCOPE:
+      cairo_move_to(cr, 0.1 * width, 0.25 * height);
+      cairo_curve_to(cr, 0.2 * width, 0.1 * height, 0.5 * width, 0.25 * height, 0.75 * width, 0.6 * height);
+      cairo_curve_to(cr, 0.7 * width, 0.8 * height, 0.1 * width, 0.6 * height, 0.1 * width, 0.25 * height);
+      cairo_fill(cr);
+      break;
+    case DT_DEV_SCOPE_N:
+      g_assert_not_reached();
   }
   cairo_restore(cr);
 }
 
-static void _draw_histogram_mode_toggle(cairo_t *cr, float x, float y, float width, float height, int mode)
+static void _draw_histogram_mode_toggle(cairo_t *cr, float x, float y, float width, float height,
+                                        dt_dev_histogram_type_t mode)
 {
   cairo_save(cr);
   cairo_translate(cr, x, y);
@@ -203,11 +214,14 @@ static void _draw_histogram_mode_toggle(cairo_t *cr, float x, float y, float wid
                      2.0 * border);
       cairo_stroke(cr);
       break;
+    case DT_DEV_HISTOGRAM_N:
+      g_assert_not_reached();
   }
   cairo_restore(cr);
 }
 
-static void _draw_waveform_mode_toggle(cairo_t *cr, float x, float y, float width, float height, int mode)
+static void _draw_waveform_mode_toggle(cairo_t *cr, float x, float y, float width, float height,
+                                       dt_lib_histogram_waveform_type_t mode)
 {
   cairo_save(cr);
   cairo_translate(cr, x, y);
@@ -217,14 +231,11 @@ static void _draw_waveform_mode_toggle(cairo_t *cr, float x, float y, float widt
   switch(mode)
   {
     case DT_LIB_HISTOGRAM_WAVEFORM_OVERLAID:
-    {
       cairo_set_source_rgba(cr, 1.0, 1.0, 1.0, 0.33);
       cairo_rectangle(cr, border, border, width - 2.0 * border, height - 2.0 * border);
       cairo_fill_preserve(cr);
       break;
-    }
     case DT_LIB_HISTOGRAM_WAVEFORM_PARADE:
-    {
       cairo_set_source_rgba(cr, 1.0, 0.0, 0.0, 0.33);
       cairo_rectangle(cr, border, border, width / 3.0, height - 2.0 * border);
       cairo_fill(cr);
@@ -236,13 +247,64 @@ static void _draw_waveform_mode_toggle(cairo_t *cr, float x, float y, float widt
       cairo_fill(cr);
       cairo_rectangle(cr, border, border, width - 2.0 * border, height - 2.0 * border);
       break;
-    }
+    case DT_LIB_HISTOGRAM_WAVEFORM_N:
+      g_assert_not_reached();
   }
 
   cairo_set_source_rgba(cr, 0.0, 0.0, 0.0, 0.5);
   cairo_set_line_width(cr, border);
   cairo_stroke(cr);
 
+  cairo_restore(cr);
+}
+
+static void _draw_vectorscope_color_toggle(cairo_t *cr, float x, float y, float width, float height,
+                                           dt_dev_vectorscope_color_type_t mode)
+{
+  cairo_save(cr);
+  cairo_translate(cr, x, y);
+
+  // border
+  const float border = MIN(width * .05, height * .05);
+  set_color(cr, darktable.bauhaus->graph_border);
+  cairo_rectangle(cr, border, border, width - 2.0 * border, height - 2.0 * border);
+  cairo_fill_preserve(cr);
+  cairo_set_source_rgba(cr, 0.0, 0.0, 0.0, 0.5);
+  cairo_set_line_width(cr, border);
+  cairo_stroke(cr);
+
+  // icon
+  switch(mode)
+  {
+    case DT_DEV_VECTORSCOPE_COLOR_WHITE:
+      cairo_set_source_rgba(cr, 1.0, 1.0, 1.0, 0.5);
+      cairo_rectangle(cr, border, border, width - 2.0 * border, height - 2.0 * border);
+      cairo_fill(cr);
+      break;
+    case DT_DEV_VECTORSCOPE_COLOR_50PCT:
+      cairo_set_source_rgba(cr, 1.0, 1.0, 1.0, 0.5);
+      cairo_move_to(cr, 2.0 * border, height * 0.5);
+      cairo_line_to(cr, width - 2.0 * border, height * 0.5);
+      cairo_stroke(cr);
+      break;
+    case DT_DEV_VECTORSCOPE_COLOR_AVG:
+      cairo_set_source_rgba(cr, 0.5, 0.5, 0.5, 0.5);
+      cairo_rectangle(cr, border, height * 0.25, width - 2.0 * border, height * 0.5);
+      cairo_fill(cr);
+      break;
+    case DT_DEV_VECTORSCOPE_COLOR_MIN:
+      cairo_set_source_rgba(cr, 0.5, 0.5, 0.5, 0.5);
+      cairo_rectangle(cr, border, height * 0.75, width - 2.0 * border, height * 0.25 - border);
+      cairo_fill(cr);
+      break;
+    case DT_DEV_VECTORSCOPE_COLOR_MAX:
+      cairo_set_source_rgba(cr, 0.5, 0.5, 0.5, 0.5);
+      cairo_rectangle(cr, border, border, width - 2.0 * border, height * 0.25 - border);
+      cairo_fill(cr);
+      break;
+    default:
+      g_assert_not_reached();
+  }
   cairo_restore(cr);
 }
 
@@ -429,10 +491,11 @@ static void _lib_histogram_draw_vectorscope(cairo_t *cr, int width, int height)
 
 static void _lib_histogram_draw_vectorscope_lines(cairo_t *cr, const int width, const int height)
 {
-  const int min_size = MIN(width, height);
-  const float w_ctr = min_size / 30.0f;
+  const double min_size = MIN(width, height);
+  const double w_ctr = min_size / 30.0f;
   // FIXME: should this vary with ppd?
-  const double dashes = 4.0;
+  const double half_dashes = 8.0;
+  const double quarter_dashes = 4.0;
 
   cairo_save(cr);
   cairo_translate(cr, width/2., height/2.);
@@ -442,8 +505,15 @@ static void _lib_histogram_draw_vectorscope_lines(cairo_t *cr, const int width, 
   dt_draw_line(cr, 0.0f, -w_ctr, 0.0f, w_ctr);
   cairo_stroke(cr);
 
-  cairo_set_dash(cr, &dashes, 1, 0.);
-  cairo_arc(cr, 0., 0., min_size/2., 0., M_PI * 2.);
+  cairo_arc(cr, 0., 0., min_size*0.5, 0., M_PI * 2.);
+  cairo_stroke(cr);
+  cairo_set_dash(cr, &half_dashes, 1, 0.);
+  cairo_arc(cr, 0., 0., min_size*0.25, 0., M_PI * 2.);
+  cairo_stroke(cr);
+  cairo_set_dash(cr, &quarter_dashes, 1, 0.);
+  cairo_arc(cr, 0., 0., min_size*0.125, 0., M_PI * 2.);
+  cairo_stroke(cr);
+  cairo_arc(cr, 0., 0., min_size*0.375, 0., M_PI * 2.);
   cairo_stroke(cr);
 
   cairo_restore(cr);
@@ -539,19 +609,27 @@ static gboolean _lib_histogram_draw_callback(GtkWidget *widget, cairo_t *crf, gp
         _draw_waveform_mode_toggle(cr, d->mode_x, d->button_y, d->button_w, d->button_h, d->waveform_type);
         break;
       case DT_DEV_SCOPE_VECTORSCOPE:
-        // FIXME: make vectorscope mode toggle image -- whether to display in grayscale and/or which color
-        _draw_waveform_mode_toggle(cr, d->mode_x, d->button_y, d->button_w, d->button_h, d->waveform_type);
+        _draw_vectorscope_color_toggle(cr, d->mode_x, d->button_y, d->button_w, d->button_h, dev->vectorscope_color);
         break;
       case DT_DEV_SCOPE_N:
         g_assert_not_reached();
     }
-    // FIXME: no rgb buttons for vectorscope -- instead choose scale, axis (uv, uY, Yv), colorspace
-    cairo_set_source_rgba(cr, 1.0, 0.0, 0.0, 0.33);
-    _draw_color_toggle(cr, d->red_x, d->button_y, d->button_w, d->button_h, d->red);
-    cairo_set_source_rgba(cr, 0.0, 1.0, 0.0, 0.33);
-    _draw_color_toggle(cr, d->green_x, d->button_y, d->button_w, d->button_h, d->green);
-    cairo_set_source_rgba(cr, 0.0, 0.0, 1.0, 0.33);
-    _draw_color_toggle(cr, d->blue_x, d->button_y, d->button_w, d->button_h, d->blue);
+    if(dev->scope_type == DT_DEV_SCOPE_VECTORSCOPE)
+    {
+      // FIXME: no rgb buttons for vectorscope -- instead choose colorspace, scale, axis (uv, uY, Yv)
+      cairo_set_source_rgba(cr, 0.5, 0.5, 0.5, 0.33);
+      // FIXME: make a button draw for choosing colorspace
+      _draw_color_toggle(cr, d->red_x, d->button_y, d->button_w, d->button_h, dev->vectorscope_colorspace);
+    }
+    else
+    {
+      cairo_set_source_rgba(cr, 1.0, 0.0, 0.0, 0.33);
+      _draw_color_toggle(cr, d->red_x, d->button_y, d->button_w, d->button_h, d->red);
+      cairo_set_source_rgba(cr, 0.0, 1.0, 0.0, 0.33);
+      _draw_color_toggle(cr, d->green_x, d->button_y, d->button_w, d->button_h, d->green);
+      cairo_set_source_rgba(cr, 0.0, 0.0, 1.0, 0.33);
+      _draw_color_toggle(cr, d->blue_x, d->button_y, d->button_w, d->button_h, d->blue);
+    }
   }
 
   cairo_destroy(cr);
@@ -604,12 +682,16 @@ static gboolean _lib_histogram_motion_notify_callback(GtkWidget *widget, GdkEven
 
     // FIXME: rather than roll button code from scratch, take advantage of bauhaus/gtk button code?
     if(posx < 0.0f || posx > 1.0f || posy < 0.0f || posy > 1.0f)
-      ;
+    {
+      // shouldn't happen
+      d->highlight = DT_LIB_HISTOGRAM_HIGHLIGHT_NONE;
+    }
     // FIXME: simplify this, check for y position, and if it's in range, check for x, and set highlight, and depending on that draw tooltip
     // FIXME: or alternately use copy_path_flat(), append_path(p), in_fill() and keep around the rectangles for each button
     else if(x > d->type_x && x < d->type_x + d->button_w && y > d->button_y && y < d->button_y + d->button_h)
     {
       d->highlight = DT_LIB_HISTOGRAM_HIGHLIGHT_TYPE;
+      // FIXME: do something more like ("set mode to %s", dt_dev_scope_type_names[dev->scope_type])
       switch(dev->scope_type)
       {
         case DT_DEV_SCOPE_HISTOGRAM:
@@ -628,6 +710,7 @@ static gboolean _lib_histogram_motion_notify_callback(GtkWidget *widget, GdkEven
     else if(x > d->mode_x && x < d->mode_x + d->button_w && y > d->button_y && y < d->button_y + d->button_h)
     {
       d->highlight = DT_LIB_HISTOGRAM_HIGHLIGHT_MODE;
+      // FIXME: just substitute string instead of a huge switch of switches
       switch(dev->scope_type)
       {
         case DT_DEV_SCOPE_HISTOGRAM:
@@ -657,16 +740,47 @@ static gboolean _lib_histogram_motion_notify_callback(GtkWidget *widget, GdkEven
           }
           break;
         case DT_DEV_SCOPE_VECTORSCOPE:
-          // FIXME: this should probably flip between scaled/unscaled view
+          switch(dev->vectorscope_color)
+          {
+            case DT_DEV_VECTORSCOPE_COLOR_WHITE:
+              gtk_widget_set_tooltip_text(widget, _("set to color, 50% luma"));
+              break;
+            case DT_DEV_VECTORSCOPE_COLOR_50PCT:
+              gtk_widget_set_tooltip_text(widget, _("set to color, chroma's average luma"));
+              break;
+            case DT_DEV_VECTORSCOPE_COLOR_AVG:
+              gtk_widget_set_tooltip_text(widget, _("set to color, chroma's minimum luma"));
+              break;
+            case DT_DEV_VECTORSCOPE_COLOR_MIN:
+              gtk_widget_set_tooltip_text(widget, _("set to color, chroma's maximum luma"));
+              break;
+            case DT_DEV_VECTORSCOPE_COLOR_MAX:
+              gtk_widget_set_tooltip_text(widget, _("set to monochrome"));
+              break;
+            default:
+              g_assert_not_reached();
+          }
           break;
         case DT_DEV_SCOPE_N:
           g_assert_not_reached();
       }
     }
+    // FIXME: make separate path for vectorscope instead of hacking onto colors
     else if(x > d->red_x && x < d->red_x + d->button_w && y > d->button_y && y < d->button_y + d->button_h)
     {
       d->highlight = DT_LIB_HISTOGRAM_HIGHLIGHT_RED;
-      gtk_widget_set_tooltip_text(widget, d->red ? _("click to hide red channel") : _("click to show red channel"));
+      if(dev->scope_type == DT_DEV_SCOPE_VECTORSCOPE)
+      {
+        if(dev->vectorscope_colorspace == DT_DEV_VECTORSCOPE_COLORSPACE_601)
+          gtk_widget_set_tooltip_text(widget, _("switch to Rec.709"));
+        else
+          gtk_widget_set_tooltip_text(widget, _("switch to Rec.601"));
+      }
+      else
+      {
+        gtk_widget_set_tooltip_text(widget, d->red ? _("click to hide red channel") : _("click to show red channel"));
+      }
+      // FIXME: for wavform this should flip between scaled/unscaled view
     }
     else if(x > d->green_x && x < d->green_x + d->button_w && y > d->button_y && y < d->button_y + d->button_h)
     {
@@ -678,6 +792,10 @@ static gboolean _lib_histogram_motion_notify_callback(GtkWidget *widget, GdkEven
     {
       d->highlight = DT_LIB_HISTOGRAM_HIGHLIGHT_BLUE;
       gtk_widget_set_tooltip_text(widget, d->blue ? _("click to hide blue channel") : _("click to show blue channel"));
+    }
+    else if(dev->scope_type == DT_DEV_SCOPE_VECTORSCOPE)
+    {
+      d->highlight = DT_LIB_HISTOGRAM_HIGHLIGHT_VECTORSCOPE;
     }
     // FIXME: add DT_LIB_HISTOGRAM_HIGHLIGHT_WHITE_BALANCE
     else if((posx < 0.2f && dev->scope_type == DT_DEV_SCOPE_HISTOGRAM) ||
@@ -775,8 +893,18 @@ static gboolean _lib_histogram_button_press_callback(GtkWidget *widget, GdkEvent
     }
     else if(d->highlight == DT_LIB_HISTOGRAM_HIGHLIGHT_RED)
     {
-      d->red = !d->red;
-      dt_conf_set_bool("plugins/darkroom/histogram/show_red", d->red);
+      // FIXME: make a different codepath for vectorscope outside of RGB buttons
+      if(dev->scope_type == DT_DEV_SCOPE_VECTORSCOPE)
+      {
+        dev->vectorscope_colorspace = (dev->vectorscope_colorspace + 1) % DT_DEV_VECTORSCOPE_COLORSPACE_N;
+        // FIXME: should set conf
+        dt_dev_process_preview(dev);
+      }
+      else
+      {
+        d->red = !d->red;
+        dt_conf_set_bool("plugins/darkroom/histogram/show_red", d->red);
+      }
     }
     else if(d->highlight == DT_LIB_HISTOGRAM_HIGHLIGHT_GREEN)
     {
@@ -808,6 +936,8 @@ static gboolean _lib_histogram_button_press_callback(GtkWidget *widget, GdkEvent
   }
   // update for good measure
   dt_control_queue_redraw_widget(self->widget);
+  // hide superceded tooltip
+  gtk_widget_set_tooltip_text(self->widget, NULL);
 
   return TRUE;
 }

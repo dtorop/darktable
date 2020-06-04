@@ -1133,9 +1133,27 @@ static void _pixelpipe_final_histogram_vectorscope(dt_develop_t *dev, const floa
   //memset(vs_alpha, 0, sizeof(uint8_t) * vs_height * vs_alpha_stride);
   //memset(vs_img, 0, sizeof(uint8_t) * vs_height * vs_img_stride);
 
+  // FIXME: should colorspace be controllable (601?) or set via the output profile of the image -- probably better
+  // FIXME: should the color buttons on the histogram control which axis is not graphed? (defaults to ignore Y)
+  // FIXME: is the vectorscope oriented the right way?
 
-  // BT.601
-  const float Wr = 0.299f, Wg = 0.587f, Wb = 0.114, Umax = 0.436, Vmax = 0.615;
+  // FIXME: hacky way to do this, to silence warning, but also loses const's
+  float Wr = 0.0f, Wb = 0.0f;
+  switch(dev->vectorscope_colorspace)
+  {
+    case DT_DEV_VECTORSCOPE_COLORSPACE_601:
+      Wr = 0.299f;
+      Wb = 0.114f;
+      break;
+    case DT_DEV_VECTORSCOPE_COLORSPACE_709:
+      Wr = 0.2126f;
+      Wb = 0.0722f;
+      break;
+    case DT_DEV_VECTORSCOPE_COLORSPACE_N:
+      g_assert_not_reached();
+  }
+  // BT.601 or BT.709
+  const float Wg = 1.0f - Wr - Wb, Umax = 0.436f, Vmax = 0.615f;
 
   uint32_t maxcount = 0;
   float minYuv[3] = {FLT_MAX,FLT_MAX,FLT_MAX}, maxYuv[3] = {FLT_MIN,FLT_MIN,FLT_MIN};
@@ -1148,6 +1166,7 @@ static void _pixelpipe_final_histogram_vectorscope(dt_develop_t *dev, const floa
     {
       const float *const in = input + 4 * (in_y*roi_in->width + in_x);
       // Convert to YCbCr colorspace
+      // FIXME: are the values, esp. for Rec. 709, expected to be in linear and these are gamma corrected?
       // FIXME: make colorspace chooseable, Lab would be interesting
       // FIXME: figure out right constants or make chooseable via UI
       // cribbed from demosaic_markesteijn.cl
@@ -1156,6 +1175,7 @@ static void _pixelpipe_final_histogram_vectorscope(dt_develop_t *dev, const floa
       //const float v = (in[0] - Y) * 0.67815f;
       // FIXME: does littlecms have RGB to Yuv conversion or is there another fast conversion there?
       const float Y = Wr * in[0] + Wg * in[1] + Wb * in[2];
+      // FIXME: do we really need Umax/Vmax or can we just normalize it here to [-1,1] as eventually it will effectively be a unit circle
       const float u = Umax * (in[2] - Y) / (1 - Wb);
       const float v = Vmax * (in[0] - Y) / (1 - Wr);
       // FIXME: should round or just truncate on cast??
