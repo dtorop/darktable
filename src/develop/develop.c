@@ -256,6 +256,8 @@ void dt_dev_cleanup(dt_develop_t *dev)
   free(dev->histogram_pre_tonecurve);
   free(dev->histogram_pre_levels);
   free(dev->histogram_waveform);
+  free(dev->vectorscope_alpha);
+  free(dev->vectorscope_img);
 
   g_list_free_full(dev->forms, (void (*)(void *))dt_masks_free_form);
   g_list_free_full(dev->allforms, (void (*)(void *))dt_masks_free_form);
