@@ -1121,8 +1121,18 @@ static void _pixelpipe_final_histogram_vectorscope(dt_develop_t *dev, const floa
 
   uint32_t *count = calloc(vs_width * vs_height, sizeof(uint32_t));
   float *sum = calloc(vs_width * vs_height, sizeof(float));
-  memset(vs_alpha, 0, sizeof(uint8_t) * vs_height * vs_alpha_stride);
-  memset(vs_img, 0, sizeof(uint8_t) * vs_height * vs_img_stride);
+  float *maxY = malloc(sizeof(float) * vs_width * vs_height);
+  float *minY = malloc(sizeof(float) * vs_width * vs_height);
+  for(int y=0; y<vs_height; ++y)
+    for(int x=0; x<vs_width; ++x)
+    {
+      maxY[y*vs_width+x] = FLT_MIN;
+      minY[y*vs_width+x] = FLT_MAX;
+    }
+  //float *uv = calloc(vs_width * vs_height * 2, sizeof(float));
+  //memset(vs_alpha, 0, sizeof(uint8_t) * vs_height * vs_alpha_stride);
+  //memset(vs_img, 0, sizeof(uint8_t) * vs_height * vs_img_stride);
+
 
   // BT.601
   const float Wr = 0.299f, Wg = 0.587f, Wb = 0.114, Umax = 0.436, Vmax = 0.615;
@@ -1137,8 +1147,8 @@ static void _pixelpipe_final_histogram_vectorscope(dt_develop_t *dev, const floa
     for(int in_x = 0; in_x < roi_in->width; in_x++)
     {
       const float *const in = input + 4 * (in_y*roi_in->width + in_x);
-      // Convert to perceptual YPbPr colorspace
-      // currently this is extra-naive
+      // Convert to YCbCr colorspace
+      // FIXME: make colorspace chooseable, Lab would be interesting
       // FIXME: figure out right constants or make chooseable via UI
       // cribbed from demosaic_markesteijn.cl
       //const float Y = 0.2627f * in[0] + 0.6780f * in[1] + 0.0593f * in[2];
@@ -1155,9 +1165,16 @@ static void _pixelpipe_final_histogram_vectorscope(dt_develop_t *dev, const floa
       const int out_x = CLAMP(roundf((0.5f * u / Umax + 0.5f) * vs_width), 0, vs_width-1);
       const int out_y = CLAMP(roundf((0.5f * v / Vmax + 0.5f) * vs_height), 0, vs_height-1);
       count[out_y * vs_width + out_x]++;
-      // FIXME: only need to keep sum if calculating average Y
+      // FIXME: only need to keep sum if calculating average/min/max Y
       sum[out_y * vs_width + out_x] += Y;
-      // FIXME: store the original u v values instead of recalculating them to determine color?
+      minY[out_y * vs_width + out_x] = MIN(minY[out_y * vs_width + out_x], Y);
+      maxY[out_y * vs_width + out_x] = MAX(maxY[out_y * vs_width + out_x], Y);
+#if 0
+      uv[out_y * vs_width * 2 + out_x * 2] += u;
+      uv[out_y * vs_width * 2 + out_x * 2 + 1] += v;
+      if(in_y < 1 && in_x < 5)
+        printf("in %f %f %f Yuv %f %f %f out_x %d out_y %d\n", in[0], in[1], in[2], Y, u, v, out_x, out_y);
+#endif
       maxcount = MAX(count[out_y * vs_width + out_x], maxcount);
       minYuv[0] = MIN(minYuv[0], Y); minYuv[1] = MIN(minYuv[1], u); minYuv[2] = MIN(minYuv[2], v);
       maxYuv[0] = MAX(maxYuv[0], Y); maxYuv[1] = MAX(maxYuv[1], u); maxYuv[2] = MAX(maxYuv[2], v);
@@ -1191,12 +1208,30 @@ static void _pixelpipe_final_histogram_vectorscope(dt_develop_t *dev, const floa
       {
         // FIXME: average Y always seems to look better than 50% color
         // FIXME: should also try min/max Y?
-        const float Y = dev->vectorscope_color == DT_DEV_VECTORSCOPE_COLOR_50PCT ? 0.5f : in_sum[out_x] / c;
-        // FIXME: change this if scaling out in a different way, or if we can just pull this from a temp array
+        //const float Y = dev->vectorscope_color == DT_DEV_VECTORSCOPE_COLOR_50PCT ? 0.5f : in_sum[out_x] / c;
+        float Y;
+        switch(dev->vectorscope_color)
+        {
+          case DT_DEV_VECTORSCOPE_COLOR_50PCT: Y = 0.5f; break;
+          case DT_DEV_VECTORSCOPE_COLOR_AVG: Y = in_sum[out_x] / c; break;
+          case DT_DEV_VECTORSCOPE_COLOR_MIN: Y = minY[out_y * vs_width + out_x]; break;
+          case DT_DEV_VECTORSCOPE_COLOR_MAX: Y = maxY[out_y * vs_width + out_x]; break;
+          default: g_assert_not_reached();
+        }
+
+        // this won't be precisely the original values, but are close enough
         const float u = (((float)out_x / vs_width) - 0.5f) * 2.0f * Umax;
         const float v = (((float)out_y / vs_height) - 0.5f) * 2.0f * Vmax;
+#if 0
+        const float u = uv[out_y * vs_width * 2 + out_x * 2] / c;
+        const float v = uv[out_y * vs_width * 2 + out_x * 2 + 1] / c;
+        if(out_y == 181 && out_x == 115)
+          //if(fabsf(u_calc - u) > 0.01 || fabsf(v_calc - v) > 0.01)
+          // got Yuv 0.378140 -0.149000 0.019932 calc u calc v -0.149486 0.021086
+          printf("Yuv %f %f %f calc u calc v %f %f c %d\n", Y, u, v, u_calc, v_calc, c);
         // FIXME: faster to just use constants?
         // FIXME: does littlecms have Yuv to RGB conversion or is there another fast conversion there?
+#endif
         const float r = Y + v * (1 - Wr) / Vmax;
         const float g = Y - u * Wb * (1 - Wb) / (Umax * Wg) - v * Wr * (1 - Wr) / (Vmax * Wg);
         const float b = Y + u * (1 - Wb) / Umax;
@@ -1215,6 +1250,8 @@ static void _pixelpipe_final_histogram_vectorscope(dt_develop_t *dev, const floa
 
   free(count);
   free(sum);
+  free(minY);
+  free(maxY);
 
   if(darktable.unmuted & DT_DEBUG_PERF)
   {

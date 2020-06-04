@@ -96,6 +96,8 @@ typedef enum dt_dev_vectorscope_color_type_t
   DT_DEV_VECTORSCOPE_COLOR_WHITE = 0,
   DT_DEV_VECTORSCOPE_COLOR_50PCT,
   DT_DEV_VECTORSCOPE_COLOR_AVG,
+  DT_DEV_VECTORSCOPE_COLOR_MIN,
+  DT_DEV_VECTORSCOPE_COLOR_MAX,
   DT_DEV_VECTORSCOPE_COLOR_N // needs to be the last one
 } dt_dev_vectorscope_color_type_t;
 
