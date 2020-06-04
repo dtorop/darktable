@@ -1124,10 +1124,12 @@ static void _pixelpipe_final_histogram_vectorscope(dt_develop_t *dev, const floa
   memset(vs_alpha, 0, sizeof(uint8_t) * vs_height * vs_alpha_stride);
   memset(vs_img, 0, sizeof(uint8_t) * vs_height * vs_img_stride);
 
+  // BT.601
+  const float Wr = 0.299f, Wg = 0.587f, Wb = 0.114, Umax = 0.436, Vmax = 0.615;
+
   uint32_t maxcount = 0;
   float minYuv[3] = {FLT_MAX,FLT_MAX,FLT_MAX}, maxYuv[3] = {FLT_MIN,FLT_MIN,FLT_MIN};
-  // FIXME: what is the right scale factor for u & v? -- don't scale here, make scalable in UI?
-  const float uv_scale = 4.0f;
+  // FIXME: make scalable in UI? -- *4 seems like the most, *2 good
   // count u and v into bins
   // FIXME: use OpenMP
   for(int in_y = 0; in_y < roi_in->height; in_y++)
@@ -1142,30 +1144,30 @@ static void _pixelpipe_final_histogram_vectorscope(dt_develop_t *dev, const floa
       //const float Y = 0.2627f * in[0] + 0.6780f * in[1] + 0.0593f * in[2];
       //const float u = (in[2] - Y) * 0.56433f;
       //const float v = (in[0] - Y) * 0.67815f;
-      // constants from imageop_math.c -- REC. 601?
-      const float Y = 0.299 * in[0] + 0.587 * in[1] + 0.114 * in[2];
-      const float u = -0.147 * in[0] - 0.289 * in[1] + 0.437 * in[2];
-      const float v = 0.615 * in[0] - 0.515 * in[1] - 0.100 * in[2];
-      // FIXME: should round rather than clamp?
-      const int out_x = CLAMP((u * uv_scale + 0.5f) * vs_width, 0, vs_width-1);
-      const int out_y = CLAMP((v * uv_scale + 0.5f) * vs_height, 0, vs_height-1);
+      // FIXME: does littlecms have RGB to Yuv conversion or is there another fast conversion there?
+      const float Y = Wr * in[0] + Wg * in[1] + Wb * in[2];
+      const float u = Umax * (in[2] - Y) / (1 - Wb);
+      const float v = Vmax * (in[0] - Y) / (1 - Wr);
+      // FIXME: should round or just truncate on cast??
+      // FIXME: need to clamp as these are unbounded?
+      // FIXME: better to clamp or just ignore out of bound values?
+      // FIXME: should make max u & v be [-1,1], [-Umax, Umax] [-Vmax, Vmax], or [-MAX(Umax, Vmax), MAX(Umax, Vmax)]?
+      const int out_x = CLAMP(roundf((0.5f * u / Umax + 0.5f) * vs_width), 0, vs_width-1);
+      const int out_y = CLAMP(roundf((0.5f * v / Vmax + 0.5f) * vs_height), 0, vs_height-1);
       count[out_y * vs_width + out_x]++;
       // FIXME: only need to keep sum if calculating average Y
       sum[out_y * vs_width + out_x] += Y;
+      // FIXME: store the original u v values instead of recalculating them to determine color?
       maxcount = MAX(count[out_y * vs_width + out_x], maxcount);
-      minYuv[0] = MIN(minYuv[0], Y);
-      minYuv[1] = MIN(minYuv[1], u);
-      minYuv[2] = MIN(minYuv[2], v);
-      maxYuv[0] = MAX(maxYuv[0], Y);
-      maxYuv[1] = MAX(maxYuv[1], u);
-      maxYuv[2] = MAX(maxYuv[2], v);
+      minYuv[0] = MIN(minYuv[0], Y); minYuv[1] = MIN(minYuv[1], u); minYuv[2] = MIN(minYuv[2], v);
+      maxYuv[0] = MAX(maxYuv[0], Y); maxYuv[1] = MAX(maxYuv[1], u); maxYuv[2] = MAX(maxYuv[2], v);
     }
   }
 
   printf("vs_width %d vs_height %d roi_in->width %d roi_in_height %d\n", vs_width, vs_height, roi_in->width, roi_in->height);
   const float scale = 4.0f * (vs_width * vs_height) / (roi_in->width * roi_in->height * 255.0f);
   const float gamma = 1.0f / 1.5f;
-  printf("maxcol %d scale %f scaled maxcol %f gamma corrected %f\n", maxcount, scale, maxcount * scale, powf(maxcount * scale, gamma));
+  printf("maxcount %d scale %f scaled maxcount %f gamma corrected %f\n", maxcount, scale, maxcount * scale, powf(maxcount * scale, gamma));
   printf("minYuv %f, %f, %f maxYuv %f, %f, %f\n", minYuv[0], minYuv[1], minYuv[2], maxYuv[0], maxYuv[1], maxYuv[2]);
 
   // FIXME: use OpenMP
@@ -1187,18 +1189,23 @@ static void _pixelpipe_final_histogram_vectorscope(dt_develop_t *dev, const floa
       }
       else
       {
+        // FIXME: average Y always seems to look better than 50% color
+        // FIXME: should also try min/max Y?
         const float Y = dev->vectorscope_color == DT_DEV_VECTORSCOPE_COLOR_50PCT ? 0.5f : in_sum[out_x] / c;
-        const float u = (((float)out_x / vs_width) - 0.5f) / uv_scale;
-        const float v = (((float)out_y / vs_height) - 0.5f) / uv_scale;
-        // FIXME/NOTE: these are the primaries from dt_iop_YCbCr_to_RGB
-        const float r = Y + 1.140 * v;
-        const float g = Y - 0.394 * u - 0.581 * v;
-        const float b = Y + 2.028 * u;
+        // FIXME: change this if scaling out in a different way, or if we can just pull this from a temp array
+        const float u = (((float)out_x / vs_width) - 0.5f) * 2.0f * Umax;
+        const float v = (((float)out_y / vs_height) - 0.5f) * 2.0f * Vmax;
+        // FIXME: faster to just use constants?
+        // FIXME: does littlecms have Yuv to RGB conversion or is there another fast conversion there?
+        const float r = Y + v * (1 - Wr) / Vmax;
+        const float g = Y - u * Wb * (1 - Wb) / (Umax * Wg) - v * Wr * (1 - Wr) / (Vmax * Wg);
+        const float b = Y + u * (1 - Wb) / Umax;
         // FIXME/NOTE: these are primaries from dcraw
         //rgb[0] = yuv[b] + 1.370705*yuv[3];
         //rgb[1] = yuv[b] - 0.337633*yuv[2] - 0.698001*yuv[3];
         //rgb[2] = yuv[b] + 1.732446*yuv[2];
         // FIXME: do need to clamp these?
+        // FIXME: better to eliminate out-of-bound than to clamp?
         out_img[out_x*4] = CLAMP(r*255.0f, 0, 255);
         out_img[out_x*4+1] = CLAMP(g*255.0f, 0, 255);
         out_img[out_x*4+2] = CLAMP(b*255.0f, 0, 255);
