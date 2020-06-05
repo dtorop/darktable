@@ -1163,7 +1163,6 @@ static void _pixelpipe_final_histogram_vectorscope(dt_develop_t *dev, const floa
     case DT_DEV_VECTORSCOPE_COLORSPACE_N:
       g_assert_not_reached();
   }
-  // BT.601 or BT.709
   const float Wg = 1.0f - Wr - Wb;
 
   uint32_t maxcount = 0;
@@ -1186,10 +1185,11 @@ static void _pixelpipe_final_histogram_vectorscope(dt_develop_t *dev, const floa
       // FIXME: need to clamp as these are unbounded?
       // FIXME: better to clamp or just ignore out of bound values?
       // FIXME: should make max u & v be [-1,1], [-Umax, Umax] [-Vmax, Vmax], or [-MAX(Umax, Vmax), MAX(Umax, Vmax)]?
-      const int out_x = CLAMP(roundf((0.5f * u / Umax + 0.5f) * vs_width), 0, vs_width-1);
-      const int out_y = CLAMP(roundf((0.5f * v / Vmax + 0.5f) * vs_height), 0, vs_height-1);
+      // FIXME: this keeps u & v proportional, and ideally doesn't waste memory space with unneeded data, but then should scale in UI to [-1,1] or [-2,2] (Rec.2020)
+      const int out_x = CLAMP(roundf((0.5f * u / MAX(Umax, Vmax) + 0.5f) * vs_width), 0, vs_width-1);
+      const int out_y = CLAMP(roundf((0.5f * v / MAX(Umax, Vmax) + 0.5f) * vs_height), 0, vs_height-1);
       count[out_y * vs_width + out_x]++;
-      // FIXME: only need to keep sum if calculating average/min/max Y
+      // FIXME: only need to keep these if calculating average/min/max Y
       sum[out_y * vs_width + out_x] += Y;
       minY[out_y * vs_width + out_x] = MIN(minY[out_y * vs_width + out_x], Y);
       maxY[out_y * vs_width + out_x] = MAX(maxY[out_y * vs_width + out_x], Y);
