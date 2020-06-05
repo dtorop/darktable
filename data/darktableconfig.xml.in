@@ -2057,6 +2057,41 @@
     <longdescription/>
   </dtconfig>
   <dtconfig>
+    <name>plugins/darkroom/histogram/vectorscope/color</name>
+    <type>
+      <enum>
+	<option>white</option>
+        <option>50pct</option>
+        <option>average</option>
+        <option>minimum</option>
+        <option>maximum</option>
+      </enum>
+    </type>
+    <default>white</default>
+    <shortdescription/>
+    <longdescription/>
+  </dtconfig>
+  <dtconfig>
+    <name>plugins/darkroom/histogram/vectorscope/colorspace</name>
+    <type>
+      <enum>
+	<option>rec601</option>
+        <option>rec709</option>
+        <option>rec2020</option>
+      </enum>
+    </type>
+    <default>rec601</default>
+    <shortdescription/>
+    <longdescription/>
+  </dtconfig>
+  <dtconfig>
+    <name>plugins/darkroom/histogram/vectorscope/scale</name>
+    <type>int</type>
+    <default>1</default>
+    <shortdescription/>
+    <longdescription/>
+  </dtconfig>
+  <dtconfig>
     <name>plugins/darkroom/histogram/show_red</name>
     <type>bool</type>
     <default>true</default>
