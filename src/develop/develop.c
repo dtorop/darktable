@@ -119,6 +119,9 @@ void dt_dev_init(dt_develop_t *dev, int32_t gui_attached)
     if(g_strcmp0(vs_colorspace, dt_dev_scope_vectorscope_colorspace_names[i]) == 0)
       dev->vectorscope_colorspace = i;
   g_free(vs_colorspace);
+  // FIXME: get axes from conf
+  //gchar *vs_axes = dt_conf_get_string("plugins/darkroom/histogram/vectorscope/axes");
+  //g_free(vs_axes);
   gchar *preview_downsample = dt_conf_get_string("preview_downsampling");
   dev->preview_downsampling =
     (g_strcmp0(preview_downsample, "original") == 0) ? 1.0f

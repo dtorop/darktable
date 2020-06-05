@@ -636,10 +636,12 @@ static gboolean _lib_histogram_draw_callback(GtkWidget *widget, cairo_t *crf, gp
       cairo_set_source_rgba(cr, 0.5, 0.5, 0.5, 0.33);
       // FIXME: make a button draw for choosing colorspace
       _draw_color_toggle(cr, d->red_x, d->button_y, d->button_w, d->button_h, dev->vectorscope_colorspace);
-      cairo_set_source_rgba(cr, d->vs_scale * 0.25, d->vs_scale * 0.25, d->vs_scale * 0.25, 0.33);
       // FIXME: make a button draw for choosing scale
+      cairo_set_source_rgba(cr, d->vs_scale * 0.25, d->vs_scale * 0.25, d->vs_scale * 0.25, 0.33);
       _draw_color_toggle(cr, d->green_x, d->button_y, d->button_w, d->button_h, TRUE);
-      // FIXME: add buttons to choose axis (uv, uY, Yv)
+      // FIXME: make a button draw to choose axis (uv, uY, Yv)
+      cairo_set_source_rgba(cr, dev->vectorscope_axes * 0.3, dev->vectorscope_axes * 0.3, dev->vectorscope_axes * 0.3, 0.33);
+      _draw_color_toggle(cr, d->blue_x, d->button_y, d->button_w, d->button_h, TRUE);
     }
     else
     {
@@ -844,7 +846,27 @@ static gboolean _lib_histogram_motion_notify_callback(GtkWidget *widget, GdkEven
     else if(x > d->blue_x && x < d->blue_x + d->button_w && y > d->button_y && y < d->button_y + d->button_h)
     {
       d->highlight = DT_LIB_HISTOGRAM_HIGHLIGHT_BLUE;
-      gtk_widget_set_tooltip_text(widget, d->blue ? _("click to hide blue channel") : _("click to show blue channel"));
+      if(dev->scope_type == DT_DEV_SCOPE_VECTORSCOPE)
+      {
+          switch(dev->vectorscope_axes)
+          {
+            case DT_DEV_VECTORSCOPE_AXES_UV:
+              gtk_widget_set_tooltip_text(widget, _("set to graph uY"));
+              break;
+            case DT_DEV_VECTORSCOPE_AXES_UY:
+              gtk_widget_set_tooltip_text(widget, _("set to graph Yv"));
+              break;
+            case DT_DEV_VECTORSCOPE_AXES_YV:
+              gtk_widget_set_tooltip_text(widget, _("set to graph uv"));
+              break;
+            case DT_DEV_VECTORSCOPE_AXES_N:
+              g_assert_not_reached();
+          }
+      }
+      else
+      {
+        gtk_widget_set_tooltip_text(widget, d->blue ? _("click to hide blue channel") : _("click to show blue channel"));
+      }
     }
     else if(dev->scope_type == DT_DEV_SCOPE_VECTORSCOPE)
     {
@@ -958,6 +980,13 @@ static gboolean _lib_histogram_button_press_callback(GtkWidget *widget, GdkEvent
         d->vs_scale += 1;
         if(d->vs_scale > 4) d->vs_scale = 1;
         dt_conf_set_int("plugins/darkroom/histogram/vectorscope/scale", d->vs_scale);
+      }
+      else if(d->highlight == DT_LIB_HISTOGRAM_HIGHLIGHT_BLUE)
+      {
+        dev->vectorscope_axes = (dev->vectorscope_axes + 1) % DT_DEV_VECTORSCOPE_AXES_N;
+        // FIXME: set conf for axes
+        //dt_conf_set_string("plugins/darkroom/histogram/vectorscope/axes", dt_dev_scope_vectorscope_axes_names[dev->vectorscope_axes]);
+        dt_dev_process_preview(dev);
       }
     }
     else if(d->highlight == DT_LIB_HISTOGRAM_HIGHLIGHT_RED)

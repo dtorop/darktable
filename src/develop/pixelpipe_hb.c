@@ -1119,13 +1119,13 @@ static void _pixelpipe_final_histogram_vectorscope(dt_develop_t *dev, const floa
 
   uint32_t *count = calloc(vs_width * vs_height, sizeof(uint32_t));
   float *sum = calloc(vs_width * vs_height, sizeof(float));
-  float *maxY = malloc(sizeof(float) * vs_width * vs_height);
-  float *minY = malloc(sizeof(float) * vs_width * vs_height);
+  float *maxz = malloc(sizeof(float) * vs_width * vs_height);
+  float *minz = malloc(sizeof(float) * vs_width * vs_height);
   for(int y=0; y<vs_height; ++y)
     for(int x=0; x<vs_width; ++x)
     {
-      maxY[y*vs_width+x] = FLT_MIN;
-      minY[y*vs_width+x] = FLT_MAX;
+      maxz[y*vs_width+x] = FLT_MIN;
+      minz[y*vs_width+x] = FLT_MAX;
     }
 
   // FIXME: should colorspace be controllable (601?) or set via the output profile of the image -- probably better
@@ -1179,13 +1179,35 @@ static void _pixelpipe_final_histogram_vectorscope(dt_develop_t *dev, const floa
       // FIXME: better to clamp or just ignore out of bound values?
       // FIXME: should make max u & v be [-1,1], [-Umax, Umax] [-Vmax, Vmax], or [-MAX(Umax, Vmax), MAX(Umax, Vmax)]?
       // FIXME: this keeps u & v proportional, and ideally doesn't waste memory space with unneeded data, but then should scale in UI to [-1,1] or [-2,2] (Rec.2020)
-      const int out_x = CLAMP(roundf((0.5f * u / MAX(Umax, Vmax) + 0.5f) * vs_width), 0, vs_width-1);
-      const int out_y = CLAMP(roundf((0.5f * v / MAX(Umax, Vmax) + 0.5f) * vs_height), 0, vs_height-1);
+      int out_x = 0, out_y = 0;
+      // FIXME: hacky
+      float z = 0;
+      // FIXME: do something nice with arrays instead to keep symmetrical
+      switch(dev->vectorscope_axes)
+      {
+        case DT_DEV_VECTORSCOPE_AXES_UV:
+          out_x = CLAMP(roundf((0.5f * u / MAX(Umax, Vmax) + 0.5f) * vs_width), 0, vs_width-1);
+          out_y = CLAMP(roundf((0.5f * v / MAX(Umax, Vmax) + 0.5f) * vs_height), 0, vs_height-1);
+          z = Y;
+          break;
+        case DT_DEV_VECTORSCOPE_AXES_UY:
+          out_x = CLAMP(roundf((0.5f * u / MAX(Umax, Vmax) + 0.5f) * vs_width), 0, vs_width-1);
+          out_y = CLAMP(roundf(Y * vs_height), 0, vs_height-1);
+          z = v;
+          break;
+        case DT_DEV_VECTORSCOPE_AXES_YV:
+          out_x = CLAMP(roundf(Y * vs_width), 0, vs_width-1);
+          out_y = CLAMP(roundf((0.5f * v / MAX(Umax, Vmax) + 0.5f) * vs_height), 0, vs_height-1);
+          z = u;
+          break;
+        case DT_DEV_VECTORSCOPE_AXES_N:
+          g_assert_not_reached();
+      }
       count[out_y * vs_width + out_x]++;
       // FIXME: only need to keep these if calculating average/min/max Y
-      sum[out_y * vs_width + out_x] += Y;
-      minY[out_y * vs_width + out_x] = MIN(minY[out_y * vs_width + out_x], Y);
-      maxY[out_y * vs_width + out_x] = MAX(maxY[out_y * vs_width + out_x], Y);
+      sum[out_y * vs_width + out_x] += z;
+      minz[out_y * vs_width + out_x] = MIN(minz[out_y * vs_width + out_x], z);
+      maxz[out_y * vs_width + out_x] = MAX(maxz[out_y * vs_width + out_x], z);
       //maxcount = MAX(count[out_y * vs_width + out_x], maxcount);
       //minYuv[0] = MIN(minYuv[0], Y); minYuv[1] = MIN(minYuv[1], u); minYuv[2] = MIN(minYuv[2], v);
       //maxYuv[0] = MAX(maxYuv[0], Y); maxYuv[1] = MAX(maxYuv[1], u); maxYuv[2] = MAX(maxYuv[2], v);
@@ -1199,6 +1221,7 @@ static void _pixelpipe_final_histogram_vectorscope(dt_develop_t *dev, const floa
   // FIXME: use OpenMP
   for(int out_y = 0; out_y < vs_height; out_y++)
   {
+    // FIXME: have per-row calculations for minz/maxz or not for count/sum/alpha/img?
     const uint32_t *const in_count = count + vs_width * out_y;
     const float *const in_sum = sum + vs_width * out_y;
     uint8_t *const out_alpha = vs_alpha + (vs_alpha_stride * out_y);
@@ -1210,19 +1233,50 @@ static void _pixelpipe_final_histogram_vectorscope(dt_develop_t *dev, const floa
       out_alpha[out_x] = CLAMP(powf(c * scale, gamma) * 255.0f, 0, 255);
       if(dev->vectorscope_color != DT_DEV_VECTORSCOPE_COLOR_WHITE)
       {
-        float Y;
-        switch(dev->vectorscope_color)
+        // FIXME: do something nice with arrays instead to keep symmetrical
+        float Y = 0.0f, u = 0.0f, v = 0.0f;
+        switch(dev->vectorscope_axes)
         {
-          case DT_DEV_VECTORSCOPE_COLOR_50PCT: Y = 0.5f; break;
-          case DT_DEV_VECTORSCOPE_COLOR_AVG: Y = in_sum[out_x] / c; break;
-          case DT_DEV_VECTORSCOPE_COLOR_MIN: Y = minY[out_y * vs_width + out_x]; break;
-          case DT_DEV_VECTORSCOPE_COLOR_MAX: Y = maxY[out_y * vs_width + out_x]; break;
-          default: g_assert_not_reached();
+          case DT_DEV_VECTORSCOPE_AXES_UV:
+            switch(dev->vectorscope_color)
+            {
+              case DT_DEV_VECTORSCOPE_COLOR_50PCT: Y = 0.5f; break;
+              case DT_DEV_VECTORSCOPE_COLOR_AVG: Y = in_sum[out_x] / c; break;
+              case DT_DEV_VECTORSCOPE_COLOR_MIN: Y = minz[out_y * vs_width + out_x]; break;
+              case DT_DEV_VECTORSCOPE_COLOR_MAX: Y = maxz[out_y * vs_width + out_x]; break;
+              default: g_assert_not_reached();
+            }
+            // this won't be precisely the original values, but are close enough
+            u = (((float)out_x / vs_width) - 0.5f) * 2.0f * Umax;
+            v = (((float)out_y / vs_height) - 0.5f) * 2.0f * Vmax;
+            break;
+          case DT_DEV_VECTORSCOPE_AXES_UY:
+            Y = (float)out_y / vs_height;
+            u = (((float)out_x / vs_width) - 0.5f) * 2.0f * Umax;
+            switch(dev->vectorscope_color)
+            {
+              case DT_DEV_VECTORSCOPE_COLOR_50PCT: v = 0.0f; break;
+              case DT_DEV_VECTORSCOPE_COLOR_AVG: v = in_sum[out_x] / c; break;
+              case DT_DEV_VECTORSCOPE_COLOR_MIN: v = minz[out_y * vs_width + out_x]; break;
+              case DT_DEV_VECTORSCOPE_COLOR_MAX: v = maxz[out_y * vs_width + out_x]; break;
+              default: g_assert_not_reached();
+            }
+            break;
+          case DT_DEV_VECTORSCOPE_AXES_YV:
+            Y = (float)out_x / vs_width;
+            switch(dev->vectorscope_color)
+            {
+              case DT_DEV_VECTORSCOPE_COLOR_50PCT: u = 0.0f; break;
+              case DT_DEV_VECTORSCOPE_COLOR_AVG: u = in_sum[out_x] / c; break;
+              case DT_DEV_VECTORSCOPE_COLOR_MIN: u = minz[out_y * vs_width + out_x]; break;
+              case DT_DEV_VECTORSCOPE_COLOR_MAX: u = maxz[out_y * vs_width + out_x]; break;
+              default: g_assert_not_reached();
+            }
+            v = (((float)out_y / vs_height) - 0.5f) * 2.0f * Vmax;
+            break;
+          case DT_DEV_VECTORSCOPE_AXES_N:
+            g_assert_not_reached();
         }
-
-        // this won't be precisely the original values, but are close enough
-        const float u = (((float)out_x / vs_width) - 0.5f) * 2.0f * Umax;
-        const float v = (((float)out_y / vs_height) - 0.5f) * 2.0f * Vmax;
         const float r = Y + v * (1 - Wr) / Vmax;
         const float g = Y - u * Wb * (1 - Wb) / (Umax * Wg) - v * Wr * (1 - Wr) / (Vmax * Wg);
         const float b = Y + u * (1 - Wb) / Umax;
@@ -1236,8 +1290,8 @@ static void _pixelpipe_final_histogram_vectorscope(dt_develop_t *dev, const floa
 
   free(count);
   free(sum);
-  free(minY);
-  free(maxY);
+  free(minz);
+  free(maxz);
 
   if(darktable.unmuted & DT_DEBUG_PERF)
   {
