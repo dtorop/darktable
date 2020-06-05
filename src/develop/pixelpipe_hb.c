@@ -1193,12 +1193,6 @@ static void _pixelpipe_final_histogram_vectorscope(dt_develop_t *dev, const floa
       sum[out_y * vs_width + out_x] += Y;
       minY[out_y * vs_width + out_x] = MIN(minY[out_y * vs_width + out_x], Y);
       maxY[out_y * vs_width + out_x] = MAX(maxY[out_y * vs_width + out_x], Y);
-#if 0
-      uv[out_y * vs_width * 2 + out_x * 2] += u;
-      uv[out_y * vs_width * 2 + out_x * 2 + 1] += v;
-      if(in_y < 1 && in_x < 5)
-        printf("in %f %f %f Yuv %f %f %f out_x %d out_y %d\n", in[0], in[1], in[2], Y, u, v, out_x, out_y);
-#endif
       maxcount = MAX(count[out_y * vs_width + out_x], maxcount);
       minYuv[0] = MIN(minYuv[0], Y); minYuv[1] = MIN(minYuv[1], u); minYuv[2] = MIN(minYuv[2], v);
       maxYuv[0] = MAX(maxYuv[0], Y); maxYuv[1] = MAX(maxYuv[1], u); maxYuv[2] = MAX(maxYuv[2], v);
@@ -1246,16 +1240,6 @@ static void _pixelpipe_final_histogram_vectorscope(dt_develop_t *dev, const floa
         // this won't be precisely the original values, but are close enough
         const float u = (((float)out_x / vs_width) - 0.5f) * 2.0f * Umax;
         const float v = (((float)out_y / vs_height) - 0.5f) * 2.0f * Vmax;
-#if 0
-        const float u = uv[out_y * vs_width * 2 + out_x * 2] / c;
-        const float v = uv[out_y * vs_width * 2 + out_x * 2 + 1] / c;
-        if(out_y == 181 && out_x == 115)
-          //if(fabsf(u_calc - u) > 0.01 || fabsf(v_calc - v) > 0.01)
-          // got Yuv 0.378140 -0.149000 0.019932 calc u calc v -0.149486 0.021086
-          printf("Yuv %f %f %f calc u calc v %f %f c %d\n", Y, u, v, u_calc, v_calc, c);
-        // FIXME: faster to just use constants?
-        // FIXME: does littlecms have Yuv to RGB conversion or is there another fast conversion there?
-#endif
         const float r = Y + v * (1 - Wr) / Vmax;
         const float g = Y - u * Wb * (1 - Wb) / (Umax * Wg) - v * Wr * (1 - Wr) / (Vmax * Wg);
         const float b = Y + u * (1 - Wb) / Umax;

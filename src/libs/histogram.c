@@ -476,17 +476,13 @@ static void _lib_histogram_draw_vectorscope(cairo_t *cr, int width, int height,
 
   const int min_size = MIN(width, height);
   cairo_save(cr);
-  cairo_translate(cr, (width - min_size) / 2., (height - min_size) / 2.);
+  cairo_translate(cr, width / 2., height / 2.);
+  cairo_rotate(cr, M_PI * -0.5);
+  cairo_scale(cr, 1 << scale, 1 << scale);
+  cairo_translate(cr, min_size * -0.5, min_size * -0.5);
   // FIXME: use ppd?
   // FIXME: do need to cast to double if use ppd?
   cairo_scale(cr, darktable.gui->ppd*(double)min_size/vs_width, darktable.gui->ppd*(double)min_size/vs_height);
-
-  // FIXME: hacky
-  if(scale == DT_LIB_HISTOGRAM_VS_SCALE_X2)
-    cairo_translate(cr, -min_size*0.5, -min_size*0.5);
-  else if(scale == DT_LIB_HISTOGRAM_VS_SCALE_X4)
-    cairo_translate(cr, -min_size*1.5, -min_size*1.5);
-  cairo_scale(cr, 1 << scale, 1 << scale);
   cairo_set_operator(cr, CAIRO_OPERATOR_ADD);
 
   cairo_surface_t *source
