@@ -1127,9 +1127,6 @@ static void _pixelpipe_final_histogram_vectorscope(dt_develop_t *dev, const floa
       maxY[y*vs_width+x] = FLT_MIN;
       minY[y*vs_width+x] = FLT_MAX;
     }
-  //float *uv = calloc(vs_width * vs_height * 2, sizeof(float));
-  //memset(vs_alpha, 0, sizeof(uint8_t) * vs_height * vs_alpha_stride);
-  //memset(vs_img, 0, sizeof(uint8_t) * vs_height * vs_img_stride);
 
   // FIXME: should colorspace be controllable (601?) or set via the output profile of the image -- probably better
   // FIXME: should the color buttons on the histogram control which axis is not graphed? (defaults to ignore Y)
