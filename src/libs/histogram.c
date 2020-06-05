@@ -616,7 +616,6 @@ static gboolean _lib_histogram_draw_callback(GtkWidget *widget, cairo_t *crf, gp
   // buttons to control the display of the histogram: scope type, mode, r, g, b
   if(d->highlight != DT_LIB_HISTOGRAM_HIGHLIGHT_NONE)
   {
-    // FIXME: make vectorscope toggle image
     _draw_type_toggle(cr, d->type_x, d->button_y, d->button_w, d->button_h, dev->scope_type);
     switch(dev->scope_type)
     {
@@ -677,7 +676,7 @@ static gboolean _lib_histogram_motion_notify_callback(GtkWidget *widget, GdkEven
   gtk_widget_get_allocation(widget, &allocation);
   if(d->dragging)
   {
-    // FIXME: dragging the vectorscope should change white balance
+    // FIXME: dragging the vectorscope should change white balance -- or perhaps its scale
     const float diff = dev->scope_type == DT_DEV_SCOPE_WAVEFORM ? d->button_down_y - event->y
                                                                 : event->x - d->button_down_x;
     const int range = dev->scope_type == DT_DEV_SCOPE_WAVEFORM ? allocation.height
@@ -851,7 +850,6 @@ static gboolean _lib_histogram_motion_notify_callback(GtkWidget *widget, GdkEven
     {
       d->highlight = DT_LIB_HISTOGRAM_HIGHLIGHT_VECTORSCOPE;
     }
-    // FIXME: add DT_LIB_HISTOGRAM_HIGHLIGHT_WHITE_BALANCE
     else if((posx < 0.2f && dev->scope_type == DT_DEV_SCOPE_HISTOGRAM) ||
             (posy > 7.0f/9.0f && dev->scope_type == DT_DEV_SCOPE_WAVEFORM))
     {

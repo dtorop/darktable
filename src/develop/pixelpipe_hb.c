@@ -1130,7 +1130,6 @@ static void _pixelpipe_final_histogram_vectorscope(dt_develop_t *dev, const floa
 
   // FIXME: should colorspace be controllable (601?) or set via the output profile of the image -- probably better
   // FIXME: should the color buttons on the histogram control which axis is not graphed? (defaults to ignore Y)
-  // FIXME: is the vectorscope oriented the right way?
 
   // FIXME: hacky way to do this, to silence warning, but also loses const's
   float Wr = 0.0f, Wb = 0.0f, Umax = 0.0f, Vmax = 0.0f;
@@ -1160,9 +1159,8 @@ static void _pixelpipe_final_histogram_vectorscope(dt_develop_t *dev, const floa
   }
   const float Wg = 1.0f - Wr - Wb;
 
-  uint32_t maxcount = 0;
-  float minYuv[3] = {FLT_MAX,FLT_MAX,FLT_MAX}, maxYuv[3] = {FLT_MIN,FLT_MIN,FLT_MIN};
-  // FIXME: make scalable in UI? -- *4 seems like the most, *2 good
+  //uint32_t maxcount = 0;
+  //float minYuv[3] = {FLT_MAX,FLT_MAX,FLT_MAX}, maxYuv[3] = {FLT_MIN,FLT_MIN,FLT_MIN};
   // count u and v into bins
   // FIXME: use OpenMP
   for(int in_y = 0; in_y < roi_in->height; in_y++)
@@ -1188,17 +1186,15 @@ static void _pixelpipe_final_histogram_vectorscope(dt_develop_t *dev, const floa
       sum[out_y * vs_width + out_x] += Y;
       minY[out_y * vs_width + out_x] = MIN(minY[out_y * vs_width + out_x], Y);
       maxY[out_y * vs_width + out_x] = MAX(maxY[out_y * vs_width + out_x], Y);
-      maxcount = MAX(count[out_y * vs_width + out_x], maxcount);
-      minYuv[0] = MIN(minYuv[0], Y); minYuv[1] = MIN(minYuv[1], u); minYuv[2] = MIN(minYuv[2], v);
-      maxYuv[0] = MAX(maxYuv[0], Y); maxYuv[1] = MAX(maxYuv[1], u); maxYuv[2] = MAX(maxYuv[2], v);
+      //maxcount = MAX(count[out_y * vs_width + out_x], maxcount);
+      //minYuv[0] = MIN(minYuv[0], Y); minYuv[1] = MIN(minYuv[1], u); minYuv[2] = MIN(minYuv[2], v);
+      //maxYuv[0] = MAX(maxYuv[0], Y); maxYuv[1] = MAX(maxYuv[1], u); maxYuv[2] = MAX(maxYuv[2], v);
     }
   }
 
-  printf("vs_width %d vs_height %d roi_in->width %d roi_in_height %d\n", vs_width, vs_height, roi_in->width, roi_in->height);
   const float scale = 4.0f * (vs_width * vs_height) / (roi_in->width * roi_in->height * 255.0f);
   const float gamma = 1.0f / 1.5f;
-  printf("maxcount %d scale %f scaled maxcount %f gamma corrected %f\n", maxcount, scale, maxcount * scale, powf(maxcount * scale, gamma));
-  printf("minYuv %f, %f, %f maxYuv %f, %f, %f\n", minYuv[0], minYuv[1], minYuv[2], maxYuv[0], maxYuv[1], maxYuv[2]);
+  //printf("maxcount %d scale %f scaled maxcount %f gamma corrected %f\nminYuv %f, %f, %f maxYuv %f, %f, %f\n", maxcount, scale, maxcount * scale, powf(maxcount * scale, gamma), minYuv[0], minYuv[1], minYuv[2], maxYuv[0], maxYuv[1], maxYuv[2]);
 
   // FIXME: use OpenMP
   for(int out_y = 0; out_y < vs_height; out_y++)
@@ -2723,7 +2719,7 @@ post_process_collect_info:
       {
         if(dev->scope_type == DT_DEV_SCOPE_WAVEFORM)
           _pixelpipe_final_histogram_waveform(dev, (const float *const )input, &roi_in);
-        if(dev->scope_type == DT_DEV_SCOPE_VECTORSCOPE)
+        else if(dev->scope_type == DT_DEV_SCOPE_VECTORSCOPE)
           _pixelpipe_final_histogram_vectorscope(dev, (const float *const )input, &roi_in);
       }
 
