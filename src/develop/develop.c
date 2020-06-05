@@ -48,6 +48,8 @@
 #define DT_IOP_ORDER_INFO (darktable.unmuted & DT_DEBUG_IOPORDER)
 
 const gchar *dt_dev_scope_type_names[DT_DEV_SCOPE_N] = { "histogram", "waveform", "vectorscope" };
+const gchar *dt_dev_scope_vectorscope_color_names[DT_DEV_VECTORSCOPE_COLOR_N] = { "white", "50pct", "average", "minimum", "maximum" };
+const gchar *dt_dev_scope_vectorscope_colorspace_names[DT_DEV_VECTORSCOPE_COLORSPACE_N] = { "rec601", "rec709", "rec2020" };
 
 void dt_dev_init(dt_develop_t *dev, int32_t gui_attached)
 {
@@ -81,13 +83,7 @@ void dt_dev_init(dt_develop_t *dev, int32_t gui_attached)
   dev->histogram_pre_tonecurve = NULL;
   dev->histogram_pre_levels = NULL;
   gchar *mode = dt_conf_get_string("plugins/darkroom/histogram/mode");
-  if(g_strcmp0(mode, "histogram") == 0)
-    dev->scope_type = DT_DEV_SCOPE_HISTOGRAM;
-  else if(g_strcmp0(mode, "waveform") == 0)
-    dev->scope_type = DT_DEV_SCOPE_WAVEFORM;
-  else if(g_strcmp0(mode, "vectorscope") == 0)
-    dev->scope_type = DT_DEV_SCOPE_VECTORSCOPE;
-  else if(g_strcmp0(mode, "linear") == 0)
+  if(g_strcmp0(mode, "linear") == 0)
   { // update legacy conf
     dev->scope_type = DT_DEV_SCOPE_HISTOGRAM;
     dt_conf_set_string("plugins/darkroom/histogram/mode","histogram");
@@ -99,6 +95,12 @@ void dt_dev_init(dt_develop_t *dev, int32_t gui_attached)
     dt_conf_set_string("plugins/darkroom/histogram/mode","histogram");
     dt_conf_set_string("plugins/darkroom/histogram/histogram","logarithmic");
   }
+  else
+  { // current conf
+    for(dt_dev_scope_type_t i=0; i<DT_DEV_SCOPE_N; i++)
+      if(g_strcmp0(mode, dt_dev_scope_type_names[i]) == 0)
+        dev->scope_type = i;
+  }
   g_free(mode);
   gchar *histogram_type = dt_conf_get_string("plugins/darkroom/histogram/histogram");
   if(g_strcmp0(histogram_type, "linear") == 0)
@@ -106,10 +108,17 @@ void dt_dev_init(dt_develop_t *dev, int32_t gui_attached)
   else if(g_strcmp0(histogram_type, "logarithmic") == 0)
     dev->histogram_type = DT_DEV_HISTOGRAM_LOGARITHMIC;
   g_free(histogram_type);
-  // FIXME: make this configurable
   // FIXME: just choose one that looks good, instead of configurable?
-  //gchar *vectorscope_color = dt_conf_get_string("plugins/darkroom/histogram/vectorscope/color");
-  dev->vectorscope_color = DT_DEV_VECTORSCOPE_COLOR_WHITE;
+  gchar *vs_color = dt_conf_get_string("plugins/darkroom/histogram/vectorscope/color");
+  for(dt_dev_vectorscope_color_type_t i=0; i<DT_DEV_VECTORSCOPE_COLOR_N; i++)
+    if(g_strcmp0(vs_color, dt_dev_scope_vectorscope_color_names[i]) == 0)
+      dev->vectorscope_color = i;
+  g_free(vs_color);
+  gchar *vs_colorspace = dt_conf_get_string("plugins/darkroom/histogram/vectorscope/colorspace");
+  for(dt_dev_vectorscope_colorspace_t i=0; i<DT_DEV_VECTORSCOPE_COLORSPACE_N; i++)
+    if(g_strcmp0(vs_colorspace, dt_dev_scope_vectorscope_colorspace_names[i]) == 0)
+      dev->vectorscope_colorspace = i;
+  g_free(vs_colorspace);
   gchar *preview_downsample = dt_conf_get_string("preview_downsampling");
   dev->preview_downsampling =
     (g_strcmp0(preview_downsample, "original") == 0) ? 1.0f
@@ -163,6 +172,7 @@ void dt_dev_init(dt_develop_t *dev, int32_t gui_attached)
     dev->histogram_waveform_stride = cairo_format_stride_for_width(CAIRO_FORMAT_A8, dev->histogram_waveform_width);
     dev->histogram_waveform = calloc(dev->histogram_waveform_height * dev->histogram_waveform_stride * 3, sizeof(uint8_t));
 
+    // FIXME: what is the appropriate resolution for this: balance memory use, processing speed, helpful resolution
     dev->vectorscope_width = 350;
     // FIXME: this is square, only specify width?
     dev->vectorscope_height = 350;

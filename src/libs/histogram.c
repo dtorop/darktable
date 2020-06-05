@@ -53,14 +53,6 @@ typedef enum dt_lib_histogram_waveform_type_t
   DT_LIB_HISTOGRAM_WAVEFORM_N // needs to be the last one
 } dt_lib_histogram_waveform_type_t;
 
-typedef enum dt_lib_histogram_vectorscope_scale_t
-{
-  DT_LIB_HISTOGRAM_VS_SCALE_X1 = 0,
-  DT_LIB_HISTOGRAM_VS_SCALE_X2,
-  DT_LIB_HISTOGRAM_VS_SCALE_X4,
-  DT_LIB_HISTOGRAM_VS_SCALE_N // needs to be the last one
-} dt_lib_histogram_vectorscope_scale_t;
-
 const gchar *dt_lib_histogram_histogram_type_names[DT_DEV_HISTOGRAM_N] = { "logarithmic", "linear" };
 const gchar *dt_lib_histogram_waveform_type_names[DT_LIB_HISTOGRAM_WAVEFORM_N] = { "overlaid", "parade" };
 
@@ -72,7 +64,7 @@ typedef struct dt_lib_histogram_t
   dt_lib_histogram_highlight_t highlight;
   dt_lib_histogram_waveform_type_t waveform_type;
   gboolean red, green, blue;
-  dt_lib_histogram_vectorscope_scale_t scale;
+  int vs_scale;
   float type_x, mode_x, red_x, green_x, blue_x;
   float button_w, button_h, button_y, button_spacing;
 } dt_lib_histogram_t;
@@ -451,8 +443,7 @@ static void _lib_histogram_draw_rgb_parade(cairo_t *cr, int width, int height, c
   free(wav);
 }
 
-static void _lib_histogram_draw_vectorscope(cairo_t *cr, int width, int height,
-                                            const dt_lib_histogram_vectorscope_scale_t scale)
+static void _lib_histogram_draw_vectorscope(cairo_t *cr, int width, int height, int scale)
 {
   dt_develop_t *dev = darktable.develop;
 
@@ -478,23 +469,29 @@ static void _lib_histogram_draw_vectorscope(cairo_t *cr, int width, int height,
   cairo_save(cr);
   cairo_translate(cr, width / 2., height / 2.);
   cairo_rotate(cr, M_PI * -0.5);
-  cairo_scale(cr, 1 << scale, 1 << scale);
+  cairo_scale(cr, scale, scale);
   cairo_translate(cr, min_size * -0.5, min_size * -0.5);
   // FIXME: use ppd?
   // FIXME: do need to cast to double if use ppd?
   cairo_scale(cr, darktable.gui->ppd*(double)min_size/vs_width, darktable.gui->ppd*(double)min_size/vs_height);
   cairo_set_operator(cr, CAIRO_OPERATOR_ADD);
 
-  cairo_surface_t *source
-    = dt_cairo_image_surface_create_for_data(vs_img, CAIRO_FORMAT_RGB24,
-                                             vs_width, vs_height, vs_img_stride);
+  cairo_surface_t *source = NULL;
+  if(dev->vectorscope_color == DT_DEV_VECTORSCOPE_COLOR_WHITE)
+  {
+    cairo_set_source_rgb(cr, 1., 1., 1.);
+  }
+  else
+  {
+    source = dt_cairo_image_surface_create_for_data(vs_img, CAIRO_FORMAT_RGB24,
+                                           vs_width, vs_height, vs_img_stride);
+    cairo_set_source_surface(cr, source, 0.0, 0.0);
+  }
   cairo_surface_t *alpha
     = dt_cairo_image_surface_create_for_data(vs_alpha, CAIRO_FORMAT_A8,
                                              vs_width, vs_height, vs_alpha_stride);
-  cairo_set_source_surface(cr, source, 0.0, 0.0);
   cairo_mask_surface(cr, alpha, 0.0, 0.0);
-  //cairo_paint(cr);
-  cairo_surface_destroy(source);
+  if(source) cairo_surface_destroy(source);
   cairo_surface_destroy(alpha);
   cairo_restore(cr);
 
@@ -502,8 +499,7 @@ static void _lib_histogram_draw_vectorscope(cairo_t *cr, int width, int height,
   free(vs_img);
 }
 
-static void _lib_histogram_draw_vectorscope_lines(cairo_t *cr, const int width, const int height,
-                                                  const dt_lib_histogram_vectorscope_scale_t scale)
+static void _lib_histogram_draw_vectorscope_lines(cairo_t *cr, int width, int height, int scale)
 {
   const double min_size = MIN(width, height);
   const double w_ctr = min_size / 30.0f;
@@ -520,9 +516,9 @@ static void _lib_histogram_draw_vectorscope_lines(cairo_t *cr, const int width, 
   dt_draw_line(cr, 0.0f, -w_ctr, 0.0f, w_ctr);
   cairo_stroke(cr);
 
-  cairo_scale(cr, 1 << scale, 1 << scale);
+  cairo_scale(cr, scale, scale);
   // scale-independent line width looks better
-  cairo_set_line_width(cr, cairo_get_line_width(cr) / (1 << scale));
+  cairo_set_line_width(cr, cairo_get_line_width(cr) / scale);
 
   // concentric circles
   cairo_arc(cr, 0., 0., min_size*0.5, 0., M_PI * 2.);
@@ -608,9 +604,9 @@ static gboolean _lib_histogram_draw_callback(GtkWidget *widget, cairo_t *crf, gp
           _lib_histogram_draw_rgb_parade(cr, width, height, mask);
         break;
       case DT_DEV_SCOPE_VECTORSCOPE:
-        _lib_histogram_draw_vectorscope(cr, width, height, d->scale);
+        _lib_histogram_draw_vectorscope(cr, width, height, d->vs_scale);
         set_color(cr, darktable.bauhaus->graph_grid);
-        _lib_histogram_draw_vectorscope_lines(cr, width, height, d->scale);
+        _lib_histogram_draw_vectorscope_lines(cr, width, height, d->vs_scale);
         break;
       case DT_DEV_SCOPE_N:
         g_assert_not_reached();
@@ -641,7 +637,7 @@ static gboolean _lib_histogram_draw_callback(GtkWidget *widget, cairo_t *crf, gp
       cairo_set_source_rgba(cr, 0.5, 0.5, 0.5, 0.33);
       // FIXME: make a button draw for choosing colorspace
       _draw_color_toggle(cr, d->red_x, d->button_y, d->button_w, d->button_h, dev->vectorscope_colorspace);
-      cairo_set_source_rgba(cr, d->scale * 0.3, d->scale * 0.3, d->scale * 0.3, 0.33);
+      cairo_set_source_rgba(cr, d->vs_scale * 0.25, d->vs_scale * 0.25, d->vs_scale * 0.25, 0.33);
       // FIXME: make a button draw for choosing scale
       _draw_color_toggle(cr, d->green_x, d->button_y, d->button_w, d->button_h, TRUE);
       // FIXME: add buttons to choose axis (uv, uY, Yv)
@@ -822,18 +818,21 @@ static gboolean _lib_histogram_motion_notify_callback(GtkWidget *widget, GdkEven
       d->highlight = DT_LIB_HISTOGRAM_HIGHLIGHT_GREEN;
       if(dev->scope_type == DT_DEV_SCOPE_VECTORSCOPE)
       {
-          switch(d->scale)
+          switch(d->vs_scale)
           {
-            case DT_LIB_HISTOGRAM_VS_SCALE_X1:
+            case 1:
               gtk_widget_set_tooltip_text(widget, _("set scale to x2"));
               break;
-            case DT_LIB_HISTOGRAM_VS_SCALE_X2:
+            case 2:
+              gtk_widget_set_tooltip_text(widget, _("set scale to x3"));
+              break;
+            case 3:
               gtk_widget_set_tooltip_text(widget, _("set scale to x4"));
               break;
-            case DT_LIB_HISTOGRAM_VS_SCALE_X4:
+            case 4:
               gtk_widget_set_tooltip_text(widget, _("set scale to x1"));
               break;
-            case DT_LIB_HISTOGRAM_VS_SCALE_N:
+            default:
               g_assert_not_reached();
           }
       }
@@ -936,11 +935,11 @@ static gboolean _lib_histogram_button_press_callback(GtkWidget *widget, GdkEvent
                              dt_lib_histogram_waveform_type_names[d->waveform_type]);
           break;
         case DT_DEV_SCOPE_VECTORSCOPE:
-          // FIXME: this should probably scale the scope
           dev->vectorscope_color = (dev->vectorscope_color + 1) % DT_DEV_VECTORSCOPE_COLOR_N;
-          // FIXME: should set conf
-          // FIXME: may only need to reprocess when switch between two color variants
-          dt_dev_process_preview(dev);
+          dt_conf_set_string("plugins/darkroom/histogram/vectorscope/color",
+                             dt_dev_scope_vectorscope_color_names[dev->vectorscope_color]);
+          if(dev->vectorscope_color != DT_DEV_VECTORSCOPE_COLOR_WHITE)
+            dt_dev_process_preview(dev);
           break;
         case DT_DEV_SCOPE_N:
           g_assert_not_reached();
@@ -952,11 +951,16 @@ static gboolean _lib_histogram_button_press_callback(GtkWidget *widget, GdkEvent
       if(d->highlight == DT_LIB_HISTOGRAM_HIGHLIGHT_RED)
       {
         dev->vectorscope_colorspace = (dev->vectorscope_colorspace + 1) % DT_DEV_VECTORSCOPE_COLORSPACE_N;
-        // FIXME: should set conf
+        dt_conf_set_string("plugins/darkroom/histogram/vectorscope/colorspace",
+                           dt_dev_scope_vectorscope_colorspace_names[dev->vectorscope_colorspace]);
         dt_dev_process_preview(dev);
       }
       else if(d->highlight == DT_LIB_HISTOGRAM_HIGHLIGHT_GREEN)
-        d->scale = (d->scale + 1) % DT_LIB_HISTOGRAM_VS_SCALE_N;
+      {
+        d->vs_scale += 1;
+        if(d->vs_scale > 4) d->vs_scale = 1;
+        dt_conf_set_int("plugins/darkroom/histogram/vectorscope/scale", d->vs_scale);
+      }
     }
     else if(d->highlight == DT_LIB_HISTOGRAM_HIGHLIGHT_RED)
     {
@@ -1186,6 +1190,7 @@ void gui_init(dt_lib_module_t *self)
   d->red = dt_conf_get_bool("plugins/darkroom/histogram/show_red");
   d->green = dt_conf_get_bool("plugins/darkroom/histogram/show_green");
   d->blue = dt_conf_get_bool("plugins/darkroom/histogram/show_blue");
+  d->vs_scale = CLAMP(dt_conf_get_int("plugins/darkroom/histogram/vectorscope/scale"), 1, 4);
 
   gchar *waveform_type = dt_conf_get_string("plugins/darkroom/histogram/waveform");
   if(g_strcmp0(waveform_type, "overlaid") == 0)

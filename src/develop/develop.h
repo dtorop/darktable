@@ -149,7 +149,8 @@ typedef enum dt_dev_pixelpipe_display_mask_t
   DT_DEV_PIXELPIPE_DISPLAY_STICKY = 1 << 16
 } dt_dev_pixelpipe_display_mask_t;
 
-extern const gchar *dt_dev_scope_type_names[];
+extern const gchar *dt_dev_scope_type_names[],
+  *dt_dev_scope_vectorscope_color_names[], *dt_dev_scope_vectorscope_colorspace_names[];
 
 typedef struct dt_dev_proxy_exposure_t
 {

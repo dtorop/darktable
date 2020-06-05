@@ -1054,9 +1054,8 @@ static void _pixelpipe_final_histogram_waveform(dt_develop_t *dev, const float *
   const float scale = 0.5f * 1e6f/(roi_in->height*roi_in->width) *
     (waveform_width*waveform_height) / (350.0f*233.0f)
     / 255.0f; // normalization to 0..1 for gamma correction
-  printf("waveform scale %f\n", scale);
   const float gamma = 1.0f / 1.5f; // TODO make this settable from the gui?
-  uint16_t mincol[3] = {UINT16_MAX,UINT16_MAX,UINT16_MAX}, maxcol[3] = {0,0,0};
+  //uint16_t mincol[3] = {UINT16_MAX,UINT16_MAX,UINT16_MAX}, maxcol[3] = {0,0,0};
   // even bin_width 12 and height 900 image gives 10,800 byte cache, more normal will ~1K
   const int cache_size = (roi_in->height * bin_width) + 1;
   uint8_t *cache = (uint8_t *)calloc(cache_size, sizeof(uint8_t));
@@ -1064,8 +1063,8 @@ static void _pixelpipe_final_histogram_waveform(dt_develop_t *dev, const float *
 #ifdef _OPENMP
 #pragma omp parallel for SIMD() default(none) \
   dt_omp_firstprivate(waveform_width, waveform_height, waveform_stride, buf, waveform, cache, scale, gamma) \
-  reduction(max:maxcol) reduction(min:mincol) \
   schedule(static) collapse(2)
+  //reduction(max:maxcol) reduction(min:mincol)
 #endif
   for(int k = 0; k < 3; k++)
   {
@@ -1075,8 +1074,8 @@ static void _pixelpipe_final_histogram_waveform(dt_develop_t *dev, const float *
       uint8_t *const out = waveform + (waveform_stride * (waveform_height * k + out_y));
       for(int out_x = 0; out_x < waveform_width; out_x++)
       {
-        mincol[k] = MIN(mincol[k], in[out_x * 3]);
-        maxcol[k] = MAX(maxcol[k], in[out_x * 3]);
+        //mincol[k] = MIN(mincol[k], in[out_x * 3]);
+        //maxcol[k] = MAX(maxcol[k], in[out_x * 3]);
         const uint16_t v = in[out_x * 3];
         // cache XORd result so common casees cached and cache misses are quick to find
         if(!cache[v])
@@ -1093,8 +1092,7 @@ static void _pixelpipe_final_histogram_waveform(dt_develop_t *dev, const float *
       }
     }
   }
-  printf("mincol %d,%d,%d maxcol %d,%d,%d\n", mincol[0], mincol[1], mincol[2], maxcol[0], maxcol[1], maxcol[2]);
-  printf("max scaled %f,%f,%f gamma corrected %f,%f,%f\n", maxcol[0] * scale, maxcol[1] * scale, maxcol[2] * scale, powf(maxcol[0] * scale, gamma), powf(maxcol[1] * scale, gamma), powf(maxcol[2] * scale, gamma));
+  //printf("mincol %d,%d,%d maxcol %d,%d,%d max scaled %f,%f,%f gamma corrected %f,%f,%f\n", mincol[0], mincol[1], mincol[2], maxcol[0], maxcol[1], maxcol[2], maxcol[0] * scale, maxcol[1] * scale, maxcol[2] * scale, powf(maxcol[0] * scale, gamma), powf(maxcol[1] * scale, gamma), powf(maxcol[2] * scale, gamma));
 
   free(cache);
   free(buf);
@@ -1217,16 +1215,8 @@ static void _pixelpipe_final_histogram_vectorscope(dt_develop_t *dev, const floa
       const uint32_t c = in_count[out_x];
       // FIXME: use cache
       out_alpha[out_x] = CLAMP(powf(c * scale, gamma) * 255.0f, 0, 255);
-      // FIXME: can just memset this, or better yet use a solid color when drawing with alpha
-      if(dev->vectorscope_color == DT_DEV_VECTORSCOPE_COLOR_WHITE)
+      if(dev->vectorscope_color != DT_DEV_VECTORSCOPE_COLOR_WHITE)
       {
-        out_img[out_x*4] = out_img[out_x*4+1] = out_img[out_x*4+2] = 255;
-      }
-      else
-      {
-        // FIXME: average Y always seems to look better than 50% color
-        // FIXME: should also try min/max Y?
-        //const float Y = dev->vectorscope_color == DT_DEV_VECTORSCOPE_COLOR_50PCT ? 0.5f : in_sum[out_x] / c;
         float Y;
         switch(dev->vectorscope_color)
         {
@@ -1243,12 +1233,7 @@ static void _pixelpipe_final_histogram_vectorscope(dt_develop_t *dev, const floa
         const float r = Y + v * (1 - Wr) / Vmax;
         const float g = Y - u * Wb * (1 - Wb) / (Umax * Wg) - v * Wr * (1 - Wr) / (Vmax * Wg);
         const float b = Y + u * (1 - Wb) / Umax;
-        // FIXME/NOTE: these are primaries from dcraw
-        //rgb[0] = yuv[b] + 1.370705*yuv[3];
-        //rgb[1] = yuv[b] - 0.337633*yuv[2] - 0.698001*yuv[3];
-        //rgb[2] = yuv[b] + 1.732446*yuv[2];
-        // FIXME: do need to clamp these?
-        // FIXME: better to eliminate out-of-bound than to clamp?
+        // FIXME: do need to clamp these? or if there are out of bounds, better to eliminate than to clamp?
         out_img[out_x*4] = CLAMP(r*255.0f, 0, 255);
         out_img[out_x*4+1] = CLAMP(g*255.0f, 0, 255);
         out_img[out_x*4+2] = CLAMP(b*255.0f, 0, 255);
