@@ -1217,7 +1217,7 @@ void gui_init(dt_lib_module_t *self)
   d->red = dt_conf_get_bool("plugins/darkroom/histogram/show_red");
   d->green = dt_conf_get_bool("plugins/darkroom/histogram/show_green");
   d->blue = dt_conf_get_bool("plugins/darkroom/histogram/show_blue");
-  d->vs_scale = CLAMP(dt_conf_get_int("plugins/darkroom/histogram/vectorscope/scale"), 1, 4);
+  d->vs_scale = dt_conf_get_int("plugins/darkroom/histogram/vectorscope/scale");
 
   gchar *waveform_type = dt_conf_get_string("plugins/darkroom/histogram/waveform");
   if(g_strcmp0(waveform_type, "overlaid") == 0)
