@@ -765,16 +765,16 @@ static gboolean _lib_histogram_motion_notify_callback(GtkWidget *widget, GdkEven
           switch(dev->vectorscope_color)
           {
             case DT_DEV_VECTORSCOPE_COLOR_WHITE:
-              gtk_widget_set_tooltip_text(widget, _("set to color, 50% luma"));
+              gtk_widget_set_tooltip_text(widget, _("set to color, 50% lightness"));
               break;
             case DT_DEV_VECTORSCOPE_COLOR_50PCT:
-              gtk_widget_set_tooltip_text(widget, _("set to color, chroma's average luma"));
+              gtk_widget_set_tooltip_text(widget, _("set to color, average lightness"));
               break;
             case DT_DEV_VECTORSCOPE_COLOR_AVG:
-              gtk_widget_set_tooltip_text(widget, _("set to color, chroma's minimum luma"));
+              gtk_widget_set_tooltip_text(widget, _("set to color, minimum lightness"));
               break;
             case DT_DEV_VECTORSCOPE_COLOR_MIN:
-              gtk_widget_set_tooltip_text(widget, _("set to color, chroma's maximum luma"));
+              gtk_widget_set_tooltip_text(widget, _("set to color, maximum lightness"));
               break;
             case DT_DEV_VECTORSCOPE_COLOR_MAX:
               gtk_widget_set_tooltip_text(widget, _("set to monochrome"));

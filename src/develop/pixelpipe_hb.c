@@ -1134,22 +1134,23 @@ static void _pixelpipe_final_histogram_vectorscope(dt_develop_t *dev,
   const int vs_img_stride = dev->vectorscope_img_stride;
   uint8_t *const vs_alpha = dev->vectorscope_alpha;
   uint8_t *const vs_img = dev->vectorscope_img;
+  const dt_dev_vectorscope_color_type_t vs_color = dev->vectorscope_color;
 
   uint32_t *count = calloc(vs_width * vs_height, sizeof(uint32_t));
-  float *sum = calloc(vs_width * vs_height, sizeof(float));
-  float *maxz = malloc(sizeof(float) * vs_width * vs_height);
-  float *minz = malloc(sizeof(float) * vs_width * vs_height);
-  for(int y=0; y<vs_height; ++y)
-    for(int x=0; x<vs_width; ++x)
-    {
-      maxz[y*vs_width+x] = FLT_MIN;
-      minz[y*vs_width+x] = FLT_MAX;
-    }
+  float *reduce = NULL;
+  if(vs_color == DT_DEV_VECTORSCOPE_COLOR_AVG)
+  {
+    reduce = calloc(vs_width * vs_height, sizeof(float));
+  }
+  else if(vs_color == DT_DEV_VECTORSCOPE_COLOR_MIN || vs_color == DT_DEV_VECTORSCOPE_COLOR_MAX)
+  {
+    reduce = malloc(sizeof(float) * vs_width * vs_height);
+    for(int i=0; i<vs_width*vs_height; ++i)
+      reduce[i] = vs_color == DT_DEV_VECTORSCOPE_COLOR_MIN ? FLT_MAX : FLT_MIN;
+  }
 
-  // FIXME: do want to take into account the white point of the working colorspcae, or does the conversion to Lab do this work?
-
-  uint32_t maxcount = 0;
-  float min_max[6] = {FLT_MAX,FLT_MAX,FLT_MAX,FLT_MIN,FLT_MIN,FLT_MIN};
+  //uint32_t maxcount = 0;
+  //float min_max[6] = {FLT_MAX,FLT_MAX,FLT_MAX,FLT_MIN,FLT_MIN,FLT_MIN};
   const float lab_range[3] = {100.0f,256.0f,256.0f};
   const float lab_min[3] = {0.0f,-128.0f,-128.0f};
   // axis 0: graph a,b count L
@@ -1160,59 +1161,64 @@ static void _pixelpipe_final_histogram_vectorscope(dt_develop_t *dev,
   const int y_index = z_index == 2 ? 0 : 2;
   // count into bins
   // FIXME: use OpenMP
-  for(int in_y = 0; in_y < roi_in->height; in_y++)
+  for(int i = 0; i < roi_in->width * roi_in->height; i++)
   {
-    for(int in_x = 0; in_x < roi_in->width; in_x++)
+    // FIXME: could just use in as a loop counter, or even have in_x, in_y, in_z all incremented
+    const float *const in = img_tmp + 4 * i;
+    // FIXME: convert from Lab to a more meaningful working space?
+    // FIXME: do need to round this or can just truncate?
+    const int out_x = CLAMP((int) roundf(vs_width * (in[x_index] - lab_min[x_index]) / lab_range[x_index]), 0, vs_width-1);
+    const int out_y = CLAMP((int) roundf(vs_height * (in[y_index] - lab_min[y_index]) / lab_range[y_index]), 0, vs_height-1);
+    const float z = in[dev->vectorscope_axis];
+    count[out_y * vs_width + out_x]++;
+    switch(vs_color)
     {
-      const float *const in = img_tmp + 4 * (in_y*roi_in->width + in_x);
-      // FIXME: convert from Lab to a more meaningful working space?
-      // FIXME: do need to round this or can just truncate?
-      const int out_x = CLAMP((int) roundf(vs_width * (in[x_index] - lab_min[x_index]) / lab_range[x_index]), 0, vs_width-1);
-      const int out_y = CLAMP((int) roundf(vs_height * (in[y_index] - lab_min[y_index]) / lab_range[y_index]), 0, vs_height-1);
-      const float z = in[dev->vectorscope_axis];
-      count[out_y * vs_width + out_x]++;
-      // FIXME: only need to keep these if calculating average/min/max Y
-      sum[out_y * vs_width + out_x] += z;
-      minz[out_y * vs_width + out_x] = MIN(minz[out_y * vs_width + out_x], z);
-      maxz[out_y * vs_width + out_x] = MAX(maxz[out_y * vs_width + out_x], z);
-      maxcount = MAX(count[out_y * vs_width + out_x], maxcount);
-      for(int k=0; k<3; k++)
-      {
-        min_max[k] = MIN(min_max[k], in[k]);
-        min_max[k+3] = MAX(min_max[k+3], in[k]);
-      }
+      case DT_DEV_VECTORSCOPE_COLOR_WHITE: break;
+      case DT_DEV_VECTORSCOPE_COLOR_50PCT: break;
+      case DT_DEV_VECTORSCOPE_COLOR_AVG:
+        reduce[out_y * vs_width + out_x] += z;
+        break;
+      case DT_DEV_VECTORSCOPE_COLOR_MIN:
+        reduce[out_y * vs_width + out_x] = MIN(reduce[out_y * vs_width + out_x], z);
+        break;
+      case DT_DEV_VECTORSCOPE_COLOR_MAX:
+        reduce[out_y * vs_width + out_x] = MAX(reduce[out_y * vs_width + out_x], z);
+        break;
+      case DT_DEV_VECTORSCOPE_COLOR_N:
+        g_assert_not_reached();
     }
+    //maxcount = MAX(count[out_y * vs_width + out_x], maxcount);
+    //for(int k=0; k<3; k++) {min_max[k] = MIN(min_max[k], in[k]); min_max[k+3] = MAX(min_max[k+3], in[k]);}
   }
 
   const float scale = 4.0f * (vs_width * vs_height) / (roi_in->width * roi_in->height * 255.0f);
   const float gamma = 1.0f / 1.5f;
-  printf("maxcount %d scale %f scaled maxcount %f gamma corrected %f\nmin %f, %f, %f max %f, %f, %f\n", maxcount, scale, maxcount * scale, powf(maxcount * scale, gamma), min_max[0], min_max[1], min_max[2], min_max[3], min_max[4], min_max[5]);
+  //printf("maxcount %d scale %f scaled maxcount %f gamma corrected %f\nmin %f, %f, %f max %f, %f, %f\n", maxcount, scale, maxcount * scale, powf(maxcount * scale, gamma), min_max[0], min_max[1], min_max[2], min_max[3], min_max[4], min_max[5]);
 
   // FIXME: use OpenMP
   for(int out_y = 0; out_y < vs_height; out_y++)
   {
-    // FIXME: have per-row calculations for minz/maxz or not for count/sum/alpha/img?
-    const uint32_t *const in_count = count + vs_width * out_y;
-    const float *const in_sum = sum + vs_width * out_y;
     uint8_t *const out_alpha = vs_alpha + (vs_alpha_stride * out_y);
     uint8_t *const out_img = vs_img + (vs_img_stride * out_y);
     for(int out_x = 0; out_x < vs_width; out_x++)
     {
-      const uint32_t c = in_count[out_x];
+      const uint32_t c = count[vs_width * out_y + out_x];
       // FIXME: use cache
       out_alpha[out_x] = CLAMP(powf(c * scale, gamma) * 255.0f, 0, 255);
-      if(dev->vectorscope_color != DT_DEV_VECTORSCOPE_COLOR_WHITE)
+      if(vs_color != DT_DEV_VECTORSCOPE_COLOR_WHITE)
       {
         float DT_ALIGNED_PIXEL lab[3];
         lab[x_index] = ((float)out_x / vs_width) * lab_range[x_index] + lab_min[x_index];
         lab[y_index] = ((float)out_y / vs_height) * lab_range[y_index] + lab_min[y_index];
-        switch(dev->vectorscope_color)
+        if(vs_color == DT_DEV_VECTORSCOPE_COLOR_50PCT)
         {
-          case DT_DEV_VECTORSCOPE_COLOR_50PCT: lab[z_index] = lab_range[z_index]*0.5f+lab_min[z_index]; break;
-          case DT_DEV_VECTORSCOPE_COLOR_AVG: lab[z_index] = in_sum[out_x] / c; break;
-          case DT_DEV_VECTORSCOPE_COLOR_MIN: lab[z_index] = minz[out_y * vs_width + out_x]; break;
-          case DT_DEV_VECTORSCOPE_COLOR_MAX: lab[z_index] = maxz[out_y * vs_width + out_x]; break;
-          default: g_assert_not_reached();
+          lab[z_index] = lab_range[z_index] * 0.5f + lab_min[z_index];
+        }
+        else
+        {
+          lab[z_index] = reduce[vs_width * out_y + out_x];
+          if (vs_color == DT_DEV_VECTORSCOPE_COLOR_AVG)
+            lab[z_index] /= c;
         }
         float rgb[3] DT_ALIGNED_PIXEL = { 0.0f };
         // FIXME: is this the best Lab to RGB conversion in dt?
@@ -1226,9 +1232,7 @@ static void _pixelpipe_final_histogram_vectorscope(dt_develop_t *dev,
   }
 
   free(count);
-  free(sum);
-  free(minz);
-  free(maxz);
+  if(reduce) free(reduce);
   dt_free_align(img_tmp);
 
   if(darktable.unmuted & DT_DEBUG_PERF)

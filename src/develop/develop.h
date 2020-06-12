@@ -101,15 +101,6 @@ typedef enum dt_dev_vectorscope_color_type_t
   DT_DEV_VECTORSCOPE_COLOR_N // needs to be the last one
 } dt_dev_vectorscope_color_type_t;
 
-typedef enum dt_dev_vectorscope_colorspace_t
-{
-  DT_DEV_VECTORSCOPE_COLORSPACE_601 = 0,
-  DT_DEV_VECTORSCOPE_COLORSPACE_709,
-  DT_DEV_VECTORSCOPE_COLORSPACE_2020,
-  // FIXME: add Lab?
-  DT_DEV_VECTORSCOPE_COLORSPACE_N // needs to be the last one
-} dt_dev_vectorscope_colorspace_t;
-
 typedef enum dt_dev_transform_direction_t
 {
   DT_DEV_TRANSFORM_DIR_ALL = 0,
