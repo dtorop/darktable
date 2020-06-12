@@ -854,6 +854,7 @@ static gboolean _lib_histogram_motion_notify_callback(GtkWidget *widget, GdkEven
     else if(dev->scope_type == DT_DEV_SCOPE_VECTORSCOPE)
     {
       d->highlight = DT_LIB_HISTOGRAM_HIGHLIGHT_VECTORSCOPE;
+      gtk_widget_set_tooltip_text(widget, _("ctrl+scroll to change display height"));
     }
     else if((posx < 0.2f && dev->scope_type == DT_DEV_SCOPE_HISTOGRAM) ||
             (posy > 7.0f/9.0f && dev->scope_type == DT_DEV_SCOPE_WAVEFORM))
@@ -1220,7 +1221,7 @@ void gui_init(dt_lib_module_t *self)
                                       darktable.gui->scroll_mask);
 
   /* connect callbacks */
-  gtk_widget_set_tooltip_text(self->widget, _("drag to change exposure,\ndoubleclick resets\nctrl+scroll to change display height"));
+  gtk_widget_set_tooltip_text(self->widget, _("ctrl+scroll to change display height"));
   g_signal_connect(G_OBJECT(self->widget), "draw", G_CALLBACK(_lib_histogram_draw_callback), self);
   g_signal_connect(G_OBJECT(self->widget), "button-press-event",
                    G_CALLBACK(_lib_histogram_button_press_callback), self);
