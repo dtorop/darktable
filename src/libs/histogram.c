@@ -469,6 +469,8 @@ static void _lib_histogram_draw_vectorscope(cairo_t *cr, int width, int height, 
   cairo_save(cr);
   cairo_translate(cr, width / 2., height / 2.);
   // FIXME: which way to orient graph? and can do this when generate the graph?
+  // traditional vectorscope is oriented with x-axis Y -> B, y-axis C -> R
+  // but CIE 1976 UCS is graphed x-axis as u (G -> M), y-axis as v (B -> Y)
   //cairo_rotate(cr, M_PI * -0.5);
   cairo_scale(cr, scale, scale);
   cairo_translate(cr, min_size * -0.5, min_size * -0.5);
@@ -535,6 +537,10 @@ static void _lib_histogram_draw_vectorscope_lines(cairo_t *cr, int width, int he
 
   // FIXME: should there be a graticule option showing primary/secondary colors?
   // FIXME: should display the primaries of the working/histogram/display colorspace?
+  // from Sobotka:
+  // 1. The input encoding primaries. How dd the image start out life? What is valid data within that? What is invalid introduced by error of camera virtual primaries solving or math such as resampling an image such that negative lobes result?
+  // 2. The working reference primaries. How did 1. end up in 2.? Are there negative and therefore nonsensical values in the working space? Should a gamut mapping pass be applied before work, between 1. and 2.?
+  // 3. The output primaries rendition. From a selection of gamut mappings, is one required between 2. and 3.?"
 
   cairo_restore(cr);
 }
@@ -589,6 +595,7 @@ static gboolean _lib_histogram_draw_callback(GtkWidget *widget, cairo_t *crf, gp
   if(dev->image_storage.id == dev->preview_pipe->output_imgid)
   {
     uint8_t mask[3] = { d->red, d->green, d->blue };
+    // FIXME: should/is the scope color be drawn with respect to display profile? the red/blue/green should reflect the image rgb, and if vectorscope has color, then it most definitely should match the image colors
     switch(dev->scope_type)
     {
       case DT_DEV_SCOPE_HISTOGRAM:

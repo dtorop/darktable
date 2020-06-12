@@ -1165,7 +1165,8 @@ static void _pixelpipe_final_histogram_vectorscope(dt_develop_t *dev,
   {
     // FIXME: could just use in as a loop counter, or even have in_x, in_y, in_z all incremented
     const float *const in = img_tmp + 4 * i;
-    // FIXME: convert from Lab to a more meaningful working space?
+    // FIXME: convert from Lab to a more meaningful working space? From sobotka: "CIE’s 1976 UCS in u'v'. More contemporary approaches might be something like JzAzBz"
+    // Sobotka: "Perhaps starting with the CIE 1931 / CIE 1976 UCS is the most directly useful visualization. The two together are an excellent one-two punch, and given the data available in Darktable, also feasible to visualize the areas of the primaries easily."
     // FIXME: do need to round this or can just truncate?
     const int out_x = CLAMP((int) roundf(vs_width * (in[x_index] - lab_min[x_index]) / lab_range[x_index]), 0, vs_width-1);
     const int out_y = CLAMP((int) roundf(vs_height * (in[y_index] - lab_min[y_index]) / lab_range[y_index]), 0, vs_height-1);
@@ -1222,6 +1223,7 @@ static void _pixelpipe_final_histogram_vectorscope(dt_develop_t *dev,
         }
         float rgb[3] DT_ALIGNED_PIXEL = { 0.0f };
         // FIXME: is this the best Lab to RGB conversion in dt?
+        // FIXME: compare to dt_Lab_to_prophotorgb()
         // FIXME: should output Lab results to a temp buffer then convert the whole buffer to RGB?
         dt_ioppr_lab_to_rgb_matrix(lab, rgb, profile_info->matrix_out, profile_info->lut_out, profile_info->unbounded_coeffs_out, profile_info->lutsize, profile_info->nonlinearlut);
         // FIXME: do need to clamp these?
