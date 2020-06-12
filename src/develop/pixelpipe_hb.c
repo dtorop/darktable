@@ -1000,6 +1000,8 @@ static void _pixelpipe_final_histogram_waveform(dt_develop_t *dev, const float *
   dt_times_t start_time = { 0 };
   if(darktable.unmuted & DT_DEBUG_PERF) dt_get_times(&start_time);
 
+  // FIXME: _pixelpipe_final_histogram() path converts to histogram profile, should this happen here -- or be called from there, which already does that work?
+
   const int waveform_height = dev->histogram_waveform_height;
   const int waveform_stride = dev->histogram_waveform_stride;
   uint8_t *const waveform = dev->histogram_waveform;
@@ -1107,8 +1109,22 @@ static void _pixelpipe_final_histogram_waveform(dt_develop_t *dev, const float *
   }
 }
 
-static void _pixelpipe_final_histogram_vectorscope(dt_develop_t *dev, const float *const input, const dt_iop_roi_t *roi_in)
+static void _pixelpipe_final_histogram_vectorscope(dt_develop_t *dev,
+                                                   const float *const input, const dt_iop_roi_t *roi_in,
+                                                   struct dt_iop_module_t *module)
 {
+  float *img_tmp = dt_alloc_align(64, roi_in->width * roi_in->height * 4 * sizeof(float));
+  // FIXME: is the image in display color profile? what does dt_ioppr_get_pipe_work_profile_info() return? dt_ioppr_get_iop_work_profile_info()?
+  const dt_iop_order_iccprofile_info_t *const profile_info
+    = dt_ioppr_add_profile_info_to_list(dev, darktable.color_profiles->display_type,
+                                        darktable.color_profiles->display_filename, INTENT_PERCEPTUAL);
+  //const dt_iop_order_iccprofile_info_t *const work_profile = dt_ioppr_get_pipe_work_profile_info(piece->pipe);
+  // FIXME: are passing in module, which means debugging output is in current module name when it would be better to say "histogram"
+  // FIXME: this will convert RGB -> XYZ -> Lab -- if we don't want it to end there, is there a better way? see how colorpicker does the transform work by hand
+  int converted_cst;
+  dt_ioppr_transform_image_colorspace(module, input, img_tmp, roi_in->width, roi_in->height,
+                                      iop_cs_rgb, iop_cs_Lab, &converted_cst, profile_info);
+
   dt_times_t start_time = { 0 };
   if(darktable.unmuted & DT_DEBUG_PERF) dt_get_times(&start_time);
 
@@ -1130,85 +1146,47 @@ static void _pixelpipe_final_histogram_vectorscope(dt_develop_t *dev, const floa
       minz[y*vs_width+x] = FLT_MAX;
     }
 
-  // FIXME: should colorspace be controllable (601?) or set via the output profile of the image -- probably better
-  // FIXME: hacky way to do this, to silence warning, but also loses const's
-  float Wr = 0.0f, Wb = 0.0f;
-  switch(dev->vectorscope_colorspace)
-  {
-    case DT_DEV_VECTORSCOPE_COLORSPACE_601:
-      Wr = 0.299f;
-      Wb = 0.114f;
-      break;
-    case DT_DEV_VECTORSCOPE_COLORSPACE_709:
-      Wr = 0.2126f;
-      Wb = 0.0722f;
-      break;
-    case DT_DEV_VECTORSCOPE_COLORSPACE_2020:
-      Wr = 0.2627f;
-      Wb = 0.0593f;
-      break;
-    case DT_DEV_VECTORSCOPE_COLORSPACE_N:
-      g_assert_not_reached();
-  }
-  const float Wg = 1.0f - Wr - Wb;
-  const float Umax = 0.5f, Vmax = 0.5f;
+  // FIXME: do want to take into account the white point of the working colorspcae, or does the conversion to Lab do this work?
 
-  //uint32_t maxcount = 0;
-  //float minYuv[3] = {FLT_MAX,FLT_MAX,FLT_MAX}, maxYuv[3] = {FLT_MIN,FLT_MIN,FLT_MIN};
-  // count u and v into bins
+  uint32_t maxcount = 0;
+  float min_max[6] = {FLT_MAX,FLT_MAX,FLT_MAX,FLT_MIN,FLT_MIN,FLT_MIN};
+  const float lab_range[3] = {100.0f,256.0f,256.0f};
+  const float lab_min[3] = {0.0f,-128.0f,-128.0f};
+  // axis 0: graph a,b count L
+  // axis 1: graph L,b count a
+  // axis 2: graph a,L count b
+  const int z_index = dev->vectorscope_axis;
+  const int x_index = z_index == 1 ? 0 : 1;
+  const int y_index = z_index == 2 ? 0 : 2;
+  // count into bins
   // FIXME: use OpenMP
   for(int in_y = 0; in_y < roi_in->height; in_y++)
   {
     for(int in_x = 0; in_x < roi_in->width; in_x++)
     {
-      const float *const in = input + 4 * (in_y*roi_in->width + in_x);
-      // Convert to YCbCr/Y’C’bC’r colorspace
-      // FIXME: add Lab color
-      // FIXME: does littlecms have RGB to Yuv conversion or is there another fast conversion there?
-      const float Y = Wr * in[0] + Wg * in[1] + Wb * in[2];
-      const float Cb = Umax * (in[2] - Y) / (1 - Wb);
-      const float Cr = Vmax * (in[0] - Y) / (1 - Wr);
-      // FIXME: should round or just truncate on cast??
-      // FIXME: need to clamp as these are unbounded?
-      // FIXME: better to clamp or just ignore out of bound values?
-      int out_x = 0, out_y = 0;
-      // FIXME: hacky
-      float z = 0;
-      // FIXME: do something nice with arrays instead to keep symmetrical when dropping an axis
-      switch(dev->vectorscope_axes)
-      {
-        case DT_DEV_VECTORSCOPE_AXES_UV:
-          out_x = CLAMP(roundf((Cb + 0.5f) * vs_width), 0, vs_width-1);
-          out_y = CLAMP(roundf((Cr + 0.5f) * vs_height), 0, vs_height-1);
-          z = Y;
-          break;
-        case DT_DEV_VECTORSCOPE_AXES_UY:
-          out_x = CLAMP(roundf((Cb + 0.5f) * vs_width), 0, vs_width-1);
-          out_y = CLAMP(roundf(Y * vs_height), 0, vs_height-1);
-          z = Cr;
-          break;
-        case DT_DEV_VECTORSCOPE_AXES_YV:
-          out_x = CLAMP(roundf(Y * vs_width), 0, vs_width-1);
-          out_y = CLAMP(roundf((Cr + 0.5f) * vs_height), 0, vs_height-1);
-          z = Cb;
-          break;
-        case DT_DEV_VECTORSCOPE_AXES_N:
-          g_assert_not_reached();
-      }
+      const float *const in = img_tmp + 4 * (in_y*roi_in->width + in_x);
+      // FIXME: convert from Lab to a more meaningful working space?
+      // FIXME: do need to round this or can just truncate?
+      const int out_x = CLAMP((int) roundf(vs_width * (in[x_index] - lab_min[x_index]) / lab_range[x_index]), 0, vs_width-1);
+      const int out_y = CLAMP((int) roundf(vs_height * (in[y_index] - lab_min[y_index]) / lab_range[y_index]), 0, vs_height-1);
+      const float z = in[dev->vectorscope_axis];
       count[out_y * vs_width + out_x]++;
       // FIXME: only need to keep these if calculating average/min/max Y
       sum[out_y * vs_width + out_x] += z;
       minz[out_y * vs_width + out_x] = MIN(minz[out_y * vs_width + out_x], z);
       maxz[out_y * vs_width + out_x] = MAX(maxz[out_y * vs_width + out_x], z);
-      //maxcount = MAX(count[out_y * vs_width + out_x], maxcount);
-      //minYuv[0] = MIN(minYuv[0], Y); minYuv[1] = MIN(minYuv[1], Cb); minYuv[2] = MIN(minYuv[2], Cr);
-      //maxYuv[0] = MAX(maxYuv[0], Y); maxYuv[1] = MAX(maxYuv[1], Cb); maxYuv[2] = MAX(maxYuv[2], Cr);
+      maxcount = MAX(count[out_y * vs_width + out_x], maxcount);
+      for(int k=0; k<3; k++)
+      {
+        min_max[k] = MIN(min_max[k], in[k]);
+        min_max[k+3] = MAX(min_max[k+3], in[k]);
+      }
     }
   }
 
   const float scale = 4.0f * (vs_width * vs_height) / (roi_in->width * roi_in->height * 255.0f);
   const float gamma = 1.0f / 1.5f;
-  //printf("maxcount %d scale %f scaled maxcount %f gamma corrected %f\nminYuv %f, %f, %f maxYuv %f, %f, %f\n", maxcount, scale, maxcount * scale, powf(maxcount * scale, gamma), minYuv[0], minYuv[1], minYuv[2], maxYuv[0], maxYuv[1], maxYuv[2]);
+  printf("maxcount %d scale %f scaled maxcount %f gamma corrected %f\nmin %f, %f, %f max %f, %f, %f\n", maxcount, scale, maxcount * scale, powf(maxcount * scale, gamma), min_max[0], min_max[1], min_max[2], min_max[3], min_max[4], min_max[5]);
 
   // FIXME: use OpenMP
   for(int out_y = 0; out_y < vs_height; out_y++)
@@ -1225,58 +1203,24 @@ static void _pixelpipe_final_histogram_vectorscope(dt_develop_t *dev, const floa
       out_alpha[out_x] = CLAMP(powf(c * scale, gamma) * 255.0f, 0, 255);
       if(dev->vectorscope_color != DT_DEV_VECTORSCOPE_COLOR_WHITE)
       {
-        // FIXME: do something nice with arrays instead to keep symmetrical
-        float Y = 0.0f, Cb = 0.0f, Cr = 0.0f;
-        switch(dev->vectorscope_axes)
+        float DT_ALIGNED_PIXEL lab[3];
+        lab[x_index] = ((float)out_x / vs_width) * lab_range[x_index] + lab_min[x_index];
+        lab[y_index] = ((float)out_y / vs_height) * lab_range[y_index] + lab_min[y_index];
+        switch(dev->vectorscope_color)
         {
-          case DT_DEV_VECTORSCOPE_AXES_UV:
-            switch(dev->vectorscope_color)
-            {
-              case DT_DEV_VECTORSCOPE_COLOR_50PCT: Y = 0.5f; break;
-              case DT_DEV_VECTORSCOPE_COLOR_AVG: Y = in_sum[out_x] / c; break;
-              case DT_DEV_VECTORSCOPE_COLOR_MIN: Y = minz[out_y * vs_width + out_x]; break;
-              case DT_DEV_VECTORSCOPE_COLOR_MAX: Y = maxz[out_y * vs_width + out_x]; break;
-              default: g_assert_not_reached();
-            }
-            // this won't be precisely the original values, but are close enough
-            // FIXME: just flip these instead of rotating the result?
-            Cb = ((float)out_x / vs_width) - 0.5f;
-            Cr = ((float)out_y / vs_height) - 0.5f;
-            break;
-          case DT_DEV_VECTORSCOPE_AXES_UY:
-            Y = (float)out_y / vs_height;
-            Cb = ((float)out_x / vs_width) - 0.5f;
-            switch(dev->vectorscope_color)
-            {
-              case DT_DEV_VECTORSCOPE_COLOR_50PCT: Cr = 0.0f; break;
-              case DT_DEV_VECTORSCOPE_COLOR_AVG: Cr = in_sum[out_x] / c; break;
-              case DT_DEV_VECTORSCOPE_COLOR_MIN: Cr = minz[out_y * vs_width + out_x]; break;
-              case DT_DEV_VECTORSCOPE_COLOR_MAX: Cr = maxz[out_y * vs_width + out_x]; break;
-              default: g_assert_not_reached();
-            }
-            break;
-          case DT_DEV_VECTORSCOPE_AXES_YV:
-            Y = (float)out_x / vs_width;
-            switch(dev->vectorscope_color)
-            {
-              case DT_DEV_VECTORSCOPE_COLOR_50PCT: Cb = 0.0f; break;
-              case DT_DEV_VECTORSCOPE_COLOR_AVG: Cb = in_sum[out_x] / c; break;
-              case DT_DEV_VECTORSCOPE_COLOR_MIN: Cb = minz[out_y * vs_width + out_x]; break;
-              case DT_DEV_VECTORSCOPE_COLOR_MAX: Cb = maxz[out_y * vs_width + out_x]; break;
-              default: g_assert_not_reached();
-            }
-            Cr = ((float)out_y / vs_height) - 0.5f;
-            break;
-          case DT_DEV_VECTORSCOPE_AXES_N:
-            g_assert_not_reached();
+          case DT_DEV_VECTORSCOPE_COLOR_50PCT: lab[z_index] = lab_range[z_index]*0.5f+lab_min[z_index]; break;
+          case DT_DEV_VECTORSCOPE_COLOR_AVG: lab[z_index] = in_sum[out_x] / c; break;
+          case DT_DEV_VECTORSCOPE_COLOR_MIN: lab[z_index] = minz[out_y * vs_width + out_x]; break;
+          case DT_DEV_VECTORSCOPE_COLOR_MAX: lab[z_index] = maxz[out_y * vs_width + out_x]; break;
+          default: g_assert_not_reached();
         }
-        const float r = Y + Cr * (1 - Wr) / Vmax;
-        const float g = Y - Cb * Wb * (1 - Wb) / (Umax * Wg) - Cr * Wr * (1 - Wr) / (Vmax * Wg);
-        const float b = Y + Cb * (1 - Wb) / Umax;
-        // FIXME: do need to clamp these? or if there are out of bounds, better to eliminate than to clamp?
-        out_img[out_x*4] = CLAMP(r*255.0f, 0, 255);
-        out_img[out_x*4+1] = CLAMP(g*255.0f, 0, 255);
-        out_img[out_x*4+2] = CLAMP(b*255.0f, 0, 255);
+        float rgb[3] DT_ALIGNED_PIXEL = { 0.0f };
+        // FIXME: is this the best Lab to RGB conversion in dt?
+        // FIXME: should output Lab results to a temp buffer then convert the whole buffer to RGB?
+        dt_ioppr_lab_to_rgb_matrix(lab, rgb, profile_info->matrix_out, profile_info->lut_out, profile_info->unbounded_coeffs_out, profile_info->lutsize, profile_info->nonlinearlut);
+        // FIXME: do need to clamp these?
+        for(int k=0; k<3; k++)
+          out_img[out_x*4+k] = CLAMP(rgb[k]*255.0f, 0, 255);
       }
     }
   }
@@ -1285,6 +1229,7 @@ static void _pixelpipe_final_histogram_vectorscope(dt_develop_t *dev, const floa
   free(sum);
   free(minz);
   free(maxz);
+  dt_free_align(img_tmp);
 
   if(darktable.unmuted & DT_DEBUG_PERF)
   {
@@ -2765,11 +2710,10 @@ post_process_collect_info:
       if(input)
       {
         if(dev->scope_type == DT_DEV_SCOPE_WAVEFORM)
-          // FIXME: the _pixelpipe_final_histogram() path converts to histogram profile, should this happen here -- or be called from there?
           _pixelpipe_final_histogram_waveform(dev, (const float *const )input, &roi_in);
         else if(dev->scope_type == DT_DEV_SCOPE_VECTORSCOPE)
           // FIXME: allow for cropping to colorpicker as in regular histogram?
-          _pixelpipe_final_histogram_vectorscope(dev, (const float *const )input, &roi_in);
+          _pixelpipe_final_histogram_vectorscope(dev, (const float *const )input, &roi_in, module);
       }
 
       dt_pthread_mutex_unlock(&pipe->busy_mutex);

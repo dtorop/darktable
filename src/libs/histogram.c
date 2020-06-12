@@ -468,7 +468,8 @@ static void _lib_histogram_draw_vectorscope(cairo_t *cr, int width, int height, 
   const int min_size = MIN(width, height);
   cairo_save(cr);
   cairo_translate(cr, width / 2., height / 2.);
-  cairo_rotate(cr, M_PI * -0.5);
+  // FIXME: which way to orient graph? and can do this when generate the graph?
+  //cairo_rotate(cr, M_PI * -0.5);
   cairo_scale(cr, scale, scale);
   cairo_translate(cr, min_size * -0.5, min_size * -0.5);
   // FIXME: use ppd?
@@ -533,6 +534,7 @@ static void _lib_histogram_draw_vectorscope_lines(cairo_t *cr, int width, int he
   cairo_stroke(cr);
 
   // FIXME: should there be a graticule option showing primary/secondary colors?
+  // FIXME: should display the primaries of the working/histogram/display colorspace?
 
   cairo_restore(cr);
 }
@@ -634,14 +636,12 @@ static gboolean _lib_histogram_draw_callback(GtkWidget *widget, cairo_t *crf, gp
     if(dev->scope_type == DT_DEV_SCOPE_VECTORSCOPE)
     {
       cairo_set_source_rgba(cr, 0.5, 0.5, 0.5, 0.33);
-      // FIXME: make a button draw for choosing colorspace
-      _draw_color_toggle(cr, d->red_x, d->button_y, d->button_w, d->button_h, dev->vectorscope_colorspace);
       // FIXME: make a button draw for choosing scale
       cairo_set_source_rgba(cr, d->vs_scale * 0.25, d->vs_scale * 0.25, d->vs_scale * 0.25, 0.33);
-      _draw_color_toggle(cr, d->green_x, d->button_y, d->button_w, d->button_h, TRUE);
+      _draw_color_toggle(cr, d->red_x, d->button_y, d->button_w, d->button_h, TRUE);
       // FIXME: make a button draw to choose axis (uv, uY, Yv)
-      cairo_set_source_rgba(cr, dev->vectorscope_axes * 0.3, dev->vectorscope_axes * 0.3, dev->vectorscope_axes * 0.3, 0.33);
-      _draw_color_toggle(cr, d->blue_x, d->button_y, d->button_w, d->button_h, TRUE);
+      cairo_set_source_rgba(cr, dev->vectorscope_axis * 0.3, dev->vectorscope_axis * 0.3, dev->vectorscope_axis * 0.3, 0.33);
+      _draw_color_toggle(cr, d->green_x, d->button_y, d->button_w, d->button_h, TRUE);
     }
     else
     {
@@ -793,18 +793,21 @@ static gboolean _lib_histogram_motion_notify_callback(GtkWidget *widget, GdkEven
       d->highlight = DT_LIB_HISTOGRAM_HIGHLIGHT_RED;
       if(dev->scope_type == DT_DEV_SCOPE_VECTORSCOPE)
       {
-        switch(dev->vectorscope_colorspace)
+        switch(d->vs_scale)
         {
-          case DT_DEV_VECTORSCOPE_COLORSPACE_601:
-            gtk_widget_set_tooltip_text(widget, _("switch to Rec.709"));
+          case 1:
+            gtk_widget_set_tooltip_text(widget, _("set scale to x2"));
             break;
-          case DT_DEV_VECTORSCOPE_COLORSPACE_709:
-            gtk_widget_set_tooltip_text(widget, _("switch to Rec.2020"));
+          case 2:
+            gtk_widget_set_tooltip_text(widget, _("set scale to x3"));
             break;
-          case DT_DEV_VECTORSCOPE_COLORSPACE_2020:
-            gtk_widget_set_tooltip_text(widget, _("switch to Rec.601"));
+          case 3:
+            gtk_widget_set_tooltip_text(widget, _("set scale to x4"));
             break;
-          case DT_DEV_VECTORSCOPE_COLORSPACE_N:
+          case 4:
+            gtk_widget_set_tooltip_text(widget, _("set scale to x1"));
+            break;
+          default:
             g_assert_not_reached();
         }
       }
@@ -819,23 +822,20 @@ static gboolean _lib_histogram_motion_notify_callback(GtkWidget *widget, GdkEven
       d->highlight = DT_LIB_HISTOGRAM_HIGHLIGHT_GREEN;
       if(dev->scope_type == DT_DEV_SCOPE_VECTORSCOPE)
       {
-          switch(d->vs_scale)
-          {
-            case 1:
-              gtk_widget_set_tooltip_text(widget, _("set scale to x2"));
-              break;
-            case 2:
-              gtk_widget_set_tooltip_text(widget, _("set scale to x3"));
-              break;
-            case 3:
-              gtk_widget_set_tooltip_text(widget, _("set scale to x4"));
-              break;
-            case 4:
-              gtk_widget_set_tooltip_text(widget, _("set scale to x1"));
-              break;
-            default:
-              g_assert_not_reached();
-          }
+        switch(dev->vectorscope_axis)
+        {
+          case 0:
+            gtk_widget_set_tooltip_text(widget, _("set to graph Lb"));
+            break;
+          case 1:
+            gtk_widget_set_tooltip_text(widget, _("set to graph aL"));
+            break;
+          case 2:
+            gtk_widget_set_tooltip_text(widget, _("set to graph ab"));
+            break;
+          default:
+            g_assert_not_reached();
+        }
       }
       else
       {
@@ -846,24 +846,7 @@ static gboolean _lib_histogram_motion_notify_callback(GtkWidget *widget, GdkEven
     else if(x > d->blue_x && x < d->blue_x + d->button_w && y > d->button_y && y < d->button_y + d->button_h)
     {
       d->highlight = DT_LIB_HISTOGRAM_HIGHLIGHT_BLUE;
-      if(dev->scope_type == DT_DEV_SCOPE_VECTORSCOPE)
-      {
-          switch(dev->vectorscope_axes)
-          {
-            case DT_DEV_VECTORSCOPE_AXES_UV:
-              gtk_widget_set_tooltip_text(widget, _("set to graph uY"));
-              break;
-            case DT_DEV_VECTORSCOPE_AXES_UY:
-              gtk_widget_set_tooltip_text(widget, _("set to graph Yv"));
-              break;
-            case DT_DEV_VECTORSCOPE_AXES_YV:
-              gtk_widget_set_tooltip_text(widget, _("set to graph uv"));
-              break;
-            case DT_DEV_VECTORSCOPE_AXES_N:
-              g_assert_not_reached();
-          }
-      }
-      else
+      if(dev->scope_type != DT_DEV_SCOPE_VECTORSCOPE)
       {
         gtk_widget_set_tooltip_text(widget, d->blue ? _("click to hide blue channel") : _("click to show blue channel"));
       }
@@ -970,22 +953,14 @@ static gboolean _lib_histogram_button_press_callback(GtkWidget *widget, GdkEvent
       // FIXME: make a different buttons for vectorscope instead of re-using RGB buttons
       if(d->highlight == DT_LIB_HISTOGRAM_HIGHLIGHT_RED)
       {
-        dev->vectorscope_colorspace = (dev->vectorscope_colorspace + 1) % DT_DEV_VECTORSCOPE_COLORSPACE_N;
-        dt_conf_set_string("plugins/darkroom/histogram/vectorscope/colorspace",
-                           dt_dev_scope_vectorscope_colorspace_names[dev->vectorscope_colorspace]);
-        dt_dev_process_preview(dev);
-      }
-      else if(d->highlight == DT_LIB_HISTOGRAM_HIGHLIGHT_GREEN)
-      {
         d->vs_scale += 1;
         if(d->vs_scale > 4) d->vs_scale = 1;
         dt_conf_set_int("plugins/darkroom/histogram/vectorscope/scale", d->vs_scale);
       }
-      else if(d->highlight == DT_LIB_HISTOGRAM_HIGHLIGHT_BLUE)
+      else if(d->highlight == DT_LIB_HISTOGRAM_HIGHLIGHT_GREEN)
       {
-        dev->vectorscope_axes = (dev->vectorscope_axes + 1) % DT_DEV_VECTORSCOPE_AXES_N;
-        // FIXME: set conf for axes
-        //dt_conf_set_string("plugins/darkroom/histogram/vectorscope/axes", dt_dev_scope_vectorscope_axes_names[dev->vectorscope_axes]);
+        dev->vectorscope_axis = (dev->vectorscope_axis + 1) % 3;
+        dt_conf_set_int("plugins/darkroom/histogram/vectorscope/axis", dev->vectorscope_axis);
         dt_dev_process_preview(dev);
       }
     }

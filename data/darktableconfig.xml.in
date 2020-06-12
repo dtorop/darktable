@@ -2072,22 +2072,16 @@
     <longdescription/>
   </dtconfig>
   <dtconfig>
-    <name>plugins/darkroom/histogram/vectorscope/colorspace</name>
-    <type>
-      <enum>
-	<option>rec601</option>
-        <option>rec709</option>
-        <option>rec2020</option>
-      </enum>
-    </type>
-    <default>rec601</default>
+    <name>plugins/darkroom/histogram/vectorscope/scale</name>
+    <type min="1" max="4">int</type>
+    <default>1</default>
     <shortdescription/>
     <longdescription/>
   </dtconfig>
   <dtconfig>
-    <name>plugins/darkroom/histogram/vectorscope/scale</name>
-    <type min="1" max="4">int</type>
-    <default>1</default>
+    <name>plugins/darkroom/histogram/vectorscope/axis</name>
+    <type min="0" max="2">int</type>
+    <default>0</default>
     <shortdescription/>
     <longdescription/>
   </dtconfig>

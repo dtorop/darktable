@@ -49,7 +49,6 @@
 
 const gchar *dt_dev_scope_type_names[DT_DEV_SCOPE_N] = { "histogram", "waveform", "vectorscope" };
 const gchar *dt_dev_scope_vectorscope_color_names[DT_DEV_VECTORSCOPE_COLOR_N] = { "white", "50pct", "average", "minimum", "maximum" };
-const gchar *dt_dev_scope_vectorscope_colorspace_names[DT_DEV_VECTORSCOPE_COLORSPACE_N] = { "rec601", "rec709", "rec2020" };
 
 void dt_dev_init(dt_develop_t *dev, int32_t gui_attached)
 {
@@ -114,14 +113,7 @@ void dt_dev_init(dt_develop_t *dev, int32_t gui_attached)
     if(g_strcmp0(vs_color, dt_dev_scope_vectorscope_color_names[i]) == 0)
       dev->vectorscope_color = i;
   g_free(vs_color);
-  gchar *vs_colorspace = dt_conf_get_string("plugins/darkroom/histogram/vectorscope/colorspace");
-  for(dt_dev_vectorscope_colorspace_t i=0; i<DT_DEV_VECTORSCOPE_COLORSPACE_N; i++)
-    if(g_strcmp0(vs_colorspace, dt_dev_scope_vectorscope_colorspace_names[i]) == 0)
-      dev->vectorscope_colorspace = i;
-  g_free(vs_colorspace);
-  // FIXME: get axes from conf
-  //gchar *vs_axes = dt_conf_get_string("plugins/darkroom/histogram/vectorscope/axes");
-  //g_free(vs_axes);
+  dev->vectorscope_axis = dt_conf_get_int("plugins/darkroom/histogram/vectorscope/axis");
   gchar *preview_downsample = dt_conf_get_string("preview_downsampling");
   dev->preview_downsampling =
     (g_strcmp0(preview_downsample, "original") == 0) ? 1.0f
