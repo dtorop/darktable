@@ -1116,7 +1116,7 @@ static gboolean _lib_histogram_cycle_mode_callback(GtkAccelGroup *accel_group,
   dt_lib_histogram_t *d = (dt_lib_histogram_t *)self->data;
   dt_develop_t *dev = darktable.develop;
 
-  // The cycle order is Hist log -> Lin -> Waveform -> parade (update logic on more scopes)
+  // The cycle order is Hist log -> Lin -> Waveform -> parade -> vectorscope (update logic on more scopes)
 
   switch(dev->scope_type)
   {
@@ -1135,8 +1135,13 @@ static gboolean _lib_histogram_cycle_mode_callback(GtkAccelGroup *accel_group,
       {
         dev->histogram_type = DT_DEV_HISTOGRAM_LOGARITHMIC;
         d->waveform_type = DT_LIB_HISTOGRAM_WAVEFORM_OVERLAID;
-        dev->scope_type = DT_DEV_SCOPE_HISTOGRAM;
+        dev->scope_type = DT_DEV_SCOPE_VECTORSCOPE;
       }
+      break;
+    case DT_DEV_SCOPE_VECTORSCOPE:
+      dev->histogram_type = DT_DEV_HISTOGRAM_LOGARITHMIC;
+      d->waveform_type = DT_LIB_HISTOGRAM_WAVEFORM_OVERLAID;
+      dev->scope_type = DT_DEV_SCOPE_HISTOGRAM;
       break;
     case DT_DEV_SCOPE_N:
       g_assert_not_reached();
@@ -1196,6 +1201,10 @@ static gboolean _lib_histogram_change_type_callback(GtkAccelGroup *accel_group,
       d->waveform_type = (d->waveform_type + 1) % DT_LIB_HISTOGRAM_WAVEFORM_N;
       dt_conf_set_string("plugins/darkroom/histogram/waveform",
                          dt_lib_histogram_waveform_type_names[d->waveform_type]);
+      break;
+    case DT_DEV_SCOPE_VECTORSCOPE:
+      // there is only one type of vectorscope
+      // FIXME: vary the vectorscope color?
       break;
     case DT_DEV_SCOPE_N:
       g_assert_not_reached();
