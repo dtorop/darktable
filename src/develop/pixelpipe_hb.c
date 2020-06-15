@@ -1113,6 +1113,9 @@ static void _pixelpipe_final_histogram_vectorscope(dt_develop_t *dev,
                                                    const float *const input, const dt_iop_roi_t *roi_in,
                                                    struct dt_iop_module_t *module)
 {
+  // FIXME: do need a temp buffer or should transform each pixel as bin it
+  // SEE: dt_prophotorgb_to_XYZ((const float *)rgb, XYZ);
+  // from darktable-curve-tool.c: NB: DT uses L*a*b* D50
   float *img_tmp = dt_alloc_align(64, roi_in->width * roi_in->height * 4 * sizeof(float));
   // FIXME: is the image in display color profile? what does dt_ioppr_get_pipe_work_profile_info() return? dt_ioppr_get_iop_work_profile_info()?
   const dt_iop_order_iccprofile_info_t *const profile_info

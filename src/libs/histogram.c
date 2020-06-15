@@ -471,6 +471,7 @@ static void _lib_histogram_draw_vectorscope(cairo_t *cr, int width, int height, 
   // FIXME: which way to orient graph? and can do this when generate the graph?
   // traditional vectorscope is oriented with x-axis Y -> B, y-axis C -> R
   // but CIE 1976 UCS is graphed x-axis as u (G -> M), y-axis as v (B -> Y)
+  // FIXME: for hiding 2nd axis, aL view, lightness on y-axis should be flipped
   //cairo_rotate(cr, M_PI * -0.5);
   cairo_scale(cr, scale, scale);
   cairo_translate(cr, min_size * -0.5, min_size * -0.5);
