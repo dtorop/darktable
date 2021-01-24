@@ -52,6 +52,7 @@ typedef enum dt_lib_histogram_scope_type_t
 {
   DT_LIB_HISTOGRAM_SCOPE_HISTOGRAM = 0,
   DT_LIB_HISTOGRAM_SCOPE_WAVEFORM,
+  DT_LIB_HISTOGRAM_SCOPE_VECTORSCOPE,
   DT_LIB_HISTOGRAM_SCOPE_N // needs to be the last one
 } dt_lib_histogram_scope_type_t;
 
@@ -69,7 +70,7 @@ typedef enum dt_lib_histogram_waveform_type_t
   DT_LIB_HISTOGRAM_WAVEFORM_N // needs to be the last one
 } dt_lib_histogram_waveform_type_t;
 
-const gchar *dt_lib_histogram_scope_type_names[DT_LIB_HISTOGRAM_SCOPE_N] = { "histogram", "waveform" };
+const gchar *dt_lib_histogram_scope_type_names[DT_LIB_HISTOGRAM_SCOPE_N] = { "histogram", "waveform", "vectorscope" };
 const gchar *dt_lib_histogram_histogram_scale_names[DT_LIB_HISTOGRAM_N] = { "logarithmic", "linear" };
 const gchar *dt_lib_histogram_waveform_type_names[DT_LIB_HISTOGRAM_WAVEFORM_N] = { "overlaid", "parade" };
 
@@ -82,6 +83,8 @@ typedef struct dt_lib_histogram_t
   float *waveform_linear, *waveform_display;
   uint8_t *waveform_8bit;
   int waveform_width, waveform_height, waveform_max_width;
+  uint8_t *vectorscope_alpha;
+  int vectorscope_diameter, vectorscope_alpha_stride;
   dt_pthread_mutex_t lock;
   GtkWidget *scope_draw;               // GtkDrawingArea -- scope, scale, and draggable overlays
   GtkWidget *button_box;               // GtkButtonBox -- contains scope control buttons
@@ -259,6 +262,82 @@ static void _lib_histogram_process_waveform(dt_lib_histogram_t *d, const float *
   }
 }
 
+static void _lib_histogram_process_vectorscope(dt_lib_histogram_t *d, const float *const input, int width, int height)
+{
+  dt_times_t start_time = { 0 };
+  if(darktable.unmuted & DT_DEBUG_PERF) dt_get_times(&start_time);
+
+  const int vs_diameter = d->vectorscope_diameter;
+  const int vs_alpha_stride = d->vectorscope_alpha_stride;
+  uint8_t *const vs_alpha = d->vectorscope_alpha;
+
+  // FIXME: is this available from caller?
+  // FIXME: why convert in caller to histogram profile if we're going to convert again here?
+  dt_iop_order_iccprofile_info_t *histogram_profile = dt_ioppr_get_histogram_profile_info(darktable.develop);
+  if(!histogram_profile) return;
+  // FIXME: as in colorbalancergb, repack matrix for SEE?
+
+  // FIXME: pre-allocate?
+  int *const restrict binned = dt_alloc_align(64, vs_diameter * vs_diameter * sizeof(int));
+  memset(binned, 0, vs_diameter * vs_diameter * sizeof(int));
+
+  const float *const restrict in = DT_IS_ALIGNED((const float *const restrict)input);
+
+  // count into bins
+  // FIXME: use OpenMP
+  for(size_t k = 0; k < (size_t)4 * width * height; k += 4)
+  {
+    const float *const restrict pix_in = __builtin_assume_aligned(in + k, 16);
+
+    // FIXME: DT_ALIGNED_PIXEL? make [4]?
+    float XYZ[3];
+    float DT_ALIGNED_PIXEL Jab[4] = { 0.f };
+
+    // FIXME: optimize
+    dt_ioppr_rgb_matrix_to_xyz(pix_in, XYZ, histogram_profile->matrix_in, histogram_profile->lut_in,
+                               histogram_profile->unbounded_coeffs_in, histogram_profile->lutsize,
+                               histogram_profile->nonlinearlut);
+    // FIXME: is XYZ color-adapated? should be D65
+    // FIXME: we never use the J value -- don't calculate it?
+    dt_XYZ_2_JzAzBz(XYZ, Jab);
+
+    // FIXME: max/min based on the histogram profile primaries as max dimensions
+    // FIXME: leave out values that are > than max (if that is possible...?) rather than clipping
+    const int out_x = CLAMP((int)(vs_diameter * (Jab[1] + 0.02f) / 0.04f), 0, vs_diameter-1);
+    const int out_y = CLAMP((int)(vs_diameter * (Jab[2] + 0.02f) / 0.04f), 0, vs_diameter-1);
+
+    int *const restrict bin_out = __builtin_assume_aligned(binned + out_y * vs_diameter + out_x, 8);
+    (*bin_out)++;
+  }
+
+  // FIXME: do same gamma trick here as in waveform
+  // FIXME: make the gamma code local to simplify, just need interpolation function
+  const float scale = 4.0f * (vs_diameter * vs_diameter) / (width * height * 255.0f);
+  const float gamma = 1.0f / 1.5f;
+
+  // FIXME: use OpenMP
+  for(int out_y = 0; out_y < vs_diameter; out_y++)
+  {
+    // FIXME: be smarter with pointers
+    uint8_t *const out_alpha = vs_alpha + (vs_alpha_stride * out_y);
+    for(int out_x = 0; out_x < vs_diameter; out_x++)
+    {
+      const int c = binned[vs_diameter * out_y + out_x];
+      // FIXME: use cache
+      out_alpha[out_x] = CLAMP(powf(c * scale, gamma) * 255.0f, 0, 255);
+    }
+  }
+
+  dt_free_align(binned);
+
+  if(darktable.unmuted & DT_DEBUG_PERF)
+  {
+    dt_times_t end_time = { 0 };
+    dt_get_times(&end_time);
+    fprintf(stderr, "vectorscope took %.3f secs (%.3f CPU)\n", end_time.clock - start_time.clock, end_time.user - start_time.user);
+  }
+}
+
 static void dt_lib_histogram_process(struct dt_lib_module_t *self, const float *const input,
                                      int width, int height,
                                      dt_colorspaces_color_profile_type_t in_profile_type, const gchar *in_profile_filename)
@@ -307,6 +386,9 @@ static void dt_lib_histogram_process(struct dt_lib_module_t *self, const float *
     case DT_LIB_HISTOGRAM_SCOPE_WAVEFORM:
       _lib_histogram_process_waveform(d, img_display ? img_display : input, width, height);
       break;
+    case DT_LIB_HISTOGRAM_SCOPE_VECTORSCOPE:
+      _lib_histogram_process_vectorscope(d, img_display ? img_display : input, width, height);
+      break;
     case DT_LIB_HISTOGRAM_SCOPE_N:
       g_assert_not_reached();
   }
@@ -351,6 +433,7 @@ static void _lib_histogram_draw_waveform_channel(dt_lib_histogram_t *d, cairo_t 
   const int wf_width = d->waveform_width;
   const int wf_height = d->waveform_height;
   // colors used to represent primary colors
+  // FIXME: force a redraw when CSS has changed via preferences -- is there a signal for this?
   const GdkRGBA *const css_primaries = darktable.bauhaus->graph_primaries;
   const float DT_ALIGNED_ARRAY primaries_linear[3][4] = {
     {css_primaries[2].blue, css_primaries[2].green, css_primaries[2].red, 1.0f},
@@ -375,6 +458,7 @@ static void _lib_histogram_draw_waveform_channel(dt_lib_histogram_t *d, cairo_t 
     dt_ioppr_add_profile_info_to_list(darktable.develop, DT_COLORSPACE_HLG_REC2020, "", DT_INTENT_PERCEPTUAL);
   // in place transform will preserve alpha
   // dt's transform is approx. 2x faster than LCMS here
+  // FIXME: optimize by just doing the extrapolate_lut() work and make our own sensible LUT with enough resolution to provide continuous tone
   dt_ioppr_transform_image_colorspace_rgb(wf_display, wf_display, wf_width, wf_height,
                                           profile_linear, profile_work, "waveform gamma");
 
@@ -393,6 +477,7 @@ static void _lib_histogram_draw_waveform_channel(dt_lib_histogram_t *d, cairo_t 
       wf_8bit[y * wf_8bit_stride + k] = MIN(255, (int)(wf_display[y * wf_width_floats + k] * 255.0f));
     }
   }
+  // FIXME: everything up to here should be invariant (unless CSS changes) so put it in process rather than draw
 
   cairo_surface_t *source
     = dt_cairo_image_surface_create_for_data(wf_8bit, CAIRO_FORMAT_ARGB32,
@@ -433,7 +518,82 @@ static void _lib_histogram_draw_rgb_parade(dt_lib_histogram_t *d, cairo_t *cr,
   cairo_restore(cr);
 }
 
-// FIXME: have different drawable for waveform and histogram in a stack -- simplifies this function from being a swath of conditionals -- then esentially draw callbacks _lib_histogram_draw_waveform and _lib_histogram_draw_rgb_parade
+static void _lib_histogram_draw_vectorscope(dt_lib_histogram_t *d, cairo_t *cr,
+                                            int width, int height, int scale)
+{
+  // FIXME: bail if vectorscope not calculated...
+  const int vs_diameter = d->vectorscope_diameter;
+  const int min_size = MIN(width, height);
+
+  cairo_save(cr);
+  // FIXME: should draw with more transparency, as w/other scopes?
+  cairo_translate(cr, width / 2., height / 2.);
+  // FIXME: which way to orient graph? and can do this when generate the graph?
+  // traditional vectorscope is oriented with x-axis Y -> B, y-axis C -> R
+  // but CIE 1976 UCS is graphed x-axis as u (G -> M), y-axis as v (B -> Y)
+  // FIXME: for hiding 2nd axis, aL view, lightness on y-axis should be flipped
+  //cairo_rotate(cr, M_PI * -0.5);
+  cairo_scale(cr, scale, scale);
+  cairo_translate(cr, min_size * -0.5, min_size * -0.5);
+  // FIXME: use ppd?
+  // FIXME: do need to cast to double if use ppd?
+  cairo_scale(cr, darktable.gui->ppd*(double)min_size/vs_diameter, darktable.gui->ppd*(double)min_size/vs_diameter);
+  cairo_set_operator(cr, CAIRO_OPERATOR_ADD);
+
+  cairo_set_source_rgb(cr, 1., 1., 1.);
+  cairo_surface_t *alpha
+    = dt_cairo_image_surface_create_for_data(d->vectorscope_alpha, CAIRO_FORMAT_A8,
+                                             vs_diameter, vs_diameter, d->vectorscope_alpha_stride);
+  cairo_mask_surface(cr, alpha, 0.0, 0.0);
+  cairo_surface_destroy(alpha);
+  cairo_restore(cr);
+}
+
+static void _draw_vectorscope_lines(cairo_t *cr, int width, int height, int scale)
+{
+  const double min_size = MIN(width, height);
+  const double w_ctr = min_size / 30.0f;
+  // FIXME: should this vary with ppd?
+  const double half_dashes = 8.0;
+  const double quarter_dashes = 4.0;
+
+  cairo_save(cr);
+  cairo_translate(cr, width/2., height/2.);
+
+  // central crosshair
+  dt_draw_line(cr, -w_ctr, 0.0f, w_ctr, 0.0f);
+  cairo_stroke(cr);
+  dt_draw_line(cr, 0.0f, -w_ctr, 0.0f, w_ctr);
+  cairo_stroke(cr);
+
+  cairo_scale(cr, scale, scale);
+  // scale-independent line width looks better
+  cairo_set_line_width(cr, cairo_get_line_width(cr) / scale);
+
+  // FIXME: are these meaningful?
+  // concentric circles
+  cairo_arc(cr, 0., 0., min_size*0.5, 0., M_PI * 2.);
+  cairo_stroke(cr);
+  cairo_set_dash(cr, &half_dashes, 1, 0.);
+  cairo_arc(cr, 0., 0., min_size*0.25, 0., M_PI * 2.);
+  cairo_stroke(cr);
+  cairo_set_dash(cr, &quarter_dashes, 1, 0.);
+  cairo_arc(cr, 0., 0., min_size*0.125, 0., M_PI * 2.);
+  cairo_stroke(cr);
+  cairo_arc(cr, 0., 0., min_size*0.375, 0., M_PI * 2.);
+  cairo_stroke(cr);
+
+  // FIXME: draw a graticule option showing primary (and secondary?) colors of the histogram profile
+  // FIXME: draw more sophisticated view of primaries (input, working, output)
+  // from Sobotka:
+  // 1. The input encoding primaries. How dd the image start out life? What is valid data within that? What is invalid introduced by error of camera virtual primaries solving or math such as resampling an image such that negative lobes result?
+  // 2. The working reference primaries. How did 1. end up in 2.? Are there negative and therefore nonsensical values in the working space? Should a gamut mapping pass be applied before work, between 1. and 2.?
+  // 3. The output primaries rendition. From a selection of gamut mappings, is one required between 2. and 3.?"
+
+  cairo_restore(cr);
+}
+
+// FIXME: have different drawable for each scope in a stack -- simplifies this function from being a swath of conditionals -- then esentially draw callbacks _lib_histogram_draw_waveform and _lib_histogram_draw_rgb_parade
 // FIXME: if exposure change regions are separate widgets, then we could have a menu to swap in different overlay widgets (sort of like basic adjustments) to adjust other things about the image, e.g. tone equalizer, color balance, etc.
 static gboolean _drawable_draw_callback(GtkWidget *widget, cairo_t *crf, gpointer user_data)
 {
@@ -484,10 +644,22 @@ static gboolean _drawable_draw_callback(GtkWidget *widget, cairo_t *crf, gpointe
 
   // draw grid
   set_color(cr, darktable.bauhaus->graph_grid);
-  if(d->scope_type == DT_LIB_HISTOGRAM_SCOPE_WAVEFORM)
-    dt_draw_waveform_lines(cr, 0, 0, width, height);
-  else
-    dt_draw_grid(cr, 4, 0, 0, width, height);
+  switch(d->scope_type)
+  {
+    case DT_LIB_HISTOGRAM_SCOPE_HISTOGRAM:
+      dt_draw_grid(cr, 4, 0, 0, width, height);
+      break;
+    case DT_LIB_HISTOGRAM_SCOPE_WAVEFORM:
+      dt_draw_waveform_lines(cr, 0, 0, width, height);
+      break;
+    case DT_LIB_HISTOGRAM_SCOPE_VECTORSCOPE:
+      // FIXME: draw this after?
+      // FIXME: what about scale?
+      _draw_vectorscope_lines(cr, width, height, 1);
+      break;
+    case DT_LIB_HISTOGRAM_SCOPE_N:
+      g_assert_not_reached();
+  }
 
   // FIXME: should set histogram buffer to black if have just entered tether view and nothing is displayed
   dt_pthread_mutex_lock(&d->lock);
@@ -508,6 +680,9 @@ static gboolean _drawable_draw_callback(GtkWidget *widget, cairo_t *crf, gpointe
           _lib_histogram_draw_waveform(d, cr, width, height, mask);
         else
           _lib_histogram_draw_rgb_parade(d, cr, width, height, mask);
+        break;
+      case DT_LIB_HISTOGRAM_SCOPE_VECTORSCOPE:
+        _lib_histogram_draw_vectorscope(d, cr, width, height, 1);
         break;
       case DT_LIB_HISTOGRAM_SCOPE_N:
         g_assert_not_reached();
@@ -542,6 +717,7 @@ static gboolean _drawable_motion_notify_callback(GtkWidget *widget, GdkEventMoti
   gtk_widget_get_allocation(widget, &allocation);
   if(d->dragging)
   {
+    // FIXME: dragging the vectorscope should change white balance -- or perhaps its scale
     const float diff = d->scope_type == DT_LIB_HISTOGRAM_SCOPE_WAVEFORM ? d->button_down_y - event->y
                                                                         : event->x - d->button_down_x;
     const int range = d->scope_type == DT_LIB_HISTOGRAM_SCOPE_WAVEFORM ? allocation.height
@@ -567,7 +743,7 @@ static gboolean _drawable_motion_notify_callback(GtkWidget *widget, GdkEventMoti
     const dt_lib_histogram_highlight_t prior_highlight = d->highlight;
 
     // FIXME: make just one tooltip for the widget depending on whether it is draggable or not, and set it when enter the view
-    if(!hooks_available)
+    if(!hooks_available || d->scope_type == DT_LIB_HISTOGRAM_SCOPE_VECTORSCOPE)
     {
       d->highlight = DT_LIB_HISTOGRAM_HIGHLIGHT_NONE;
       gtk_widget_set_tooltip_text(widget, _("ctrl+scroll to change display height"));
@@ -687,11 +863,14 @@ static gboolean _drawable_leave_notify_callback(GtkWidget *widget, GdkEventCross
   return FALSE;
 }
 
+// FIXME: make this a straight button which changes state, rather than a toggle
 static void _scope_type_toggle(GtkWidget *button, dt_lib_histogram_t *d)
 {
   // FIXME: make this a combobox -- simplifies this code and reflects what it really is doing, and adds room for other scopes (e.g. vectorscope)
   d->scope_type = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(button)) ?
     DT_LIB_HISTOGRAM_SCOPE_HISTOGRAM : DT_LIB_HISTOGRAM_SCOPE_WAVEFORM;
+  // FIXME: hack
+  d->scope_type = DT_LIB_HISTOGRAM_SCOPE_VECTORSCOPE;
   switch(d->scope_type)
   {
     case DT_LIB_HISTOGRAM_SCOPE_HISTOGRAM:
@@ -701,9 +880,16 @@ static void _scope_type_toggle(GtkWidget *button, dt_lib_histogram_t *d)
       gtk_stack_set_visible_child_name(GTK_STACK(d->mode_stack), "histogram");
       break;
     case DT_LIB_HISTOGRAM_SCOPE_WAVEFORM:
-      gtk_widget_set_tooltip_text(button, _("set mode to histogram"));
+      gtk_widget_set_tooltip_text(button, _("set mode to vectorscope"));
       dtgtk_togglebutton_set_paint(DTGTK_TOGGLEBUTTON(button),
                                    dtgtk_cairo_paint_waveform_scope, CPF_NONE, NULL);
+      gtk_stack_set_visible_child_name(GTK_STACK(d->mode_stack), "waveform");
+      break;
+    case DT_LIB_HISTOGRAM_SCOPE_VECTORSCOPE:
+      gtk_widget_set_tooltip_text(button, _("set mode to histogram"));
+      dtgtk_togglebutton_set_paint(DTGTK_TOGGLEBUTTON(button),
+                                   dtgtk_cairo_paint_vectorscope, CPF_NONE, NULL);
+      // FIXME: make all the other buttons disappear
       gtk_stack_set_visible_child_name(GTK_STACK(d->mode_stack), "waveform");
       break;
     case DT_LIB_HISTOGRAM_SCOPE_N:
@@ -863,7 +1049,7 @@ static gboolean _lib_histogram_cycle_mode_callback(GtkAccelGroup *accel_group,
   dt_lib_module_t *self = (dt_lib_module_t *)user_data;
   dt_lib_histogram_t *d = (dt_lib_histogram_t *)self->data;
 
-  // The cycle order is Hist log -> Lin -> Waveform -> parade (update logic on more scopes)
+  // The cycle order is Hist log -> lin -> waveform -> parade -> vectorscope (update logic on more scopes)
   switch(d->scope_type)
   {
     case DT_LIB_HISTOGRAM_SCOPE_HISTOGRAM:
@@ -889,10 +1075,14 @@ static gboolean _lib_histogram_cycle_mode_callback(GtkAccelGroup *accel_group,
       {
         // cancel dragging, as the draggable areas will have changed
         d->dragging = FALSE;
+        // FIXME: jump to vectorscope
         gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(d->histogram_scale_button), TRUE);
         gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(d->waveform_type_button), TRUE);
         gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(d->scope_type_button), TRUE);
       }
+      break;
+    case DT_LIB_HISTOGRAM_SCOPE_VECTORSCOPE:
+      // FIXME: handle this
       break;
     case DT_LIB_HISTOGRAM_SCOPE_N:
       g_assert_not_reached();
@@ -928,8 +1118,12 @@ static gboolean _lib_histogram_change_type_callback(GtkAccelGroup *accel_group,
                                    d->histogram_scale == DT_LIB_HISTOGRAM_LINEAR);
       break;
     case DT_LIB_HISTOGRAM_SCOPE_WAVEFORM:
+      // FIXME: switch to vectorscope
       gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(d->waveform_type_button),
                                    d->waveform_type == DT_LIB_HISTOGRAM_WAVEFORM_PARADE);
+      break;
+    case DT_LIB_HISTOGRAM_SCOPE_VECTORSCOPE:
+      // FIXME: handle
       break;
     case DT_LIB_HISTOGRAM_SCOPE_N:
       g_assert_not_reached();
@@ -985,11 +1179,7 @@ void gui_init(dt_lib_module_t *self)
   d->blue = dt_conf_get_bool("plugins/darkroom/histogram/show_blue");
 
   gchar *mode = dt_conf_get_string("plugins/darkroom/histogram/mode");
-  if(g_strcmp0(mode, "histogram") == 0)
-    d->scope_type = DT_LIB_HISTOGRAM_SCOPE_HISTOGRAM;
-  else if(g_strcmp0(mode, "waveform") == 0)
-    d->scope_type = DT_LIB_HISTOGRAM_SCOPE_WAVEFORM;
-  else if(g_strcmp0(mode, "linear") == 0)
+  if(g_strcmp0(mode, "linear") == 0)
   { // update legacy conf
     d->scope_type = DT_LIB_HISTOGRAM_SCOPE_HISTOGRAM;
     dt_conf_set_string("plugins/darkroom/histogram/mode","histogram");
@@ -1000,6 +1190,12 @@ void gui_init(dt_lib_module_t *self)
     d->scope_type = DT_LIB_HISTOGRAM_SCOPE_HISTOGRAM;
     dt_conf_set_string("plugins/darkroom/histogram/mode","histogram");
     dt_conf_set_string("plugins/darkroom/histogram/histogram","logarithmic");
+  }
+  else
+  { // current conf
+    for(dt_lib_histogram_scope_type_t i=0; i<DT_LIB_HISTOGRAM_SCOPE_N; i++)
+      if(g_strcmp0(mode, dt_lib_histogram_scope_type_names[i]) == 0)
+        d->scope_type = i;
   }
   g_free(mode);
 
@@ -1046,6 +1242,12 @@ void gui_init(dt_lib_module_t *self)
   d->waveform_display = dt_iop_image_alloc(d->waveform_max_width, d->waveform_height, 4);
   d->waveform_8bit    = dt_alloc_align(64, sizeof(uint8_t) * 4 * d->waveform_height * d->waveform_max_width);
 
+  // FIXME: what is the appropriate resolution for this: balance memory use, processing speed, helpful resolution -- at least use a power of 2?
+  d->vectorscope_diameter = 350;
+  d->vectorscope_alpha_stride = cairo_format_stride_for_width(CAIRO_FORMAT_A8, d->vectorscope_diameter);
+  d->vectorscope_alpha = dt_alloc_align(64, sizeof(uint8_t) * d->vectorscope_diameter * d->vectorscope_alpha_stride);
+  // FIXME: do need to zero buffer?
+
   // proxy functions and data so that pixelpipe or tether can
   // provide data for a histogram
   // FIXME: do need to pass self, or can wrap a callback as a lambda
@@ -1058,7 +1260,7 @@ void gui_init(dt_lib_module_t *self)
 
   // shows the scope, scale, and has draggable areas
   d->scope_draw = gtk_drawing_area_new();
-  gtk_widget_set_tooltip_text(d->scope_draw, _("drag to change exposure,\ndoubleclick resets\nctrl+scroll to change display height"));
+  gtk_widget_set_tooltip_text(d->scope_draw, _("ctrl+scroll to change display height"));
 
   // a row of control buttons
   d->button_box = gtk_button_box_new(GTK_ORIENTATION_HORIZONTAL);
@@ -1207,6 +1409,7 @@ void gui_cleanup(dt_lib_module_t *self)
   dt_free_align(d->waveform_linear);
   dt_free_align(d->waveform_display);
   dt_free_align(d->waveform_8bit);
+  dt_free_align(d->vectorscope_alpha);
   dt_pthread_mutex_destroy(&d->lock);
 
   g_free(self->data);
