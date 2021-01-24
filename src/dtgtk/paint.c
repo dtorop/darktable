@@ -1066,7 +1066,7 @@ void dtgtk_cairo_paint_vectorscope(cairo_t *cr, gint x, gint y, gint w, gint h, 
 {
   PREAMBLE(1, 0, 0)
 
-  // FIXME: improve icon
+  // FIXME: improve icon -- perhaps a gradient pattern to soften the edge of a drawn mask?
   cairo_move_to(cr, 0.1, 0.25);
   cairo_curve_to(cr, 0.2, 0.1, 0.5, 0.25, 0.75, 0.6);
   cairo_curve_to(cr, 0.7, 0.8, 0.1, 0.6, 0.1, 0.25);

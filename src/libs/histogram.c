@@ -29,6 +29,7 @@
 #include "control/control.h"
 #include "develop/develop.h"
 #include "dtgtk/button.h"
+#include "dtgtk/togglebutton.h"
 #include "gui/accelerators.h"
 #include "gui/draw.h"
 #include "gui/gtk.h"
@@ -88,9 +89,9 @@ typedef struct dt_lib_histogram_t
   dt_pthread_mutex_t lock;
   GtkWidget *scope_draw;               // GtkDrawingArea -- scope, scale, and draggable overlays
   GtkWidget *button_box;               // GtkButtonBox -- contains scope control buttons
-  GtkWidget *scope_type_button;        // GtkToggleButton -- histogram/waveform control
-  GtkWidget *histogram_scale_button;   // GtkToggleButton -- logarithmic/linear control
-  GtkWidget *waveform_type_button;     // GtkToggleButton -- overlaid/parade control
+  GtkWidget *scope_type_button;        // GtkButton -- histogram/waveform control
+  GtkWidget *histogram_scale_button;   // GtkButton -- logarithmic/linear control
+  GtkWidget *waveform_type_button;     // GtkButton -- overlaid/parade control
   GtkWidget *mode_stack;               // GtkStack -- contains scope-dependent control buttons
   // drag to change parameters
   gboolean dragging;
@@ -593,7 +594,7 @@ static void _draw_vectorscope_lines(cairo_t *cr, int width, int height, int scal
   cairo_restore(cr);
 }
 
-// FIXME: have different drawable for each scope in a stack -- simplifies this function from being a swath of conditionals -- then esentially draw callbacks _lib_histogram_draw_waveform and _lib_histogram_draw_rgb_parade
+// FIXME: have different drawable for each scope in a stack -- simplifies this function from being a swath of conditionals -- then esentially draw callbacks _lib_histogram_draw_waveform, _lib_histogram_draw_rgb_parade, etc.
 // FIXME: if exposure change regions are separate widgets, then we could have a menu to swap in different overlay widgets (sort of like basic adjustments) to adjust other things about the image, e.g. tone equalizer, color balance, etc.
 static gboolean _drawable_draw_callback(GtkWidget *widget, cairo_t *crf, gpointer user_data)
 {
@@ -863,108 +864,104 @@ static gboolean _drawable_leave_notify_callback(GtkWidget *widget, GdkEventCross
   return FALSE;
 }
 
-// FIXME: make this a straight button which changes state, rather than a toggle
-static void _scope_type_toggle(GtkWidget *button, dt_lib_histogram_t *d)
+static void _scope_type_update(GtkWidget *button, dt_lib_histogram_t *d)
 {
-  // FIXME: make this a combobox -- simplifies this code and reflects what it really is doing, and adds room for other scopes (e.g. vectorscope)
-  d->scope_type = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(button)) ?
-    DT_LIB_HISTOGRAM_SCOPE_HISTOGRAM : DT_LIB_HISTOGRAM_SCOPE_WAVEFORM;
-  // FIXME: hack
-  d->scope_type = DT_LIB_HISTOGRAM_SCOPE_VECTORSCOPE;
   switch(d->scope_type)
   {
     case DT_LIB_HISTOGRAM_SCOPE_HISTOGRAM:
       gtk_widget_set_tooltip_text(button, _("set mode to waveform"));
-      dtgtk_togglebutton_set_paint(DTGTK_TOGGLEBUTTON(button),
-                                   dtgtk_cairo_paint_histogram_scope, CPF_NONE, NULL);
+      dtgtk_button_set_paint(DTGTK_BUTTON(button), dtgtk_cairo_paint_histogram_scope, CPF_NONE, NULL);
       gtk_stack_set_visible_child_name(GTK_STACK(d->mode_stack), "histogram");
       break;
     case DT_LIB_HISTOGRAM_SCOPE_WAVEFORM:
       gtk_widget_set_tooltip_text(button, _("set mode to vectorscope"));
-      dtgtk_togglebutton_set_paint(DTGTK_TOGGLEBUTTON(button),
-                                   dtgtk_cairo_paint_waveform_scope, CPF_NONE, NULL);
+      dtgtk_button_set_paint(DTGTK_BUTTON(button), dtgtk_cairo_paint_waveform_scope, CPF_NONE, NULL);
       gtk_stack_set_visible_child_name(GTK_STACK(d->mode_stack), "waveform");
       break;
     case DT_LIB_HISTOGRAM_SCOPE_VECTORSCOPE:
       gtk_widget_set_tooltip_text(button, _("set mode to histogram"));
-      dtgtk_togglebutton_set_paint(DTGTK_TOGGLEBUTTON(button),
-                                   dtgtk_cairo_paint_vectorscope, CPF_NONE, NULL);
-      // FIXME: make all the other buttons disappear
-      gtk_stack_set_visible_child_name(GTK_STACK(d->mode_stack), "waveform");
+      dtgtk_button_set_paint(DTGTK_BUTTON(button), dtgtk_cairo_paint_vectorscope, CPF_NONE, NULL);
+      // FIXME: make the color channel buttons not be sensitive
+      gtk_stack_set_visible_child_name(GTK_STACK(d->mode_stack), "vectorscope");
       break;
     case DT_LIB_HISTOGRAM_SCOPE_N:
       g_assert_not_reached();
   }
-  dt_conf_set_string("plugins/darkroom/histogram/mode",
-                     dt_lib_histogram_scope_type_names[d->scope_type]);
+}
+
+static void _scope_type_clicked(GtkWidget *button, dt_lib_histogram_t *d)
+{
+  // NOTE: this isn't a "real" button but more of a tri-state toggle button
+  d->scope_type = (d->scope_type + 1) % DT_LIB_HISTOGRAM_SCOPE_N;
+  dt_conf_set_string("plugins/darkroom/histogram/mode", dt_lib_histogram_scope_type_names[d->scope_type]);
+  _scope_type_update(button, d);
+
+  // redraw scope now, even if it isn't up to date, so that there is
+  // immediate feedback on button press even though there will be a
+  // lag to process the scope data
+  dt_control_queue_redraw_widget(d->scope_draw);
 
   // generate data for changed scope and trigger widget redraw
   const dt_view_t *cv = dt_view_manager_get_current_view(darktable.view_manager);
-  if(cv)  // this may be called on init, before in a view
-  {
-    // redraw scope now, even if it isn't up to date, so that there is
-    // immediate feedback on button press even though there will be a
-    // lag to process the scope data
-    dt_control_queue_redraw_widget(d->scope_draw);
-    const dt_view_type_flags_t view_type = cv->view(cv);
-    if(view_type == DT_VIEW_DARKROOM)
-      dt_dev_process_preview(darktable.develop);
-    else
-      dt_control_queue_redraw_center();
-  }
+  if(cv->view(cv) == DT_VIEW_DARKROOM)
+    dt_dev_process_preview(darktable.develop);
+  else
+    dt_control_queue_redraw_center();
 }
 
-static void _histogram_scale_toggle(GtkWidget *button, dt_lib_histogram_t *d)
+static void _histogram_scale_update(GtkWidget *button, dt_lib_histogram_t *d)
 {
-  // FIXME: make this a combobox -- simplifies this code and reflects what it really is doing
-  d->histogram_scale = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(button)) ?
-    DT_LIB_HISTOGRAM_LOGARITHMIC : DT_LIB_HISTOGRAM_LINEAR;
   switch(d->histogram_scale)
   {
     case DT_LIB_HISTOGRAM_LOGARITHMIC:
       gtk_widget_set_tooltip_text(button, _("set scale to linear"));
-      dtgtk_togglebutton_set_paint(DTGTK_TOGGLEBUTTON(button),
-                                   dtgtk_cairo_paint_logarithmic_scale, CPF_NONE, NULL);
+      dtgtk_button_set_paint(DTGTK_BUTTON(button), dtgtk_cairo_paint_logarithmic_scale, CPF_NONE, NULL);
       break;
     case DT_LIB_HISTOGRAM_LINEAR:
       gtk_widget_set_tooltip_text(button, _("set scale to logarithmic"));
-      dtgtk_togglebutton_set_paint(DTGTK_TOGGLEBUTTON(button),
-                                   dtgtk_cairo_paint_linear_scale, CPF_NONE, NULL);
+      dtgtk_button_set_paint(DTGTK_BUTTON(button), dtgtk_cairo_paint_linear_scale, CPF_NONE, NULL);
       break;
-    default:
+    case DT_LIB_HISTOGRAM_N:
       g_assert_not_reached();
   }
-  dt_conf_set_string("plugins/darkroom/histogram/histogram",
-                     dt_lib_histogram_histogram_scale_names[d->histogram_scale]);
   // FIXME: this should really redraw current iop if its background is a histogram (check request_histogram)
   darktable.lib->proxy.histogram.is_linear = d->histogram_scale == DT_LIB_HISTOGRAM_LINEAR;
+}
+
+static void _histogram_scale_clicked(GtkWidget *button, dt_lib_histogram_t *d)
+{
+  d->histogram_scale = (d->histogram_scale + 1) % DT_LIB_HISTOGRAM_N;
+  dt_conf_set_string("plugins/darkroom/histogram/histogram",
+                     dt_lib_histogram_histogram_scale_names[d->histogram_scale]);
+  _histogram_scale_update(button, d);
   dt_control_queue_redraw_widget(d->scope_draw);
 }
 
-static void _waveform_type_toggle(GtkWidget *button, dt_lib_histogram_t *d)
+static void _waveform_type_update(GtkWidget *button, dt_lib_histogram_t *d)
 {
-  // FIXME: make this a combobox -- simplifies this code and reflects what it really is doing
   // FIXME: add other waveform types -- RGB parade overlaid top-to-bottom rather than left to right, possibly waveform calculated sideways (another button?)
-  d->waveform_type = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(button)) ?
-    DT_LIB_HISTOGRAM_WAVEFORM_OVERLAID : DT_LIB_HISTOGRAM_WAVEFORM_PARADE;
   switch(d->waveform_type)
   {
     case DT_LIB_HISTOGRAM_WAVEFORM_OVERLAID:
       gtk_widget_set_tooltip_text(button, _("set mode to RGB parade"));
-      dtgtk_togglebutton_set_paint(DTGTK_TOGGLEBUTTON(button),
-                                   dtgtk_cairo_paint_waveform_overlaid, CPF_NONE, NULL);
+      dtgtk_button_set_paint(DTGTK_BUTTON(button), dtgtk_cairo_paint_waveform_overlaid, CPF_NONE, NULL);
       break;
     case DT_LIB_HISTOGRAM_WAVEFORM_PARADE:
       gtk_widget_set_tooltip_text(button, _("set mode to waveform"));
-      dtgtk_togglebutton_set_paint(DTGTK_TOGGLEBUTTON(button),
-                                   dtgtk_cairo_paint_rgb_parade, CPF_NONE, NULL);
+      dtgtk_button_set_paint(DTGTK_BUTTON(button), dtgtk_cairo_paint_rgb_parade, CPF_NONE, NULL);
       // FIXME: in RGB parade mode, hide the buttons to select channel, which are fairly senseless in this context
       break;
-    default:
+    case DT_LIB_HISTOGRAM_WAVEFORM_N:
       g_assert_not_reached();
   }
+}
+
+static void _waveform_type_clicked(GtkWidget *button, dt_lib_histogram_t *d)
+{
+  d->waveform_type = (d->waveform_type + 1) % DT_LIB_HISTOGRAM_WAVEFORM_N;
   dt_conf_set_string("plugins/darkroom/histogram/waveform",
                      dt_lib_histogram_waveform_type_names[d->waveform_type]);
+  _waveform_type_update(button, d);
   dt_control_queue_redraw_widget(d->scope_draw);
 }
 
@@ -1050,39 +1047,45 @@ static gboolean _lib_histogram_cycle_mode_callback(GtkAccelGroup *accel_group,
   dt_lib_histogram_t *d = (dt_lib_histogram_t *)self->data;
 
   // The cycle order is Hist log -> lin -> waveform -> parade -> vectorscope (update logic on more scopes)
+  // FIXME: this potentially sets up multiple idle actions to queue multiple redraws of the drawable -- a good idea? -- tradeoff is hthat conf is updated appropriately as modes cycle
+  // FIXME: When switch modes, there is currently a hack to turn off the highlight and turn the cursor back to pointer, as we don't know what/if the new highlight is going to be. Right solution would be to have a function which doesn't take an event but cursor x/y which is called on shortcut mode switch or motion. Really right solution is probably separate widgets for the drag areas which generate enter/leave events.
   switch(d->scope_type)
   {
     case DT_LIB_HISTOGRAM_SCOPE_HISTOGRAM:
       if(d->histogram_scale == DT_LIB_HISTOGRAM_LOGARITHMIC)
       {
-        gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(d->histogram_scale_button), FALSE);
+        _histogram_scale_clicked(d->histogram_scale_button, d);
       }
       else
       {
-        // cancel dragging, as the draggable areas will have changed
         d->dragging = FALSE;
-        gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(d->histogram_scale_button), TRUE);
-        gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(d->waveform_type_button), TRUE);
-        gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(d->scope_type_button), FALSE);
+        if(d->waveform_type != DT_LIB_HISTOGRAM_WAVEFORM_OVERLAID)
+          _waveform_type_clicked(d->waveform_type_button, d);
+        _scope_type_clicked(d->scope_type_button, d);
+        _histogram_scale_clicked(d->histogram_scale_button, d);
+        d->highlight = DT_LIB_HISTOGRAM_HIGHLIGHT_NONE;
+        dt_control_change_cursor(GDK_LEFT_PTR);
       }
       break;
     case DT_LIB_HISTOGRAM_SCOPE_WAVEFORM:
       if(d->waveform_type == DT_LIB_HISTOGRAM_WAVEFORM_OVERLAID)
       {
-        gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(d->waveform_type_button), FALSE);
+        _waveform_type_clicked(d->waveform_type_button, d);
       }
       else
       {
-        // cancel dragging, as the draggable areas will have changed
         d->dragging = FALSE;
-        // FIXME: jump to vectorscope
-        gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(d->histogram_scale_button), TRUE);
-        gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(d->waveform_type_button), TRUE);
-        gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(d->scope_type_button), TRUE);
+        _scope_type_clicked(d->scope_type_button, d);
+        _waveform_type_clicked(d->waveform_type_button, d);
+        d->highlight = DT_LIB_HISTOGRAM_HIGHLIGHT_NONE;
+        dt_control_change_cursor(GDK_LEFT_PTR);
       }
       break;
     case DT_LIB_HISTOGRAM_SCOPE_VECTORSCOPE:
-      // FIXME: handle this
+      if(d->histogram_scale != DT_LIB_HISTOGRAM_LOGARITHMIC)
+        _histogram_scale_clicked(d->histogram_scale_button, d);
+      // don't need to cancel dragging or lose highlight so long as vectorscope isn't draggable
+      _scope_type_clicked(d->scope_type_button, d);
       break;
     case DT_LIB_HISTOGRAM_SCOPE_N:
       g_assert_not_reached();
@@ -1097,10 +1100,10 @@ static gboolean _lib_histogram_change_mode_callback(GtkAccelGroup *accel_group,
 {
   dt_lib_module_t *self = (dt_lib_module_t *)user_data;
   dt_lib_histogram_t *d = (dt_lib_histogram_t *)self->data;
-  // cancel dragging, as the draggable areas will have changed
   d->dragging = FALSE;
-  gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(d->scope_type_button),
-                               d->scope_type == DT_LIB_HISTOGRAM_SCOPE_WAVEFORM);
+  d->highlight = DT_LIB_HISTOGRAM_HIGHLIGHT_NONE;
+  dt_control_change_cursor(GDK_LEFT_PTR);
+  _scope_type_clicked(d->scope_type_button, d);
   return TRUE;
 }
 
@@ -1114,16 +1117,13 @@ static gboolean _lib_histogram_change_type_callback(GtkAccelGroup *accel_group,
   switch(d->scope_type)
   {
     case DT_LIB_HISTOGRAM_SCOPE_HISTOGRAM:
-      gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(d->histogram_scale_button),
-                                   d->histogram_scale == DT_LIB_HISTOGRAM_LINEAR);
+      _histogram_scale_clicked(d->histogram_scale_button, d);
       break;
     case DT_LIB_HISTOGRAM_SCOPE_WAVEFORM:
-      // FIXME: switch to vectorscope
-      gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(d->waveform_type_button),
-                                   d->waveform_type == DT_LIB_HISTOGRAM_WAVEFORM_PARADE);
+      _waveform_type_clicked(d->waveform_type_button, d);
       break;
     case DT_LIB_HISTOGRAM_SCOPE_VECTORSCOPE:
-      // FIXME: handle
+      // no-op -- currently only one vectorscope type
       break;
     case DT_LIB_HISTOGRAM_SCOPE_N:
       g_assert_not_reached();
@@ -1270,47 +1270,41 @@ void gui_init(dt_lib_module_t *self)
 
   // FIXME: should histogram/waveform each be its own widget, and a GtkStack to switch between them?
 
-  // note that are calling toggle callback by hand for each button as
-  // a hack to finish init -- if we don't flip the tooltip text (and
-  // icon) on toggle, this will be unnecessary
-
-  // FIXME: can style these buttons as flat -- at least the non-channel ones -- to be closer to darktable defaults?
   // scope type
   // FIXME: this should really be a combobox to allow for more types and not to have to swap the icon on button down
-  d->scope_type_button =
-    dtgtk_togglebutton_new(dtgtk_cairo_paint_histogram_scope, CPF_NONE, NULL);
-  gtk_widget_set_name(d->scope_type_button, "scope-type-button");
-  gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(d->scope_type_button),
-                               d->scope_type == DT_LIB_HISTOGRAM_SCOPE_HISTOGRAM);
+  d->scope_type_button = dtgtk_button_new(dtgtk_cairo_paint_histogram_scope, CPF_NONE, NULL);
   gtk_box_pack_start(GTK_BOX(d->button_box), d->scope_type_button, FALSE, FALSE, 0);
 
-  // scope mode
+  // stack of buttons for each scope
   d->mode_stack = gtk_stack_new();
+  gtk_stack_set_homogeneous(GTK_STACK(d->mode_stack), TRUE);
 
-  // histogram scale
-  d->histogram_scale_button =
-    dtgtk_togglebutton_new(dtgtk_cairo_paint_logarithmic_scale, CPF_NONE, NULL);
-  gtk_widget_set_name(d->histogram_scale_button, "histogram-scale-button");
-  gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(d->histogram_scale_button),
-                               d->histogram_scale == DT_LIB_HISTOGRAM_LOGARITHMIC);
-  _histogram_scale_toggle(d->histogram_scale_button, d);
-  g_signal_connect(G_OBJECT(d->histogram_scale_button), "toggled", G_CALLBACK(_histogram_scale_toggle), d);
+  // histogram scale (linear/logarithmic)
+  d->histogram_scale_button = dtgtk_button_new(dtgtk_cairo_paint_logarithmic_scale, CPF_NONE, NULL);
+  // FIXME: can drop these widget names?
+  _histogram_scale_update(d->histogram_scale_button, d);
+  g_signal_connect(G_OBJECT(d->histogram_scale_button), "clicked", G_CALLBACK(_histogram_scale_clicked), d);
+  // FIXME: can name the stack via strings in dt_lib_histogram_scope_type_names[]?
   gtk_stack_add_named(GTK_STACK(d->mode_stack), d->histogram_scale_button, "histogram");
 
-  // histogram scale
-  d->waveform_type_button =
-    dtgtk_togglebutton_new(dtgtk_cairo_paint_waveform_overlaid, CPF_NONE, NULL);
-  gtk_widget_set_name(d->waveform_type_button, "waveform-type-button");
-  gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(d->waveform_type_button),
-                               d->waveform_type == DT_LIB_HISTOGRAM_WAVEFORM_OVERLAID);
-  _waveform_type_toggle(d->waveform_type_button, d);
-  g_signal_connect(G_OBJECT(d->waveform_type_button), "toggled", G_CALLBACK(_waveform_type_toggle), d);
+  // waveform type ("regular" waveform or rgb parade)
+  d->waveform_type_button = dtgtk_button_new(dtgtk_cairo_paint_waveform_overlaid, CPF_NONE, NULL);
+  _waveform_type_update(d->waveform_type_button, d);
+  g_signal_connect(G_OBJECT(d->waveform_type_button), "clicked", G_CALLBACK(_waveform_type_clicked), d);
   gtk_stack_add_named(GTK_STACK(d->mode_stack), d->waveform_type_button, "waveform");
 
-  // toggle sets mode_stack based on scope type, hence must be run after mode_stack is set up
-  _scope_type_toggle(d->scope_type_button, d);
-  g_signal_connect(G_OBJECT(d->scope_type_button), "toggled", G_CALLBACK(_scope_type_toggle), d);
+  // vectorscope -- currently noop
+  // FIXME: make a homogenous stack for each scope type (histogram, waveform, vectorscope), each a button box of widgets, including the first widget which changes the scope type -- then each stack has a first button with a differnt icon but the same callback to rotate to the next stack position
+  GtkWidget *noop = gtk_drawing_area_new();
+  gtk_stack_add_named(GTK_STACK(d->mode_stack), noop, "vectorscope");
+
+  // this sets mode_stack based on scope type, hence must be run after mode_stack is set up
+  // FIXME: if set up mode_stack as 3 button boxes before adding buttons, can do this earlier
+  _scope_type_update(d->scope_type_button, d);
+  g_signal_connect(G_OBJECT(d->scope_type_button), "clicked", G_CALLBACK(_scope_type_clicked), d);
   gtk_box_pack_start(GTK_BOX(d->button_box), d->mode_stack, FALSE, FALSE, 0);
+
+  // FIXME: call gtk_widget_set_senitive() to FALSE on channels when in RGB parade or vectorscope
 
   GtkWidget *button;
   // red channel on/off
@@ -1337,6 +1331,8 @@ void gui_init(dt_lib_module_t *self)
   _blue_channel_toggle(button, d);
   g_signal_connect(G_OBJECT(button), "toggled", G_CALLBACK(_blue_channel_toggle), d);
   gtk_box_pack_start(GTK_BOX(d->button_box), button, FALSE, FALSE, 0);
+
+  // FIXME: add a brightness control (via GtkScaleButton?)
 
   // assemble the widgets
 
