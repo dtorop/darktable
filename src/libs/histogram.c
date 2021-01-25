@@ -287,7 +287,7 @@ static void _lib_histogram_process_vectorscope(dt_lib_histogram_t *d, const floa
   // FIXME: align? make [4]? figure out in code?
   float primaries_rgb[3][3] = { {1.0, 0.0, 0.0}, {0.0, 1.0, 0.0}, {0.0, 0.0, 1.0} };
   float max_diam = 0.0f;
-  for(int k=0; k<3; ++k)
+  for(int k=0; k<3; k++)
   {
     // FIXME: DT_ALIGNED_PIXEL? make [4]?
     float XYZ[3];
@@ -302,6 +302,12 @@ static void _lib_histogram_process_vectorscope(dt_lib_histogram_t *d, const floa
     max_diam = MAX(max_diam, fabsf(Jab[2]));
     d->hist_profile_primaries[k][0] = Jab[1];
     d->hist_profile_primaries[k][1] = Jab[2];
+  }
+  // scale primaries for display
+  for(int k=0; k<3; k++)
+  {
+    d->hist_profile_primaries[k][0] /= max_diam;
+    d->hist_profile_primaries[k][1] /= max_diam;
   }
   // FIXME: is this an optimization or unneeded code? should max_diam be const?
   const float max_radius = max_diam / 2.0f;
@@ -548,26 +554,38 @@ static void _lib_histogram_draw_rgb_parade(dt_lib_histogram_t *d, cairo_t *cr, i
 }
 
 static void _lib_histogram_draw_vectorscope(dt_lib_histogram_t *d, cairo_t *cr,
-                                            int width, int height, int scale)
+                                            int width, int height)
 {
   // FIXME: bail if vectorscope not calculated...
   const int vs_diameter = d->vectorscope_diameter;
   const int min_size = MIN(width, height);
 
   cairo_save(cr);
+  cairo_set_operator(cr, CAIRO_OPERATOR_ADD);
   // FIXME: should draw with more transparency, as w/other scopes?
   cairo_translate(cr, width / 2., height / 2.);
+
   // FIXME: which way to orient graph? and can do this when generate the graph?
   // traditional vectorscope is oriented with x-axis Y -> B, y-axis C -> R
   // but CIE 1976 UCS is graphed x-axis as u (G -> M), y-axis as v (B -> Y)
   // FIXME: for hiding 2nd axis, aL view, lightness on y-axis should be flipped
   //cairo_rotate(cr, M_PI * -0.5);
-  cairo_scale(cr, scale, scale);
+
+  // graticule: histogram profile primaries
+  for(int k=0; k<3; k++)
+  {
+    set_color(cr, darktable.bauhaus->graph_primaries[k]);
+    cairo_arc(cr, d->hist_profile_primaries[k][0] * min_size * 0.5,
+              d->hist_profile_primaries[k][1] * min_size * 0.5, min_size/30.0, 0., M_PI * 2.);
+    cairo_fill(cr);
+  }
+
+  // the vectorscope graph itself
+
   cairo_translate(cr, min_size * -0.5, min_size * -0.5);
   // FIXME: use ppd?
   // FIXME: do need to cast to double if use ppd?
   cairo_scale(cr, darktable.gui->ppd*(double)min_size/vs_diameter, darktable.gui->ppd*(double)min_size/vs_diameter);
-  cairo_set_operator(cr, CAIRO_OPERATOR_ADD);
 
   cairo_set_source_rgb(cr, 1., 1., 1.);
   cairo_surface_t *alpha
@@ -712,7 +730,7 @@ static gboolean _drawable_draw_callback(GtkWidget *widget, cairo_t *crf, gpointe
         break;
       case DT_LIB_HISTOGRAM_SCOPE_VECTORSCOPE:
         // FIXME: have some way to bail out if the vectorscope data isn't ready?
-        _lib_histogram_draw_vectorscope(d, cr, width, height, 1);
+        _lib_histogram_draw_vectorscope(d, cr, width, height);
         break;
       case DT_LIB_HISTOGRAM_SCOPE_N:
         g_assert_not_reached();
