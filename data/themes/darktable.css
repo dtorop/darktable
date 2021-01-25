@@ -804,7 +804,7 @@ overshoot.right
 #main-histogram #dt-button:disabled,
 #main-histogram .toggle:disabled
 {
-  opacity: 0;
+  opacity: 0.2;
 }
 
 /*------------------

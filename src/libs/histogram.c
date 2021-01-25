@@ -344,6 +344,7 @@ static void _lib_histogram_process_vectorscope(dt_lib_histogram_t *d, const floa
     if(out_x >= 0 && out_x < vs_diameter-1 && out_y >= 0 && out_y <= vs_diameter-1)
     {
       int *const restrict bin_out = __builtin_assume_aligned(binned + out_y * vs_diameter + out_x, 8);
+      // FIXME: make a "false color" variant view
       (*bin_out)++;
     }
   }
@@ -361,7 +362,7 @@ static void _lib_histogram_process_vectorscope(dt_lib_histogram_t *d, const floa
     for(int out_x = 0; out_x < vs_diameter; out_x++)
     {
       const int c = binned[vs_diameter * out_y + out_x];
-      // FIXME: use cache
+      // FIXME: use cache or linear interpolate from pre-calculated
       out_alpha[out_x] = CLAMP(powf(c * scale, gamma) * 255.0f, 0, 255);
     }
   }
@@ -574,15 +575,19 @@ static void _lib_histogram_draw_vectorscope(dt_lib_histogram_t *d, cairo_t *cr,
   //cairo_rotate(cr, M_PI * -0.5);
 
   // graticule: histogram profile primaries
+  // FIXME: also add dots for input/work/output profiles
+  // FIXME: this should really be drawn in _draw_vectorscope_lines() but then would need to calculate them on display rather than on process -- in case process hasn't run yet?
   for(int k=0; k<3; k++)
   {
     set_color(cr, darktable.bauhaus->graph_primaries[k]);
+    // FIXME: tune dot sizes
     cairo_arc(cr, d->hist_profile_primaries[k][0] * min_size * 0.5,
               d->hist_profile_primaries[k][1] * min_size * 0.5, min_size/30.0, 0., M_PI * 2.);
     cairo_fill(cr);
   }
 
   // the vectorscope graph itself
+  // FIXME: the vectorscope hard-clips on the left/right for huge #'s -- instead could catch configure event, size buffers to aspect ratio, and then never clip -- or simply in calc decrease diameter by ~ 25% then increase correspondingly here, so less likely to clip -- and/or darw some sort of gradient mask over the edges so that they fade out
 
   cairo_translate(cr, min_size * -0.5, min_size * -0.5);
   // FIXME: use ppd?
@@ -619,7 +624,7 @@ static void _draw_vectorscope_lines(cairo_t *cr, int width, int height, int scal
   // scale-independent line width looks better
   cairo_set_line_width(cr, cairo_get_line_width(cr) / scale);
 
-  // FIXME: are these meaningful?
+  // FIXME: are these meaningful? -- drop the circles
   // concentric circles
   cairo_arc(cr, 0., 0., min_size*0.5, 0., M_PI * 2.);
   cairo_stroke(cr);
@@ -985,6 +990,10 @@ static void _scope_type_update(const dt_lib_histogram_t *d)
       gtk_widget_set_tooltip_text(d->scope_type_button, _("set mode to histogram"));
       dtgtk_button_set_paint(DTGTK_BUTTON(d->scope_type_button),
                              dtgtk_cairo_paint_vectorscope, CPF_NONE, NULL);
+      // FIXME: needed? will tooltip text display on button if it's not sensitive?
+      gtk_widget_set_tooltip_text(d->scope_view_button, NULL);
+      dtgtk_button_set_paint(DTGTK_BUTTON(d->scope_view_button),
+                             dtgtk_cairo_paint_empty, CPF_NONE, NULL);
       gtk_widget_set_sensitive(d->scope_view_button, FALSE);
       gtk_widget_set_sensitive(d->red_channel_button, FALSE);
       gtk_widget_set_sensitive(d->green_channel_button, FALSE);
