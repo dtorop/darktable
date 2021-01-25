@@ -800,6 +800,13 @@ overshoot.right
   border-color: alpha(@button_checked_fg, 0.33);    /* just set a really tight border to better check quickly active state*/
 }
 
+
+#main-histogram #dt-button:disabled,
+#main-histogram .toggle:disabled
+{
+  opacity: 0;
+}
+
 /*------------------
   - Dialog windows -
   ------------------*/
