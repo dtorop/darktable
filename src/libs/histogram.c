@@ -86,6 +86,8 @@ typedef struct dt_lib_histogram_t
   int waveform_width, waveform_height, waveform_max_width;
   uint8_t *vectorscope_alpha;
   int vectorscope_diameter, vectorscope_alpha_stride;
+  // FIXME: DT_ALIGNED_PIXEL? make [4]?
+  float hist_profile_primaries[3][2];
   dt_pthread_mutex_t lock;
   GtkWidget *scope_draw;               // GtkDrawingArea -- scope, scale, and draggable overlays
   GtkWidget *button_box;               // GtkButtonBox -- contains scope control buttons
@@ -280,6 +282,30 @@ static void _lib_histogram_process_vectorscope(dt_lib_histogram_t *d, const floa
   if(!histogram_profile) return;
   // FIXME: as in colorbalancergb, repack matrix for SEE?
 
+  // FIXME: can get primaries via transforming R/G/B to XYZ or do need to look directly in profile for this (via querying LCMS)
+  // FIXME: test all this work by making a LCMS path and comparing output -- or at least against XYZ values in profile
+  // FIXME: align? make [4]? figure out in code?
+  float primaries_rgb[3][3] = { {1.0, 0.0, 0.0}, {0.0, 1.0, 0.0}, {0.0, 0.0, 1.0} };
+  float max_diam = 0.0f;
+  for(int k=0; k<3; ++k)
+  {
+    // FIXME: DT_ALIGNED_PIXEL? make [4]?
+    float XYZ[3];
+    // FIXME: make [3]?
+    float DT_ALIGNED_PIXEL Jab[4];
+    dt_ioppr_rgb_matrix_to_xyz(primaries_rgb[k], XYZ,
+                               histogram_profile->matrix_in, histogram_profile->lut_in,
+                               histogram_profile->unbounded_coeffs_in, histogram_profile->lutsize,
+                               histogram_profile->nonlinearlut);
+    dt_XYZ_2_JzAzBz(XYZ, Jab);
+    max_diam = MAX(max_diam, fabsf(Jab[1]));
+    max_diam = MAX(max_diam, fabsf(Jab[2]));
+    d->hist_profile_primaries[k][0] = Jab[1];
+    d->hist_profile_primaries[k][1] = Jab[2];
+  }
+  // FIXME: is this an optimization or unneeded code? should max_diam be const?
+  const float max_radius = max_diam / 2.0f;
+
   // FIXME: pre-allocate?
   int *const restrict binned = dt_alloc_align(64, vs_diameter * vs_diameter * sizeof(int));
   memset(binned, 0, vs_diameter * vs_diameter * sizeof(int));
@@ -294,6 +320,7 @@ static void _lib_histogram_process_vectorscope(dt_lib_histogram_t *d, const floa
 
     // FIXME: DT_ALIGNED_PIXEL? make [4]?
     float XYZ[3];
+    // FIXME: don't need to init this!?
     float DT_ALIGNED_PIXEL Jab[4] = { 0.f };
 
     // FIXME: optimize
@@ -306,8 +333,8 @@ static void _lib_histogram_process_vectorscope(dt_lib_histogram_t *d, const floa
 
     // FIXME: max/min based on the histogram profile primaries as max dimensions
     // FIXME: leave out values that are > than max (if that is possible...?) rather than clipping
-    const int out_x = CLAMP((int)(vs_diameter * (Jab[1] + 0.02f) / 0.04f), 0, vs_diameter-1);
-    const int out_y = CLAMP((int)(vs_diameter * (Jab[2] + 0.02f) / 0.04f), 0, vs_diameter-1);
+    const int out_x = CLAMP((int)(vs_diameter * (Jab[1] + max_radius) / max_diam), 0, vs_diameter-1);
+    const int out_y = CLAMP((int)(vs_diameter * (Jab[2] + max_radius) / max_diam), 0, vs_diameter-1);
 
     int *const restrict bin_out = __builtin_assume_aligned(binned + out_y * vs_diameter + out_x, 8);
     (*bin_out)++;
