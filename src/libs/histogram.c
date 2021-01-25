@@ -298,8 +298,7 @@ static void _lib_histogram_process_vectorscope(dt_lib_histogram_t *d, const floa
                                histogram_profile->unbounded_coeffs_in, histogram_profile->lutsize,
                                histogram_profile->nonlinearlut);
     dt_XYZ_2_JzAzBz(XYZ, Jab);
-    max_diam = MAX(max_diam, fabsf(Jab[1]));
-    max_diam = MAX(max_diam, fabsf(Jab[2]));
+    max_diam = MAX(max_diam, hypotf(Jab[1], Jab[2]));
     d->hist_profile_primaries[k][0] = Jab[1];
     d->hist_profile_primaries[k][1] = Jab[2];
   }
@@ -337,13 +336,16 @@ static void _lib_histogram_process_vectorscope(dt_lib_histogram_t *d, const floa
     // FIXME: we never use the J value -- don't calculate it?
     dt_XYZ_2_JzAzBz(XYZ, Jab);
 
-    // FIXME: max/min based on the histogram profile primaries as max dimensions
-    // FIXME: leave out values that are > than max (if that is possible...?) rather than clipping
-    const int out_x = CLAMP((int)(vs_diameter * (Jab[1] + max_radius) / max_diam), 0, vs_diameter-1);
-    const int out_y = CLAMP((int)(vs_diameter * (Jab[2] + max_radius) / max_diam), 0, vs_diameter-1);
+    const int out_x = vs_diameter * (Jab[1] + max_radius) / max_diam;
+    const int out_y = vs_diameter * (Jab[2] + max_radius) / max_diam;
 
-    int *const restrict bin_out = __builtin_assume_aligned(binned + out_y * vs_diameter + out_x, 8);
-    (*bin_out)++;
+    // clip (not clamp) any out-of-scale values, so there aren't light edges
+    // FIXME: should the output buffer be the dimensions of the current drawable widget -- rather than square -- so it doesn't lose data to the sides?
+    if(out_x >= 0 && out_x < vs_diameter-1 && out_y >= 0 && out_y <= vs_diameter-1)
+    {
+      int *const restrict bin_out = __builtin_assume_aligned(binned + out_y * vs_diameter + out_x, 8);
+      (*bin_out)++;
+    }
   }
 
   // FIXME: do same gamma trick here as in waveform
