@@ -314,8 +314,6 @@ static void _lib_histogram_process_vectorscope(dt_lib_histogram_t *d, const floa
     d->vectorscope_graticule[k][0] /= max_diam;
     d->vectorscope_graticule[k][1] /= max_diam;
   }
-  // FIXME: is this an optimization or unneeded code? should max_diam be const?
-  const float max_radius = max_diam / 2.0f;
 
   // FIXME: pre-allocate?
   float *const restrict binned = dt_iop_image_alloc(vs_diameter, vs_diameter, 1);
@@ -329,7 +327,7 @@ static void _lib_histogram_process_vectorscope(dt_lib_histogram_t *d, const floa
   // count into bins
 #if defined(_OPENMP)
 #pragma omp parallel for default(none) \
-  dt_omp_firstprivate(in, binned, nfloats, histogram_profile, vs_diameter, max_radius, scale) \
+  dt_omp_firstprivate(in, binned, nfloats, histogram_profile, vs_diameter, max_diam, scale) \
   schedule(static)
 #endif
   for(size_t k = 0; k < nfloats; k += 4)
@@ -349,8 +347,8 @@ static void _lib_histogram_process_vectorscope(dt_lib_histogram_t *d, const floa
     dt_XYZ_D50_2_XYZ_D65(XYZ_D50, XYZ_D65);
     dt_XYZ_2_JzAzBz(XYZ_D65, JzAzBz);
 
-    const int out_x = vs_diameter * (JzAzBz[1] + max_radius) / (2.0f * max_radius);
-    const int out_y = vs_diameter * (JzAzBz[2] + max_radius) / (2.0f * max_radius);
+    const int out_x = vs_diameter * (JzAzBz[1] / max_diam + 0.5f);
+    const int out_y = vs_diameter * (JzAzBz[2] / max_diam + 0.5f);
 
     // clip (not clamp) any out-of-scale values, so there aren't light edges
     // FIXME: should the output buffer be the dimensions of the current drawable widget -- rather than square -- so it doesn't lose data to the sides?
