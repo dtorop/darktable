@@ -468,7 +468,7 @@ static void _lib_histogram_draw_histogram(dt_lib_histogram_t *d, cairo_t *cr,
   for(int k = 0; k < 3; k++)
     if(mask[k])
     {
-      set_color(cr, darktable.bauhaus->graph_primaries[k]);
+      set_color(cr, darktable.bauhaus->graph_colors[k]);
       dt_draw_histogram_8(cr, d->histogram, 4, k, d->histogram_scale == DT_LIB_HISTOGRAM_LINEAR);
     }
   cairo_pop_group_to_source(cr);
@@ -485,7 +485,7 @@ static void _lib_histogram_draw_waveform_channel(dt_lib_histogram_t *d, cairo_t 
   const int wf_height = d->waveform_height;
   // colors used to represent primary colors
   // FIXME: force a redraw when CSS has changed via preferences -- is there a signal for this?
-  const GdkRGBA *const css_primaries = darktable.bauhaus->graph_primaries;
+  const GdkRGBA *const css_primaries = darktable.bauhaus->graph_colors;
   const float DT_ALIGNED_ARRAY primaries_linear[3][4] = {
     {css_primaries[2].blue, css_primaries[2].green, css_primaries[2].red, 1.0f},
     {css_primaries[1].blue, css_primaries[1].green, css_primaries[1].red, 1.0f},
@@ -585,22 +585,12 @@ static void _lib_histogram_draw_vectorscope(dt_lib_histogram_t *d, cairo_t *cr,
   cairo_scale(cr, 1., -1.);
   cairo_rotate(cr, M_PI * 0.5);
 
-  // graticule: histogram profile primaries
+  // graticule: histogram profile primaries/secondaries
   // FIXME: also add dots for input/work/output profiles
-  // FIXME: this should really be drawn in _draw_vectorscope_lines() but then would need to calculate them on display rather than on process -- in case process hasn't run yet?
-  // FIXME: these should be from CSS
-  double graph_secondaries[3][3] = { {0.0, 1.0, 1.0}, {1.0, 0.0, 1.0}, {1.0, 1.0, 0.0} };
+  const GdkRGBA *const colors = darktable.bauhaus->graph_colors;
   for(int k=0; k<6; k++)
   {
-    if(k<3)
-    {
-      set_color(cr, darktable.bauhaus->graph_primaries[k]);
-    }
-    else
-    {
-      cairo_set_source_rgb(cr, graph_secondaries[k-3][0], graph_secondaries[k-3][1], graph_secondaries[k-3][2]);
-    }
-    // FIXME: tune dot sizes
+    cairo_set_source_rgba(cr, colors[k].red, colors[k].green, colors[k].blue, colors[k].alpha * 0.7);
     cairo_arc(cr, d->vectorscope_graticule[k][0] * min_size * 0.5,
               d->vectorscope_graticule[k][1] * min_size * 0.5, min_size/(k<3 ? 40.0 : 50.0), 0., M_PI * 2.);
     cairo_fill(cr);
