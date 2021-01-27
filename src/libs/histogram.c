@@ -341,6 +341,7 @@ static void _lib_histogram_process_vectorscope(dt_lib_histogram_t *d, const floa
     d->vectorscope_graticule[k][1] = Luv[2];
   }
   // scale graticule chromaticity to display
+  // FIXME: if use CIELUV, don't scale so there is a well-known appearance?
   for(int k=0; k<6; k++)
   {
     d->vectorscope_graticule[k][0] /= max_diam;
@@ -428,6 +429,7 @@ static void dt_lib_histogram_process(struct dt_lib_module_t *self, const float *
     dt_pthread_mutex_lock(&d->lock);
     memset(d->histogram, 0, sizeof(uint32_t) * 4 * HISTOGRAM_BINS);
     d->waveform_width = 0;
+    d->vectorscope_graticule[0][0] = NAN;
     dt_pthread_mutex_unlock(&d->lock);
     return;
   }
@@ -597,7 +599,6 @@ static void _lib_histogram_draw_rgb_parade(dt_lib_histogram_t *d, cairo_t *cr, i
 static void _lib_histogram_draw_vectorscope(dt_lib_histogram_t *d, cairo_t *cr,
                                             int width, int height)
 {
-  // FIXME: bail if vectorscope not calculated...
   const int vs_diameter = d->vectorscope_diameter;
   const int min_size = MIN(width, height);
 
@@ -610,10 +611,8 @@ static void _lib_histogram_draw_vectorscope(dt_lib_histogram_t *d, cairo_t *cr,
   // traditional vectorscope is oriented with x-axis Y -> B, y-axis C -> R
   // but CIE 1976 UCS is graphed x-axis as u (G -> M), y-axis as v (B -> Y)
   cairo_scale(cr, 1., -1.);
-  /*
   if(d->vectorscope_type == DT_LIB_HISTOGRAM_VECTORSCOPE_JZAZBZ)
     cairo_rotate(cr, M_PI * 0.5);
-  */
 
   // graticule: histogram profile primaries/secondaries
   // FIXME: also add dots for input/work/output profiles
@@ -643,6 +642,7 @@ static void _lib_histogram_draw_vectorscope(dt_lib_histogram_t *d, cairo_t *cr,
   cairo_surface_t *alpha
     = dt_cairo_image_surface_create_for_data(d->vectorscope_alpha, CAIRO_FORMAT_A8,
                                              vs_diameter, vs_diameter, d->vectorscope_alpha_stride);
+  // FIXME: what happens if mask has color (not just alpha) -- can use this to calculate false color vectorscope and draw it as a pattern or use it as a mask to draw it white? and if so could also simplify waveform drawing code above, to use color mask to alter channel visibility
   cairo_mask_surface(cr, alpha, 0.0, 0.0);
   cairo_surface_destroy(alpha);
   cairo_restore(cr);
@@ -753,8 +753,8 @@ static gboolean _drawable_draw_callback(GtkWidget *widget, cairo_t *crf, gpointe
           _lib_histogram_draw_rgb_parade(d, cr, width, height);
         break;
       case DT_LIB_HISTOGRAM_SCOPE_VECTORSCOPE:
-        // FIXME: have some way to bail out if the vectorscope data isn't ready?
-        _lib_histogram_draw_vectorscope(d, cr, width, height);
+        if(!isnan(d->vectorscope_graticule[0][0]))
+          _lib_histogram_draw_vectorscope(d, cr, width, height);
         break;
       case DT_LIB_HISTOGRAM_SCOPE_N:
         g_assert_not_reached();
@@ -982,28 +982,27 @@ static void _waveform_view_update(const dt_lib_histogram_t *d)
   }
 }
 
-static void _vectorscope_view_update(const dt_lib_histogram_t *d)
+static void _vectorscope_view_update(dt_lib_histogram_t *d)
 {
-  // FIXME: add a "false color" variant
+  // FIXME: add a "false color" variant, probably taking over the "red channel" button for this
   switch(d->vectorscope_type)
   {
     case DT_LIB_HISTOGRAM_VECTORSCOPE_CIELUV:
       gtk_widget_set_tooltip_text(d->scope_view_button, _("set view to JzAzBz"));
-      // FIXME: need icon
       dtgtk_button_set_paint(DTGTK_BUTTON(d->scope_view_button),
-                             dtgtk_cairo_paint_arrow, CPF_DIRECTION_LEFT, NULL);
+                             dtgtk_cairo_paint_luv, CPF_DIRECTION_LEFT, NULL);
       break;
     case DT_LIB_HISTOGRAM_VECTORSCOPE_JZAZBZ:
       gtk_widget_set_tooltip_text(d->scope_view_button, _("set view to CIELUV"));
-      // FIXME: need icon
       dtgtk_button_set_paint(DTGTK_BUTTON(d->scope_view_button),
-                             dtgtk_cairo_paint_arrow, CPF_DIRECTION_RIGHT, NULL);
+                             dtgtk_cairo_paint_jzazbz, CPF_DIRECTION_RIGHT, NULL);
       break;
     case DT_LIB_HISTOGRAM_WAVEFORM_N:
       g_assert_not_reached();
   }
 
-  // redraw scope now for immediate visual feedback
+  // redraw empty scope for immediate visual feedback
+  d->vectorscope_graticule[0][0] = NAN;
   dt_control_queue_redraw_widget(d->scope_draw);
 
   // generate data for changed view and trigger widget redraw
@@ -1017,7 +1016,7 @@ static void _vectorscope_view_update(const dt_lib_histogram_t *d)
   }
 }
 
-static void _scope_type_update(const dt_lib_histogram_t *d)
+static void _scope_type_update(dt_lib_histogram_t *d)
 {
   switch(d->scope_type)
   {
@@ -1183,6 +1182,7 @@ static gboolean _lib_histogram_cycle_mode_callback(GtkAccelGroup *accel_group,
 
   // The cycle order is Hist log -> lin -> waveform -> parade -> vectorscope (update logic on more scopes)
   // FIXME: When switch modes, there is currently a hack to turn off the highlight and turn the cursor back to pointer, as we don't know what/if the new highlight is going to be. Right solution would be to have a highlight update function which takes cursor x,y and is called either here or on pointer motion. Really right solution is probably separate widgets for the drag areas which generate enter/leave events.
+  // FIXME: can simplify this code: for view then type increment & compare enum max
   switch(d->scope_type)
   {
     case DT_LIB_HISTOGRAM_SCOPE_HISTOGRAM:
@@ -1209,17 +1209,27 @@ static gboolean _lib_histogram_cycle_mode_callback(GtkAccelGroup *accel_group,
       else
       {
         d->dragging = FALSE;
+        d->vectorscope_type = DT_LIB_HISTOGRAM_VECTORSCOPE_CIELUV;
+        dt_conf_set_string("plugins/darkroom/histogram/vectorscope",
+                           dt_lib_histogram_vectorscope_type_names[d->vectorscope_type]);
         _scope_type_clicked(d->scope_type_button, d);
         d->highlight = DT_LIB_HISTOGRAM_HIGHLIGHT_NONE;
         dt_control_change_cursor(GDK_LEFT_PTR);
       }
       break;
     case DT_LIB_HISTOGRAM_SCOPE_VECTORSCOPE:
-      d->histogram_scale = DT_LIB_HISTOGRAM_LOGARITHMIC;
-      dt_conf_set_string("plugins/darkroom/histogram/histogram",
-                         dt_lib_histogram_histogram_scale_names[d->histogram_scale]);
-      // don't need to cancel dragging or lose highlight so long as vectorscope isn't draggable
-      _scope_type_clicked(d->scope_type_button, d);
+      if(d->vectorscope_type == DT_LIB_HISTOGRAM_VECTORSCOPE_CIELUV)
+      {
+        _scope_view_clicked(d->scope_view_button, d);
+      }
+      else
+      {
+        d->histogram_scale = DT_LIB_HISTOGRAM_LOGARITHMIC;
+        dt_conf_set_string("plugins/darkroom/histogram/histogram",
+                           dt_lib_histogram_histogram_scale_names[d->histogram_scale]);
+        // don't need to cancel dragging or lose highlight so long as vectorscope isn't draggable
+        _scope_type_clicked(d->scope_type_button, d);
+      }
       break;
     case DT_LIB_HISTOGRAM_SCOPE_N:
       g_assert_not_reached();
@@ -1295,6 +1305,7 @@ void gui_init(dt_lib_module_t *self)
   d->green = dt_conf_get_bool("plugins/darkroom/histogram/show_green");
   d->blue = dt_conf_get_bool("plugins/darkroom/histogram/show_blue");
 
+  // FIXME: this is now very legacy <= c3.2? -- lose this as now that conf enforces options (yes?) this will never happen
   gchar *str = dt_conf_get_string("plugins/darkroom/histogram/mode");
   if(g_strcmp0(str, "linear") == 0)
   { // update legacy conf
@@ -1363,11 +1374,12 @@ void gui_init(dt_lib_module_t *self)
   d->waveform_display = dt_iop_image_alloc(d->waveform_max_width, d->waveform_height, 4);
   d->waveform_8bit    = dt_alloc_align(64, sizeof(uint8_t) * 4 * d->waveform_height * d->waveform_max_width);
 
-  // FIXME: what is the appropriate resolution for this: balance memory use, processing speed, helpful resolution -- at least use a power of 2?
-  d->vectorscope_diameter = 350;
+  // FIXME: what is the appropriate resolution for this: balance memory use, processing speed, helpful resolution
+  d->vectorscope_diameter = 256;
   d->vectorscope_alpha_stride = cairo_format_stride_for_width(CAIRO_FORMAT_A8, d->vectorscope_diameter);
   d->vectorscope_alpha = dt_alloc_align(64, sizeof(uint8_t) * d->vectorscope_diameter * d->vectorscope_alpha_stride);
-  // FIXME: do need to zero buffer?
+  // initially no vectorscope to draw
+  d->vectorscope_graticule[0][0] = NAN;
 
   // proxy functions and data so that pixelpipe or tether can
   // provide data for a histogram
@@ -1398,9 +1410,10 @@ void gui_init(dt_lib_module_t *self)
   // FIXME: tooltips for buttons go away after first mouseover of drawable! -- this appears to have happened even before vectorscope work, the only tooltip which would show up before was the "view" button which was in a GtkStack -- now when click on a button its tooltip shows up, then defaults back to drawable getting the tooltips
 
   // FIXME: this could be a combobox to allow for more types and not to have to swap the icon on click
-  d->scope_type_button = dtgtk_button_new(dtgtk_cairo_paint_histogram_scope, CPF_NONE, NULL);
+  // icons will be filled in by _scope_type_update()
+  d->scope_type_button = dtgtk_button_new(dtgtk_cairo_paint_empty, CPF_NONE, NULL);
   gtk_box_pack_start(GTK_BOX(d->button_box), d->scope_type_button, FALSE, FALSE, 0);
-  d->scope_view_button = dtgtk_button_new(dtgtk_cairo_paint_logarithmic_scale, CPF_NONE, NULL);
+  d->scope_view_button = dtgtk_button_new(dtgtk_cairo_paint_empty, CPF_NONE, NULL);
   gtk_box_pack_start(GTK_BOX(d->button_box), d->scope_view_button, FALSE, FALSE, 0);
 
   // red/green/blue channel on/off
@@ -1470,6 +1483,7 @@ void gui_init(dt_lib_module_t *self)
 
   gtk_widget_add_events(d->scope_draw, GDK_LEAVE_NOTIFY_MASK | GDK_POINTER_MOTION_MASK | GDK_BUTTON_PRESS_MASK |
                                        GDK_BUTTON_RELEASE_MASK | darktable.gui->scroll_mask);
+  // FIXME: why does cursor motion over buttons trigger multiple draw callbacks?
   g_signal_connect(G_OBJECT(d->scope_draw), "draw", G_CALLBACK(_drawable_draw_callback), d);
   g_signal_connect(G_OBJECT(d->scope_draw), "leave-notify-event",
                    G_CALLBACK(_drawable_leave_notify_callback), d);
