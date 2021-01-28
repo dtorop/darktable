@@ -30,6 +30,7 @@
 #include "develop/develop.h"
 #include "dtgtk/button.h"
 #include "dtgtk/togglebutton.h"
+#include "external/cie_colorimetric_tables.c"
 #include "gui/accelerators.h"
 #include "gui/draw.h"
 #include "gui/gtk.h"
@@ -84,6 +85,10 @@ const gchar *dt_lib_histogram_scope_type_names[DT_LIB_HISTOGRAM_SCOPE_N] = { "hi
 const gchar *dt_lib_histogram_histogram_scale_names[DT_LIB_HISTOGRAM_N] = { "logarithmic", "linear" };
 const gchar *dt_lib_histogram_waveform_type_names[DT_LIB_HISTOGRAM_WAVEFORM_N] = { "overlaid", "parade" };
 const gchar *dt_lib_histogram_vectorscope_type_names[DT_LIB_HISTOGRAM_VECTORSCOPE_N] = { "u*v*", "xy", "AzBz" };
+
+// if drawing CIE 1931 xy then scale it to the highest y value of the
+// spectral locus horseshoe
+#define CIE1931_MAXY 0.84f
 
 typedef struct dt_lib_histogram_t
 {
@@ -350,9 +355,9 @@ static void _lib_histogram_process_vectorscope(dt_lib_histogram_t *d, const floa
     d->vectorscope_graticule[k][0] = chromaticity[1];
     d->vectorscope_graticule[k][1] = chromaticity[2];
   }
-  // CIE 1931 xy is not scaled
+  // CIE 1931 xy is not scaled to image, but still scale it to the spectral locus horseshoe
   if(vs_type == DT_LIB_HISTOGRAM_VECTORSCOPE_CIEXY)
-    max_diam = 1.0f;
+    max_diam = CIE1931_MAXY;
   const float offset = (vs_type == DT_LIB_HISTOGRAM_VECTORSCOPE_CIEXY) ? 0.0f : 0.5f;
   // scale graticule chromaticity to display
   for(int k=0; k<6; k++)
@@ -632,11 +637,45 @@ static void _lib_histogram_draw_vectorscope(dt_lib_histogram_t *d, cairo_t *cr,
   {
     cairo_translate(cr, min_size * -0.5, min_size * -0.5);
     cairo_scale(cr, min_size, min_size);
+    cairo_set_line_width(cr, 0.01);
+
+    // spectral locus horseshoe
+    cairo_save(cr);
+    // scaling hack
+    cairo_scale(cr, 1/CIE1931_MAXY, 1/CIE1931_MAXY);
+    // FIXME: could draw this for CIELUV as well?
+    // FIXME: move horeshoe code to _draw_vectorscope_scale()
+    // FIXME: figure out a legible color
+    set_color(cr, darktable.bauhaus->graph_grid);
+    // FIXME: using lcms conversion, optimize to dt's?
+    cmsCIExyY xyY_0;
+    cmsXYZ2xyY(&xyY_0, &cie_1931_std_colorimetric_observer[0].xyz);
+    cairo_move_to(cr, xyY_0.x, xyY_0.y);
+    // FIXME: could probably skip some entries and be fine
+    for(size_t i = 1; i < cie_1931_std_colorimetric_observer_count; i++)
+    {
+      cmsCIExyY xyY;
+      cmsXYZ2xyY(&xyY, &cie_1931_std_colorimetric_observer[i].xyz);
+      cairo_line_to(cr, xyY.x, xyY.y);
+    }
+    cairo_line_to(cr, xyY_0.x, xyY_0.y);
+    cairo_stroke(cr);
+    cairo_restore(cr);
+
+    // FIXME: it would be nice to draw standard illuminants (or simply the profile illuminant by feeding white through the profile matrix
+    // gamut triangle
+    // FIXME: how to make this work for CIELUV?
+    cairo_move_to(cr, d->vectorscope_graticule[0][0], d->vectorscope_graticule[0][1]);
+    cairo_line_to(cr, d->vectorscope_graticule[1][0], d->vectorscope_graticule[1][1]);
+    cairo_line_to(cr, d->vectorscope_graticule[2][0], d->vectorscope_graticule[2][1]);
+    cairo_line_to(cr, d->vectorscope_graticule[0][0], d->vectorscope_graticule[0][1]);
+    cairo_stroke(cr);
   }
   else
   {
     cairo_scale(cr, min_size * 0.5, min_size * 0.5);
   }
+  const double primary_radius = (d->vectorscope_type == DT_LIB_HISTOGRAM_VECTORSCOPE_CIEXY) ? 0.01 : 0.05;
 
   // graticule: histogram profile primaries/secondaries
   // FIXME: also add dots for input/work/output profiles
@@ -646,14 +685,14 @@ static void _lib_histogram_draw_vectorscope(dt_lib_histogram_t *d, cairo_t *cr,
   // 2. The working reference primaries. How did 1. end up in 2.? Are there negative and therefore nonsensical values in the working space? Should a gamut mapping pass be applied before work, between 1. and 2.?
   // 3. The output primaries rendition. From a selection of gamut mappings, is one required between 2. and 3.?"
   const GdkRGBA *const colors = darktable.bauhaus->graph_colors;
-  for(int k=0; k<6; k++)
+  for(int k=0; k < (d->vectorscope_type == DT_LIB_HISTOGRAM_VECTORSCOPE_CIEXY ? 3 : 6); k++)
   {
     // FIXME: if/when have a color vectorscope, make these dots gray to complement it
     cairo_set_source_rgba(cr, colors[k].red, colors[k].green, colors[k].blue, colors[k].alpha * (k<3 ? 0.7 : 0.5));
     // FIXME: should these be hollow circles, brackets, cross-hairs, etc?
     // FIXME: circle diameter should be half the size when in xy -- or better yet draw gamut triangle
     cairo_arc(cr, d->vectorscope_graticule[k][0],
-              d->vectorscope_graticule[k][1], (k<3 ? 0.05 : 0.03), 0., M_PI * 2.);
+              d->vectorscope_graticule[k][1], (k<3 ? primary_radius : primary_radius * 0.6), 0., M_PI * 2.);
     cairo_fill(cr);
   }
 
@@ -760,7 +799,7 @@ static gboolean _drawable_draw_callback(GtkWidget *widget, cairo_t *crf, gpointe
       dt_draw_waveform_lines(cr, 0, 0, width, height);
       break;
     case DT_LIB_HISTOGRAM_SCOPE_VECTORSCOPE:
-      // FIXME: in xy case draw a grid and the spectral locus horseshoe
+      // FIXME: in xy case draw a grid
       if(d->vectorscope_type != DT_LIB_HISTOGRAM_VECTORSCOPE_CIEXY)
         _draw_vectorscope_scale(cr, width, height);
       break;
