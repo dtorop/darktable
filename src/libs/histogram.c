@@ -74,6 +74,7 @@ typedef enum dt_lib_histogram_waveform_type_t
 typedef enum dt_lib_histogram_vectorscope_type_t
 {
   DT_LIB_HISTOGRAM_VECTORSCOPE_CIELUV = 0,   // CIE 1976 u*v*
+  DT_LIB_HISTOGRAM_VECTORSCOPE_CIEXY,        // CIE 1931 xy
   DT_LIB_HISTOGRAM_VECTORSCOPE_JZAZBZ,
   DT_LIB_HISTOGRAM_VECTORSCOPE_N // needs to be the last one
 } dt_lib_histogram_vectorscope_type_t;
@@ -82,7 +83,7 @@ typedef enum dt_lib_histogram_vectorscope_type_t
 const gchar *dt_lib_histogram_scope_type_names[DT_LIB_HISTOGRAM_SCOPE_N] = { "histogram", "waveform", "vectorscope" };
 const gchar *dt_lib_histogram_histogram_scale_names[DT_LIB_HISTOGRAM_N] = { "logarithmic", "linear" };
 const gchar *dt_lib_histogram_waveform_type_names[DT_LIB_HISTOGRAM_WAVEFORM_N] = { "overlaid", "parade" };
-const gchar *dt_lib_histogram_vectorscope_type_names[DT_LIB_HISTOGRAM_VECTORSCOPE_N] = { "u*v*", "AzBz" };
+const gchar *dt_lib_histogram_vectorscope_type_names[DT_LIB_HISTOGRAM_VECTORSCOPE_N] = { "u*v*", "xy", "AzBz" };
 
 typedef struct dt_lib_histogram_t
 {
@@ -290,13 +291,22 @@ static inline void rgb_to_chromaticity(const float rgb[4],
   dt_ioppr_rgb_matrix_to_xyz(rgb, XYZ_D50, prof->matrix_in, prof->lut_in,
                              prof->unbounded_coeffs_in, prof->lutsize,
                              prof->nonlinearlut);
+  // FIXME: make switch statement?
   if(cs == DT_LIB_HISTOGRAM_VECTORSCOPE_CIELUV)
   {
-    // FIXME: do have to worry about chromatic adaptation?
     float xyY_D50[4] DT_ALIGNED_PIXEL;
     dt_XYZ_to_xyY(XYZ_D50, xyY_D50);
     // FIXME: this is u*v* (D50 corrected), more helpful than u'v', yes?
     dt_xyY_to_Luv(xyY_D50, chromaticity);
+  }
+  else if(cs == DT_LIB_HISTOGRAM_VECTORSCOPE_CIEXY)
+  {
+    float xyY_D50[4] DT_ALIGNED_PIXEL;
+    // FIXME: do we need to be concerned about chromatic adaptation?
+    dt_XYZ_to_xyY(XYZ_D50, xyY_D50);
+    // FIXME: this is silly caused by optimizing the other two cases -- figure out a way to only return a two unit array
+    chromaticity[1] = xyY_D50[0];
+    chromaticity[2] = xyY_D50[1];
   }
   else
   {
@@ -340,6 +350,10 @@ static void _lib_histogram_process_vectorscope(dt_lib_histogram_t *d, const floa
     d->vectorscope_graticule[k][0] = chromaticity[1];
     d->vectorscope_graticule[k][1] = chromaticity[2];
   }
+  // CIE 1931 xy is not scaled
+  if(vs_type == DT_LIB_HISTOGRAM_VECTORSCOPE_CIEXY)
+    max_diam = 1.0f;
+  const float offset = (vs_type == DT_LIB_HISTOGRAM_VECTORSCOPE_CIEXY) ? 0.0f : 0.5f;
   // scale graticule chromaticity to display
   for(int k=0; k<6; k++)
   {
@@ -359,7 +373,7 @@ static void _lib_histogram_process_vectorscope(dt_lib_histogram_t *d, const floa
   // count into bins
 #if defined(_OPENMP)
 #pragma omp parallel for default(none) \
-  dt_omp_firstprivate(in, binned, nfloats, histogram_profile, vs_diameter, max_diam, scale, vs_type) \
+  dt_omp_firstprivate(in, binned, nfloats, histogram_profile, vs_diameter, max_diam, scale, offset, vs_type) \
   schedule(static)
 #endif
   for(size_t k = 0; k < nfloats; k += 4)
@@ -377,8 +391,9 @@ static void _lib_histogram_process_vectorscope(dt_lib_histogram_t *d, const floa
     float chromaticity[4] DT_ALIGNED_PIXEL;
     const float *const restrict pix_in = __builtin_assume_aligned(in + k, 16);
     rgb_to_chromaticity(pix_in, chromaticity, histogram_profile, vs_type);
-    const int out_x = vs_diameter * (chromaticity[1] / max_diam + 0.5f);
-    const int out_y = vs_diameter * (chromaticity[2] / max_diam + 0.5f);
+    // FIXME: optimize for xy case? max_diam is 1 and offset is 0
+    const int out_x = vs_diameter * (chromaticity[1] / max_diam + offset);
+    const int out_y = vs_diameter * (chromaticity[2] / max_diam + offset);
 
     // clip (not clamp) any out-of-scale values, so there aren't light edges
     // FIXME: should the output buffer be the dimensions of the current drawable widget -- rather than square -- so it doesn't lose data to the sides?
@@ -612,6 +627,17 @@ static void _lib_histogram_draw_vectorscope(dt_lib_histogram_t *d, cairo_t *cr,
   if(d->vectorscope_type == DT_LIB_HISTOGRAM_VECTORSCOPE_JZAZBZ)
     cairo_rotate(cr, M_PI * 0.5);
 
+  cairo_save(cr);
+  if(d->vectorscope_type == DT_LIB_HISTOGRAM_VECTORSCOPE_CIEXY)
+  {
+    cairo_translate(cr, min_size * -0.5, min_size * -0.5);
+    cairo_scale(cr, min_size, min_size);
+  }
+  else
+  {
+    cairo_scale(cr, min_size * 0.5, min_size * 0.5);
+  }
+
   // graticule: histogram profile primaries/secondaries
   // FIXME: also add dots for input/work/output profiles
   // FIXME: add gamut bounding lines to connect the dots (which need to be plotted in XYZ?)
@@ -624,10 +650,14 @@ static void _lib_histogram_draw_vectorscope(dt_lib_histogram_t *d, cairo_t *cr,
   {
     // FIXME: if/when have a color vectorscope, make these dots gray to complement it
     cairo_set_source_rgba(cr, colors[k].red, colors[k].green, colors[k].blue, colors[k].alpha * (k<3 ? 0.7 : 0.5));
-    cairo_arc(cr, d->vectorscope_graticule[k][0] * min_size * 0.5,
-              d->vectorscope_graticule[k][1] * min_size * 0.5, min_size/(k<3 ? 40.0 : 60.0), 0., M_PI * 2.);
+    // FIXME: should these be hollow circles, brackets, cross-hairs, etc?
+    // FIXME: circle diameter should be half the size when in xy -- or better yet draw gamut triangle
+    cairo_arc(cr, d->vectorscope_graticule[k][0],
+              d->vectorscope_graticule[k][1], (k<3 ? 0.05 : 0.03), 0., M_PI * 2.);
     cairo_fill(cr);
   }
+
+  cairo_restore(cr);
 
   // the vectorscope graph itself
   // FIXME: the vectorscope hard-clips on the left/right for huge #'s -- instead could catch configure event, size buffers to aspect ratio, and then never clip -- or simply in calc decrease diameter by ~ 25% then increase correspondingly here, so less likely to clip -- and/or draw some sort of gradient mask over the edges so that they fade out
@@ -646,7 +676,7 @@ static void _lib_histogram_draw_vectorscope(dt_lib_histogram_t *d, cairo_t *cr,
   cairo_restore(cr);
 }
 
-static void _draw_vectorscope_lines(cairo_t *cr, int width, int height)
+static void _draw_vectorscope_scale(cairo_t *cr, int width, int height)
 {
   const double min_size = MIN(width, height);
   // FIXME: need DT_PIXEL_APPLY_DPI()?
@@ -664,6 +694,8 @@ static void _draw_vectorscope_lines(cairo_t *cr, int width, int height)
   cairo_stroke(cr);
   dt_draw_line(cr, 0.0f, -w_ctr, 0.0f, w_ctr);
   cairo_stroke(cr);
+
+  // FIXME: at least in the case of xy if unscaled could show an absolute grid scale -- and maybe a grid/scale would still be interesting/helpful for other scopes, as currently the scaling changes based on histogram profile, and this would give some sort of reference
 
   cairo_restore(cr);
 }
@@ -728,7 +760,9 @@ static gboolean _drawable_draw_callback(GtkWidget *widget, cairo_t *crf, gpointe
       dt_draw_waveform_lines(cr, 0, 0, width, height);
       break;
     case DT_LIB_HISTOGRAM_SCOPE_VECTORSCOPE:
-      _draw_vectorscope_lines(cr, width, height);
+      // FIXME: in xy case draw a grid and the spectral locus horseshoe
+      if(d->vectorscope_type != DT_LIB_HISTOGRAM_VECTORSCOPE_CIEXY)
+        _draw_vectorscope_scale(cr, width, height);
       break;
     case DT_LIB_HISTOGRAM_SCOPE_N:
       g_assert_not_reached();
@@ -990,9 +1024,15 @@ static void _vectorscope_view_update(dt_lib_histogram_t *d)
   switch(d->vectorscope_type)
   {
     case DT_LIB_HISTOGRAM_VECTORSCOPE_CIELUV:
-      gtk_widget_set_tooltip_text(d->scope_view_button, _("set view to AzBz"));
+      gtk_widget_set_tooltip_text(d->scope_view_button, _("set view to xy"));
       dtgtk_button_set_paint(DTGTK_BUTTON(d->scope_view_button),
                              dtgtk_cairo_paint_luv, CPF_NONE, NULL);
+      break;
+    case DT_LIB_HISTOGRAM_VECTORSCOPE_CIEXY:
+      gtk_widget_set_tooltip_text(d->scope_view_button, _("set view to AzBz"));
+      // FIXME: this icon is very nice, but will it confuse users as it already means softproof?
+      dtgtk_button_set_paint(DTGTK_BUTTON(d->scope_view_button),
+                             dtgtk_cairo_paint_softproof, CPF_NONE, NULL);
       break;
     case DT_LIB_HISTOGRAM_VECTORSCOPE_JZAZBZ:
       gtk_widget_set_tooltip_text(d->scope_view_button, _("set view to u*v*"));
@@ -1188,7 +1228,7 @@ static gboolean _lib_histogram_cycle_mode_callback(GtkAccelGroup *accel_group,
   switch(d->scope_type)
   {
     case DT_LIB_HISTOGRAM_SCOPE_HISTOGRAM:
-      if(d->histogram_scale == DT_LIB_HISTOGRAM_LOGARITHMIC)
+      if(d->histogram_scale == DT_LIB_HISTOGRAM_N-1)
       {
         _scope_view_clicked(d->scope_view_button, d);
       }
@@ -1204,7 +1244,7 @@ static gboolean _lib_histogram_cycle_mode_callback(GtkAccelGroup *accel_group,
       }
       break;
     case DT_LIB_HISTOGRAM_SCOPE_WAVEFORM:
-      if(d->waveform_type == DT_LIB_HISTOGRAM_WAVEFORM_OVERLAID)
+      if(d->waveform_type == DT_LIB_HISTOGRAM_WAVEFORM_N-1)
       {
         _scope_view_clicked(d->scope_view_button, d);
       }
@@ -1220,7 +1260,7 @@ static gboolean _lib_histogram_cycle_mode_callback(GtkAccelGroup *accel_group,
       }
       break;
     case DT_LIB_HISTOGRAM_SCOPE_VECTORSCOPE:
-      if(d->vectorscope_type == DT_LIB_HISTOGRAM_VECTORSCOPE_CIELUV)
+      if(d->vectorscope_type != DT_LIB_HISTOGRAM_VECTORSCOPE_N-1)
       {
         _scope_view_clicked(d->scope_view_button, d);
       }

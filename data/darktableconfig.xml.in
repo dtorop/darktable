@@ -2272,6 +2272,7 @@
     <type>
       <enum>
         <option>u*v*</option>
+        <option>xy</option>
         <option>AzBz</option>
       </enum>
     </type>
