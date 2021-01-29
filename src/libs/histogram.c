@@ -341,6 +341,7 @@ static inline void rgb_to_chromaticity(const float rgb[4],
   }
 }
 
+// FIXME: split this into two functions, one to handle vectorscope, the other to handle chromaticity diagram, as there is enough diversion in code?
 static void _lib_histogram_process_vectorscope(dt_lib_histogram_t *d, const float *const input, int width, int height)
 {
   dt_times_t start_time = { 0 };
@@ -730,11 +731,20 @@ static void _lib_histogram_draw_vectorscope(dt_lib_histogram_t *d, cairo_t *cr,
     cairo_line_to(cr, d->vectorscope_graticule[0][0], d->vectorscope_graticule[0][1]);
     cairo_stroke(cr);
 
+    // verify the primaries look right
+    float x,y;
+    for(int k=0; k<3; k++)
+    {
+      x = d->vectorscope_graticule[k][0] * CIE1931_MAXY;
+      y = d->vectorscope_graticule[k][1] * CIE1931_MAXY;
+      printf("primary %d x %f y %f\n", k, x, y);
+    }
+
     // white point
     set_color(cr, darktable.bauhaus->graph_fg);
     cairo_arc(cr, d->vectorscope_graticule[6][0], d->vectorscope_graticule[6][1], 0.01, 0., M_PI * 2.);
-    float x = d->vectorscope_graticule[6][0] * CIE1931_MAXY;
-    float y = d->vectorscope_graticule[6][1] * CIE1931_MAXY;
+    x = d->vectorscope_graticule[6][0] * CIE1931_MAXY;
+    y = d->vectorscope_graticule[6][1] * CIE1931_MAXY;
     float cct = xy_to_CCT(x, y);
     printf("white point %f, %f cct %f\n", x, y, cct);
     // D50 	0.34567 	0.35850
