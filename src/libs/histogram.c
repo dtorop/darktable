@@ -40,6 +40,10 @@
 
 #define HISTOGRAM_BINS 256
 
+// if drawing CIE 1931 xy then scale it to the highest y value of the
+// spectral locus horseshoe
+#define CIE1931_MAXY 0.84f
+
 
 DT_MODULE(1)
 
@@ -85,10 +89,6 @@ const gchar *dt_lib_histogram_scope_type_names[DT_LIB_HISTOGRAM_SCOPE_N] = { "hi
 const gchar *dt_lib_histogram_histogram_scale_names[DT_LIB_HISTOGRAM_N] = { "logarithmic", "linear" };
 const gchar *dt_lib_histogram_waveform_type_names[DT_LIB_HISTOGRAM_WAVEFORM_N] = { "overlaid", "parade" };
 const gchar *dt_lib_histogram_vectorscope_type_names[DT_LIB_HISTOGRAM_VECTORSCOPE_N] = { "u*v*", "xy", "AzBz" };
-
-// if drawing CIE 1931 xy then scale it to the highest y value of the
-// spectral locus horseshoe
-#define CIE1931_MAXY 0.84f
 
 typedef struct dt_lib_histogram_t
 {
