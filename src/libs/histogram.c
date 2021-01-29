@@ -21,6 +21,7 @@
 #include "common/darktable.h"
 #include "common/debug.h"
 #include "common/histogram.h"
+#include "common/illuminants.h"
 #include "common/iop_profile.h"
 #include "common/imagebuf.h"
 #include "common/image_cache.h"
@@ -347,36 +348,36 @@ static void _lib_histogram_process_vectorscope(dt_lib_histogram_t *d, const floa
   dt_iop_order_iccprofile_info_t *histogram_profile = dt_ioppr_get_histogram_profile_info(darktable.develop);
   if(!histogram_profile) return;
   // FIXME: as in colorbalancergb, repack matrix for SEE?
-  // IDEA: what about checking histogram_profile_type and if it is a known D50 whitepoint profile (currently online prophoto) then it does the adaptation -- either do this check unilaterally and put a comment in colorspace.c, or add a field to dt_colorspaces_color_profile_t which gives the whitepoiint, and check that via dt_iop_order_iccprofile_info_t -- then the only catch is if the profile is from a file, we still need a way to check it -- but maybe then there is a meaningful illuminant field rather than defaulting to D50
 
-  // hack: figure out whitepoint of histogram profile based on known profile whitepoints
-  // FIXME: actually encode this into dt_colorspaces_color_profile_t
-  //const dt_colorspaces_color_profile_t *profile = dt_colorspaces_get_profile(histogram_profile->type, histogram_profile->filename, DT_PROFILE_DIRECTION_ANY);  <- ANY?
-  //if(profile) rgb_profile = profile->profile;
-  // FIXME: handle histogram from a file
-  // FIXME: Can we directly query the virtual profiles via lcms and get white point?
-  gboolean adapt_d50;
+  // figure out whitepoint of histogram profile
+  // FIXME: why is it that when white point is D50 we must adapt from D50 PCS, but when it is D65 we don't? this is backwards, but produces expected results
+  gboolean adapt_d50 = FALSE;
+  // hack: we know for now that the only internal profile in D50 is ProPhoto -- if this changes then either update this statement, or add profile white point info to dt_colorspaces_color_profile_t
   if(histogram_profile->type == DT_COLORSPACE_PROPHOTO_RGB)
   {
     adapt_d50 = TRUE;
   }
-  else
+  else if(histogram_profile->type == DT_COLORSPACE_FILE)
   {
-    adapt_d50 = FALSE;
+    const dt_colorspaces_color_profile_t *profile = dt_colorspaces_get_profile(histogram_profile->type, histogram_profile->filename, DT_PROFILE_DIRECTION_ANY);
+    if(profile)
+    {
+      cmsCIEXYZ *WhitePointXYZ = cmsReadTag(profile->profile, cmsSigMediaWhitePointTag);
+      if(WhitePointXYZ)
+      {
+        cmsCIExyY xyY;
+        cmsXYZ2xyY(&xyY, WhitePointXYZ);
+        float cct = xy_to_CCT(xyY.x, xyY.y);
+        // very hacky -- assume the white point is either D50 or D65
+        // FIXME: alternatives -- always adapt based on white point, or adapt if white point isn't D65
+        adapt_d50 = (fabsf(cct - 5000.0f) < 2);
+        printf("CCT %f D50 %d\n", cct, adapt_d50);
+      }
+    }
   }
 
-  // check out _cmsReadMediaWhitePoint() which does cmsReadTag(hProfile, cmsSigMediaWhitePointTag) and defaults to D50 otherwise
-  // if we're looking at a home-baked profile, can cmsHPROFILE show us this? -- the cmsICCHeader type has illuminant as cmsEncodedXYZNumber
-  // if simply convert D50 to D65 in rgb_to_chromaticity() then we get the right results -- so we just have to know when to do that adaptation
-  // but why does that work -- are we operating in D65?
-  // can the IlluminantType be checked from LCMS for cmsILLUMINANT_TYPE_D50 or cmsILLUMINANT_TYPE_D65?
-  // can read viewing conditions via cmsReadTag(hProfile, cmsSigViewingConditionsTag) -- but this is tag "view" which isn't present
-
-  // get profile primaries/secondaries in JzAzBz
-  // there's no guarantee that there is a chromaticity tag in the
-  // profile, so simply feed RGB colors through profile to PCS then
-  // JzAzBz
-  // FIXME: render the gamut triangle -- presumably in xyY so would need to render some points and interpolate -- at which point just build another image buffer for the overlay?
+  // get profile primaries/secondaries as chromaticity by feeding RGB
+  // colors through profile to PCS
   float in_rgb[7][4] DT_ALIGNED_PIXEL = { {1.f, 0.f, 0.f, 1.f}, {0.f, 1.f, 0.f, 1.f}, {0.f, 0.f, 1.f, 1.f},
                                           {0.f, 1.f, 1.f, 1.f}, {1.f, 0.f, 1.f, 1.f}, {1.f, 1.f, 0.f, 1.f},
                                           {1.f, 1.f, 1.f, 1.f} };
@@ -712,7 +713,10 @@ static void _lib_histogram_draw_vectorscope(dt_lib_histogram_t *d, cairo_t *cr,
     // white point
     set_color(cr, darktable.bauhaus->graph_fg);
     cairo_arc(cr, d->vectorscope_graticule[6][0], d->vectorscope_graticule[6][1], 0.01, 0., M_PI * 2.);
-    printf("white point %f, %f\n", d->vectorscope_graticule[6][0] * CIE1931_MAXY, d->vectorscope_graticule[6][1] * CIE1931_MAXY);
+    float x = d->vectorscope_graticule[6][0] * CIE1931_MAXY;
+    float y = d->vectorscope_graticule[6][1] * CIE1931_MAXY;
+    float cct = xy_to_CCT(x, y);
+    printf("white point %f, %f cct %f\n", x, y, cct);
     // D50 	0.34567 	0.35850
     // D65 	0.31271 	0.32902
     cairo_fill(cr);
