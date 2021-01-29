@@ -709,6 +709,7 @@ dt_ioppr_add_profile_info_to_list(struct dt_develop_t *dev,
                                   const char *profile_filename,
                                   const int intent)
 {
+  // FIXME: this doesn't allow for the same profile to have multiple intents -- but then dt_ioppr_get_profile_info_from_list() only uses the intent to pass it to dt_colorspaces_get_matrix_from_profile() which checks if there is a CLUT with that intent (and returns an error if so), and otherwise ignores intent
   dt_iop_order_iccprofile_info_t *profile_info = dt_ioppr_get_profile_info_from_list(dev, profile_type, profile_filename);
   if(profile_info == NULL)
   {
