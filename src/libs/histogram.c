@@ -288,7 +288,8 @@ static void _lib_histogram_process_waveform(dt_lib_histogram_t *d, const float *
 static inline void rgb_to_chromaticity(const float rgb[4],
                                        float chromaticity[4],
                                        dt_iop_order_iccprofile_info_t *prof,
-                                       dt_lib_histogram_vectorscope_type_t cs)
+                                       dt_lib_histogram_vectorscope_type_t cs,
+                                       gboolean adapt_d50)
 {
   float XYZ_D50[4] DT_ALIGNED_PIXEL;
   // NOTE: see for comparison/reference rgb_to_JzCzhz() in color_picker.c
@@ -306,14 +307,17 @@ static inline void rgb_to_chromaticity(const float rgb[4],
   }
   else if(cs == DT_LIB_HISTOGRAM_VECTORSCOPE_CIEXY)
   {
-    //float XYZ_D65[4] DT_ALIGNED_PIXEL;
     float xyY[4] DT_ALIGNED_PIXEL;
-    // FIXME: do we need to be concerned about chromatic adaptation? or just document/caution that this plot is always in D50?
-    // this is a quick experiment to see what happens if we could know to switch to D65 -- which is that we get the D65 whitepoint as hoped for
-    // https://en.wikipedia.org/wiki/ProPhoto_RGB_color_space says prophoto white is white 	0.345704 	0.358540 which is D50 -- what is going on here?
-    // regardless the adaptation to D65 makes a more correct looking gamut triangle compared to the wikipedia illustration
-    //dt_XYZ_D50_2_XYZ_D65(XYZ_D50, XYZ_D65);
-    dt_XYZ_to_xyY(XYZ_D50, xyY);
+    if(adapt_d50)
+    {
+      float XYZ_D65[4] DT_ALIGNED_PIXEL;
+      dt_XYZ_D50_2_XYZ_D65(XYZ_D50, XYZ_D65);
+      dt_XYZ_to_xyY(XYZ_D65, xyY);
+    }
+    else
+    {
+      dt_XYZ_to_xyY(XYZ_D50, xyY);
+    }
     // FIXME: this is silly, caused by optimizing the other two cases -- figure out a way to only return a two unit array
     chromaticity[1] = xyY[0];
     chromaticity[2] = xyY[1];
@@ -345,10 +349,21 @@ static void _lib_histogram_process_vectorscope(dt_lib_histogram_t *d, const floa
   // FIXME: as in colorbalancergb, repack matrix for SEE?
   // IDEA: what about checking histogram_profile_type and if it is a known D50 whitepoint profile (currently online prophoto) then it does the adaptation -- either do this check unilaterally and put a comment in colorspace.c, or add a field to dt_colorspaces_color_profile_t which gives the whitepoiint, and check that via dt_iop_order_iccprofile_info_t -- then the only catch is if the profile is from a file, we still need a way to check it -- but maybe then there is a meaningful illuminant field rather than defaulting to D50
 
-  // test absolute colorimetric variant
-  //dt_colorspaces_color_profile_type_t histogram_profile_type;
-  //const char *histogram_profile_filename;
-  //dt_ioppr_get_histogram_profile_type(&histogram_profile_type, &histogram_profile_filename);
+  // hack: figure out whitepoint of histogram profile based on known profile whitepoints
+  // FIXME: actually encode this into dt_colorspaces_color_profile_t
+  //const dt_colorspaces_color_profile_t *profile = dt_colorspaces_get_profile(histogram_profile->type, histogram_profile->filename, DT_PROFILE_DIRECTION_ANY);  <- ANY?
+  //if(profile) rgb_profile = profile->profile;
+  // FIXME: handle histogram from a file
+  // FIXME: Can we directly query the virtual profiles via lcms and get white point?
+  gboolean adapt_d50;
+  if(histogram_profile->type == DT_COLORSPACE_PROPHOTO_RGB)
+  {
+    adapt_d50 = TRUE;
+  }
+  else
+  {
+    adapt_d50 = FALSE;
+  }
 
   // check out _cmsReadMediaWhitePoint() which does cmsReadTag(hProfile, cmsSigMediaWhitePointTag) and defaults to D50 otherwise
   // if we're looking at a home-baked profile, can cmsHPROFILE show us this? -- the cmsICCHeader type has illuminant as cmsEncodedXYZNumber
@@ -370,7 +385,7 @@ static void _lib_histogram_process_vectorscope(dt_lib_histogram_t *d, const floa
   {
     // FIXME: hacky store of coordinates in 2nd/3rd elements of array
     float chromaticity[4] DT_ALIGNED_PIXEL;
-    rgb_to_chromaticity(in_rgb[k], chromaticity, histogram_profile, vs_type);
+    rgb_to_chromaticity(in_rgb[k], chromaticity, histogram_profile, vs_type, adapt_d50);
     max_diam = MAX(max_diam, hypotf(chromaticity[1], chromaticity[2]));
     d->vectorscope_graticule[k][0] = chromaticity[1];
     d->vectorscope_graticule[k][1] = chromaticity[2];
@@ -399,7 +414,7 @@ static void _lib_histogram_process_vectorscope(dt_lib_histogram_t *d, const floa
   // count into bins
 #if defined(_OPENMP)
 #pragma omp parallel for default(none) \
-  dt_omp_firstprivate(in, binned, nfloats, histogram_profile, vs_diameter, max_diam, scale, offset, vs_type) \
+  dt_omp_firstprivate(in, binned, nfloats, histogram_profile, vs_diameter, max_diam, scale, offset, vs_type, adapt_d50) \
   schedule(static)
 #endif
   for(size_t k = 0; k < nfloats; k += 4)
@@ -416,7 +431,7 @@ static void _lib_histogram_process_vectorscope(dt_lib_histogram_t *d, const floa
     //   RGB (pixelpipe) -> XYZ(PCS, D50) -> chromaticity
     float chromaticity[4] DT_ALIGNED_PIXEL;
     const float *const restrict pix_in = __builtin_assume_aligned(in + k, 16);
-    rgb_to_chromaticity(pix_in, chromaticity, histogram_profile, vs_type);
+    rgb_to_chromaticity(pix_in, chromaticity, histogram_profile, vs_type, adapt_d50);
     // FIXME: optimize for xy case? max_diam is 1 and offset is 0
     const int out_x = vs_diameter * (chromaticity[1] / max_diam + offset);
     const int out_y = vs_diameter * (chromaticity[2] / max_diam + offset);
