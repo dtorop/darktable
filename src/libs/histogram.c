@@ -91,6 +91,13 @@ const gchar *dt_lib_histogram_histogram_scale_names[DT_LIB_HISTOGRAM_N] = { "log
 const gchar *dt_lib_histogram_waveform_type_names[DT_LIB_HISTOGRAM_WAVEFORM_N] = { "overlaid", "parade" };
 const gchar *dt_lib_histogram_vectorscope_type_names[DT_LIB_HISTOGRAM_VECTORSCOPE_N] = { "u*v*", "xy", "AzBz" };
 
+// FIXME: be able to handle more sorts of white balance, move to illuminants.h?
+typedef enum dt_lib_histogram_whitebalance_type_t
+{
+  DT_LIB_HISTOGRAM_D50 = 0,
+  DT_LIB_HISTOGRAM_D65
+} dt_lib_histogram_whitebalance_type_t;
+
 typedef struct dt_lib_histogram_t
 {
   // histogram for display
@@ -290,7 +297,7 @@ static inline void rgb_to_chromaticity(const float rgb[4],
                                        float chromaticity[4],
                                        dt_iop_order_iccprofile_info_t *prof,
                                        dt_lib_histogram_vectorscope_type_t cs,
-                                       gboolean adapt_d50)
+                                       dt_lib_histogram_whitebalance_type_t whitepoint)
 {
   float XYZ_D50[4] DT_ALIGNED_PIXEL;
   // NOTE: see for comparison/reference rgb_to_JzCzhz() in color_picker.c
@@ -309,8 +316,10 @@ static inline void rgb_to_chromaticity(const float rgb[4],
   else if(cs == DT_LIB_HISTOGRAM_VECTORSCOPE_CIEXY)
   {
     float xyY[4] DT_ALIGNED_PIXEL;
-    if(adapt_d50)
+    if(whitepoint == DT_LIB_HISTOGRAM_D65)
     {
+      // profile white point is D65 (but PCS is D50) -- adapt to D65
+      // FIXME: could get an absolute colorimetric profile which would retain whitepoint? or is the whole point that PCS is D50 so matrix will always call D50 neutral in PCS space?
       float XYZ_D65[4] DT_ALIGNED_PIXEL;
       dt_XYZ_D50_2_XYZ_D65(XYZ_D50, XYZ_D65);
       dt_XYZ_to_xyY(XYZ_D65, xyY);
@@ -351,30 +360,41 @@ static void _lib_histogram_process_vectorscope(dt_lib_histogram_t *d, const floa
 
   // figure out whitepoint of histogram profile
   // FIXME: why is it that when white point is D50 we must adapt from D50 PCS, but when it is D65 we don't? this is backwards, but produces expected results
-  gboolean adapt_d50 = FALSE;
+  dt_lib_histogram_whitebalance_type_t profile_whitepoint;
   // hack: we know for now that the only internal profile in D50 is ProPhoto -- if this changes then either update this statement, or add profile white point info to dt_colorspaces_color_profile_t
   if(histogram_profile->type == DT_COLORSPACE_PROPHOTO_RGB)
   {
-    adapt_d50 = TRUE;
+    printf("internal prophoto, using whitepoint D50\n");
+    profile_whitepoint = DT_LIB_HISTOGRAM_D50;
   }
   else if(histogram_profile->type == DT_COLORSPACE_FILE)
   {
     const dt_colorspaces_color_profile_t *profile = dt_colorspaces_get_profile(histogram_profile->type, histogram_profile->filename, DT_PROFILE_DIRECTION_ANY);
-    if(profile)
+    cmsCIEXYZ *WhitePointXYZ = NULL;
+    if(profile) WhitePointXYZ = cmsReadTag(profile->profile, cmsSigMediaWhitePointTag);
+    if(WhitePointXYZ)
     {
-      cmsCIEXYZ *WhitePointXYZ = cmsReadTag(profile->profile, cmsSigMediaWhitePointTag);
-      if(WhitePointXYZ)
-      {
-        cmsCIExyY xyY;
-        cmsXYZ2xyY(&xyY, WhitePointXYZ);
-        float cct = xy_to_CCT(xyY.x, xyY.y);
-        // very hacky -- assume the white point is either D50 or D65
-        // FIXME: alternatives -- always adapt based on white point, or adapt if white point isn't D65
-        adapt_d50 = (fabsf(cct - 5000.0f) < 2);
-        printf("CCT %f D50 %d\n", cct, adapt_d50);
-      }
+      cmsCIExyY xyY;
+      cmsXYZ2xyY(&xyY, WhitePointXYZ);
+      float cct = xy_to_CCT(xyY.x, xyY.y);
+      // very hacky -- assume the white point is either D50 or D65
+      // FIXME: alternatives -- always adapt based on white point, or adapt if white point isn't D65
+      profile_whitepoint = (fabsf(cct - 5000.0f) < 2) ? DT_LIB_HISTOGRAM_D50 : DT_LIB_HISTOGRAM_D65;
+      printf("XYZ %f,%f,%f xy %f,%f CCT %f whitepoint %d\n", WhitePointXYZ->X, WhitePointXYZ->Y, WhitePointXYZ->Z, xyY.x, xyY.y, cct, profile_whitepoint);
+    }
+    else
+    {
+      dt_control_log(_("vectorscope: cannot read histogram profile whitepoint `%s'"), histogram_profile->filename);
+      profile_whitepoint = DT_LIB_HISTOGRAM_D65;
     }
   }
+  else
+  {
+    // all other built-in profiles
+    printf("any other internal, using whitepoint D65\n");
+    profile_whitepoint = DT_LIB_HISTOGRAM_D65;
+  }
+  printf("type %d name `%s' profile_whitepoint %d\n", histogram_profile->type, histogram_profile->filename, profile_whitepoint);
 
   // get profile primaries/secondaries as chromaticity by feeding RGB
   // colors through profile to PCS
@@ -386,7 +406,7 @@ static void _lib_histogram_process_vectorscope(dt_lib_histogram_t *d, const floa
   {
     // FIXME: hacky store of coordinates in 2nd/3rd elements of array
     float chromaticity[4] DT_ALIGNED_PIXEL;
-    rgb_to_chromaticity(in_rgb[k], chromaticity, histogram_profile, vs_type, adapt_d50);
+    rgb_to_chromaticity(in_rgb[k], chromaticity, histogram_profile, vs_type, profile_whitepoint);
     max_diam = MAX(max_diam, hypotf(chromaticity[1], chromaticity[2]));
     d->vectorscope_graticule[k][0] = chromaticity[1];
     d->vectorscope_graticule[k][1] = chromaticity[2];
@@ -415,7 +435,7 @@ static void _lib_histogram_process_vectorscope(dt_lib_histogram_t *d, const floa
   // count into bins
 #if defined(_OPENMP)
 #pragma omp parallel for default(none) \
-  dt_omp_firstprivate(in, binned, nfloats, histogram_profile, vs_diameter, max_diam, scale, offset, vs_type, adapt_d50) \
+  dt_omp_firstprivate(in, binned, nfloats, histogram_profile, vs_diameter, max_diam, scale, offset, vs_type, profile_whitepoint) \
   schedule(static)
 #endif
   for(size_t k = 0; k < nfloats; k += 4)
@@ -432,7 +452,7 @@ static void _lib_histogram_process_vectorscope(dt_lib_histogram_t *d, const floa
     //   RGB (pixelpipe) -> XYZ(PCS, D50) -> chromaticity
     float chromaticity[4] DT_ALIGNED_PIXEL;
     const float *const restrict pix_in = __builtin_assume_aligned(in + k, 16);
-    rgb_to_chromaticity(pix_in, chromaticity, histogram_profile, vs_type, adapt_d50);
+    rgb_to_chromaticity(pix_in, chromaticity, histogram_profile, vs_type, profile_whitepoint);
     // FIXME: optimize for xy case? max_diam is 1 and offset is 0
     const int out_x = vs_diameter * (chromaticity[1] / max_diam + offset);
     const int out_y = vs_diameter * (chromaticity[2] / max_diam + offset);
