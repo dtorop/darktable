@@ -38,9 +38,6 @@
 #include "libs/lib_api.h"
 #include "libs/colorpicker.h"
 
-// just for testing matrix thigns
-#include "develop/imageop_math.h"
-
 #define HISTOGRAM_BINS 256
 
 
@@ -330,128 +327,6 @@ static inline void rgb_to_chromaticity(const float rgb[4],
   }
 }
 
-static inline int _init_unbounded_coeffs(float *const lutr, float *const lutg, float *const lutb,
-    float *const unbounded_coeffsr, float *const unbounded_coeffsg, float *const unbounded_coeffsb, const int lutsize)
-{
-  int nonlinearlut = 0;
-  float *lut[3] = { lutr, lutg, lutb };
-  float *unbounded_coeffs[3] = { unbounded_coeffsr, unbounded_coeffsg, unbounded_coeffsb };
-
-  for(int k = 0; k < 3; k++)
-  {
-    // omit luts marked as linear (negative as marker)
-    if(lut[k][0] >= 0.0f)
-    {
-      const float x[4] DT_ALIGNED_PIXEL = { 0.7f, 0.8f, 0.9f, 1.0f };
-      const float y[4] DT_ALIGNED_PIXEL = { extrapolate_lut(lut[k], x[0], lutsize), extrapolate_lut(lut[k], x[1], lutsize), extrapolate_lut(lut[k], x[2], lutsize),
-                                            extrapolate_lut(lut[k], x[3], lutsize) };
-      dt_iop_estimate_exp(x, y, 4, unbounded_coeffs[k]);
-
-      nonlinearlut++;
-    }
-    else
-      unbounded_coeffs[k][0] = -1.0f;
-  }
-
-  return nonlinearlut;
-}
-
-static int _local_generate_profile_info(dt_iop_order_iccprofile_info_t *profile_info, const int type, const char *filename, const int intent)
-{
-  int err_code = 0;
-  cmsHPROFILE *rgb_profile = NULL;
-
-  profile_info->matrix_in[0] = NAN;
-  profile_info->matrix_out[0] = NAN;
-  for(int i = 0; i < 3; i++)
-  {
-    profile_info->lut_in[i][0] = -1.0f;
-    profile_info->lut_out[i][0] = -1.0f;
-  }
-
-  profile_info->nonlinearlut = 0;
-  profile_info->grey = 0.1842f;
-
-  profile_info->type = type;
-  g_strlcpy(profile_info->filename, filename, sizeof(profile_info->filename));
-  profile_info->intent = intent;
-
-  if(type == DT_COLORSPACE_DISPLAY || type == DT_COLORSPACE_DISPLAY2)
-    pthread_rwlock_rdlock(&darktable.color_profiles->xprofile_lock);
-
-  const dt_colorspaces_color_profile_t *profile
-      = dt_colorspaces_get_profile(type, filename, DT_PROFILE_DIRECTION_ANY);
-  if(profile) rgb_profile = profile->profile;
-
-  if(type == DT_COLORSPACE_DISPLAY || type == DT_COLORSPACE_DISPLAY2)
-    pthread_rwlock_unlock(&darktable.color_profiles->xprofile_lock);
-
-  // we only allow rgb profiles
-  if(rgb_profile)
-  {
-    cmsColorSpaceSignature rgb_color_space = cmsGetColorSpace(rgb_profile);
-    if(rgb_color_space != cmsSigRgbData)
-    {
-      fprintf(stderr, "working profile color space `%c%c%c%c' not supported\n",
-              (char)(rgb_color_space>>24),
-              (char)(rgb_color_space>>16),
-              (char)(rgb_color_space>>8),
-              (char)(rgb_color_space));
-      rgb_profile = NULL;
-    }
-  }
-
-  // get the matrix
-  if(rgb_profile)
-  {
-    if(dt_colorspaces_get_matrix_from_input_profile(rgb_profile, profile_info->matrix_in,
-        profile_info->lut_in[0], profile_info->lut_in[1], profile_info->lut_in[2],
-        profile_info->lutsize, profile_info->intent) ||
-        dt_colorspaces_get_matrix_from_output_profile(rgb_profile, profile_info->matrix_out,
-            profile_info->lut_out[0], profile_info->lut_out[1], profile_info->lut_out[2],
-            profile_info->lutsize, profile_info->intent))
-    {
-      profile_info->matrix_in[0] = NAN;
-      profile_info->matrix_out[0] = NAN;
-      for(int i = 0; i < 3; i++)
-      {
-        profile_info->lut_in[i][0] = -1.0f;
-        profile_info->lut_out[i][0] = -1.0f;
-      }
-    }
-    else if(isnan(profile_info->matrix_in[0]) || isnan(profile_info->matrix_out[0]))
-    {
-      profile_info->matrix_in[0] = NAN;
-      profile_info->matrix_out[0] = NAN;
-      for(int i = 0; i < 3; i++)
-      {
-        profile_info->lut_in[i][0] = -1.0f;
-        profile_info->lut_out[i][0] = -1.0f;
-      }
-    }
-  }
-
-  // now try to initialize unbounded mode:
-  // we do extrapolation for input values above 1.0f.
-  // unfortunately we can only do this if we got the computation
-  // in our hands, i.e. for the fast builtin-dt-matrix-profile path.
-  if(!isnan(profile_info->matrix_in[0]) && !isnan(profile_info->matrix_out[0]))
-  {
-    profile_info->nonlinearlut = _init_unbounded_coeffs(profile_info->lut_in[0], profile_info->lut_in[1], profile_info->lut_in[2],
-        profile_info->unbounded_coeffs_in[0], profile_info->unbounded_coeffs_in[1], profile_info->unbounded_coeffs_in[2], profile_info->lutsize);
-    _init_unbounded_coeffs(profile_info->lut_out[0], profile_info->lut_out[1], profile_info->lut_out[2],
-        profile_info->unbounded_coeffs_out[0], profile_info->unbounded_coeffs_out[1], profile_info->unbounded_coeffs_out[2], profile_info->lutsize);
-  }
-
-  if(!isnan(profile_info->matrix_in[0]) && !isnan(profile_info->matrix_out[0]) && profile_info->nonlinearlut)
-  {
-    const float rgb[3] = { 0.1842f, 0.1842f, 0.1842f };
-    profile_info->grey = dt_ioppr_get_rgb_matrix_luminance(rgb, profile_info->matrix_in, profile_info->lut_in, profile_info->unbounded_coeffs_in, profile_info->lutsize, profile_info->nonlinearlut);
-  }
-
-  return err_code;
-}
-
 static void _lib_histogram_process_vectorscope(dt_lib_histogram_t *d, const float *const input, int width, int height)
 {
   dt_times_t start_time = { 0 };
@@ -471,28 +346,9 @@ static void _lib_histogram_process_vectorscope(dt_lib_histogram_t *d, const floa
   // IDEA: what about checking histogram_profile_type and if it is a known D50 whitepoint profile (currently online prophoto) then it does the adaptation -- either do this check unilaterally and put a comment in colorspace.c, or add a field to dt_colorspaces_color_profile_t which gives the whitepoiint, and check that via dt_iop_order_iccprofile_info_t -- then the only catch is if the profile is from a file, we still need a way to check it -- but maybe then there is a meaningful illuminant field rather than defaulting to D50
 
   // test absolute colorimetric variant
-  dt_colorspaces_color_profile_type_t histogram_profile_type;
-  const char *histogram_profile_filename;
-  dt_ioppr_get_histogram_profile_type(&histogram_profile_type, &histogram_profile_filename);
-  // NOTE: dt_ioppr_add_profile_info_to_list() will return the relative colorimetric profile, as it doesn't differentiate by intent
-  //dt_iop_order_iccprofile_info_t *prof_abs = dt_ioppr_add_profile_info_to_list(darktable.develop, histogram_profile_type, histogram_profile_filename, DT_INTENT_ABSOLUTE_COLORIMETRIC);
-  dt_iop_order_iccprofile_info_t *prof_abs = malloc(sizeof(dt_iop_order_iccprofile_info_t));
-  dt_ioppr_init_profile_info(prof_abs, 0);
-  const int err = _local_generate_profile_info(prof_abs, histogram_profile_type, histogram_profile_filename, DT_INTENT_ABSOLUTE_COLORIMETRIC);
-  printf("generated profile, err is %d\n", err);
-  printf("rel col matrix type %d intent %d\n", histogram_profile->type, histogram_profile->intent);
-  for(int i=0; i<9; i++)
-  {
-    printf("%f ", histogram_profile->matrix_in[i]);
-    if((i+1)%3 == 0) printf("\n");
-  }
-  printf("abs col matrix type %d intent %d\n", prof_abs->type, prof_abs->intent);
-  for(int i=0; i<9; i++)
-  {
-    printf("%f ", prof_abs->matrix_in[i]);
-    if((i+1)%3 == 0) printf("\n");
-  }
-  dt_ioppr_cleanup_profile_info(prof_abs);
+  //dt_colorspaces_color_profile_type_t histogram_profile_type;
+  //const char *histogram_profile_filename;
+  //dt_ioppr_get_histogram_profile_type(&histogram_profile_type, &histogram_profile_filename);
 
   // check out _cmsReadMediaWhitePoint() which does cmsReadTag(hProfile, cmsSigMediaWhitePointTag) and defaults to D50 otherwise
   // if we're looking at a home-baked profile, can cmsHPROFILE show us this? -- the cmsICCHeader type has illuminant as cmsEncodedXYZNumber
