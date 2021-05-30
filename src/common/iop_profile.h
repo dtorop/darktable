@@ -229,6 +229,7 @@ static inline float extrapolate_lut(const float *const lut, const float v, const
 #ifdef _OPENMP
 #pragma omp declare simd
 #endif
+// FIXME: this is the same as imageop_math:dt_iop_eval_exp()
 static inline float eval_exp(const float coeff[3], const float x)
 {
   return coeff[1] * powf(x * coeff[0], coeff[2]);

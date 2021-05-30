@@ -108,11 +108,16 @@ typedef struct dt_iop_colorin_data_t
   cmsHTRANSFORM *xform_cam_Lab;
   cmsHTRANSFORM *xform_cam_nrgb;
   cmsHTRANSFORM *xform_nrgb_Lab;
+  // FIXME: add
+  // int lutsize;
+  // FIXME: change to or just point to dt_iop_order_iccprofile_info_t lut_in?
+  //float *lut[3];
+  // FIXME: align?
   float lut[3][LUT_SAMPLES];
-  float cmatrix[9];
-  float nmatrix[9];
-  float lmatrix[9];
-  float unbounded_coeffs[3][3]; // approximation for extrapolation of shaper curves
+  float cmatrix[9] DT_ALIGNED_PIXEL;
+  float nmatrix[9] DT_ALIGNED_PIXEL;
+  float lmatrix[9] DT_ALIGNED_PIXEL;
+  float unbounded_coeffs[3][3] DT_ALIGNED_PIXEL; // approximation for extrapolation of shaper curves
   int blue_mapping;
   int nonlinearlut;
   dt_colorspaces_color_profile_type_t type;
@@ -449,17 +454,6 @@ void cleanup_global(dt_iop_module_so_t *module)
   module->data = NULL;
 }
 
-#if 0
-static void intent_changed (GtkWidget *widget, gpointer user_data)
-{
-  dt_iop_module_t *self = (dt_iop_module_t *)user_data;
-  if(darktable.gui->reset) return;
-  dt_iop_colorin_params_t *p = (dt_iop_colorin_params_t *)self->params;
-  p->intent = (dt_iop_color_intent_t)dt_bauhaus_combobox_get(widget);
-  dt_dev_add_history_item(darktable.develop, self, TRUE);
-}
-#endif
-
 static void profile_changed(GtkWidget *widget, gpointer user_data)
 {
   dt_iop_module_t *self = (dt_iop_module_t *)user_data;
@@ -551,6 +545,7 @@ static void workicc_changed(GtkWidget *widget, gpointer user_data)
 }
 
 
+// FIXME: this is the same as iop_profile.h:extrapolate_lut() -- use that instead
 static float lerp_lut(const float *const lut, const float v)
 {
   // TODO: check if optimization is worthwhile!
@@ -697,6 +692,7 @@ static void process_cmatrix_bm(struct dt_iop_module_t *self, dt_dev_pixelpipe_io
       // avoid calling this for linear profiles (marked with negative entries), assures unbounded
       // color management without extrapolation.
       for(int c = 0; c < 3; c++)
+        // FIXME: this is the same as iop_profile.h:_apply_trc()
         cam[c] = (d->lut[c][0] >= 0.0f) ? ((in[c] < 1.0f) ? lerp_lut(d->lut[c], in[c])
                                                           : dt_iop_eval_exp(d->unbounded_coeffs[c], in[c]))
                                         : in[c];
@@ -879,6 +875,7 @@ static void process_cmatrix_proper(struct dt_iop_module_t *self, dt_dev_pixelpip
       // avoid calling this for linear profiles (marked with negative entries), assures unbounded
       // color management without extrapolation.
       for(int c = 0; c < 3; c++)
+        // FIXME: this is the same as iop_profile.h:_apply_trc()
         cam[c] = (d->lut[c][0] >= 0.0f) ? ((in[c] < 1.0f) ? lerp_lut(d->lut[c], in[c])
                                                           : dt_iop_eval_exp(d->unbounded_coeffs[c], in[c]))
                                         : in[c];
@@ -938,6 +935,7 @@ static void process_cmatrix(struct dt_iop_module_t *self, dt_dev_pixelpipe_iop_t
   const dt_iop_colorin_data_t *const d = (dt_iop_colorin_data_t *)piece->data;
   const int blue_mapping = d->blue_mapping && dt_image_is_matrix_correction_supported(&piece->pipe->image);
 
+  // FIXME: see if all these different functions can be combined due to one in which compiler will hoisit conditionals
   if(!blue_mapping && d->nonlinearlut == 0)
   {
     process_cmatrix_fastpath(self, piece, ivoid, ovoid, roi_in, roi_out);
@@ -1047,6 +1045,7 @@ static void process_lcms2(struct dt_iop_module_t *self, dt_dev_pixelpipe_iop_t *
   const int blue_mapping = d->blue_mapping && dt_image_is_matrix_correction_supported(&piece->pipe->image);
 
   // use general lcms2 fallback
+  // FIXME: see if these functions can be combined due to one in which compiler will hoisit conditionals
   if(blue_mapping)
   {
     process_lcms2_bm(self, piece, ivoid, ovoid, roi_in, roi_out);
@@ -1124,6 +1123,7 @@ static void process_sse2_cmatrix_bm(struct dt_iop_module_t *self, dt_dev_pixelpi
       // avoid calling this for linear profiles (marked with negative entries), assures unbounded
       // color management without extrapolation.
       for(int c = 0; c < 3; c++)
+        // FIXME: this is the same as iop_profile.h:_apply_trc()
         cam[c] = (d->lut[c][0] >= 0.0f) ? ((buf_in[c] < 1.0f) ? lerp_lut(d->lut[c], buf_in[c])
                                                               : dt_iop_eval_exp(d->unbounded_coeffs[c], buf_in[c]))
                                         : buf_in[c];
@@ -1294,6 +1294,7 @@ static void process_sse2_cmatrix_proper(struct dt_iop_module_t *self, dt_dev_pix
       // avoid calling this for linear profiles (marked with negative entries), assures unbounded
       // color management without extrapolation.
       for(int c = 0; c < 3; c++)
+        // FIXME: this is the same as iop_profile.h:_apply_trc()
         cam[c] = (d->lut[c][0] >= 0.0f) ? ((buf_in[c] < 1.0f) ? lerp_lut(d->lut[c], buf_in[c])
                                                               : dt_iop_eval_exp(d->unbounded_coeffs[c], buf_in[c]))
                                         : buf_in[c];
@@ -1456,6 +1457,7 @@ static void process_sse2_lcms2(struct dt_iop_module_t *self, dt_dev_pixelpipe_io
 void process_sse2(struct dt_iop_module_t *self, dt_dev_pixelpipe_iop_t *piece, const void *const ivoid,
                   void *const ovoid, const dt_iop_roi_t *const roi_in, const dt_iop_roi_t *const roi_out)
 {
+  // FIXME: future: remove SSE path, if optimized CPU code isn't slower with current compilers
   const dt_iop_colorin_data_t *const d = (dt_iop_colorin_data_t *)piece->data;
 
   if(d->type == DT_COLORSPACE_LAB)
@@ -1547,6 +1549,7 @@ void commit_params(struct dt_iop_module_t *self, dt_iop_params_t *p1, dt_dev_pix
   }
   piece->enabled = 1;
 
+  // FIXME: move this logic to iop_profile, when it generates a profile?
   if(type == DT_COLORSPACE_ENHANCED_MATRIX)
   {
     d->input = dt_colorspaces_create_darktable_profile(pipe->image.camera_makermodel);
@@ -1648,6 +1651,7 @@ void commit_params(struct dt_iop_module_t *self, dt_iop_params_t *p1, dt_dev_pix
     return;
   }
 
+  // FIXME: if dt_ioppr_add_profile_info_to_list() can actually return error codes -- and handle XYZ -- then could skip this test, and revert to Rec.709 on failure
   cmsColorSpaceSignature input_color_space = cmsGetColorSpace(d->input);
   cmsUInt32Number input_format;
   switch(input_color_space)
@@ -1669,16 +1673,34 @@ void commit_params(struct dt_iop_module_t *self, dt_iop_params_t *p1, dt_dev_pix
       input_format = TYPE_RGBA_FLT; // this will fail later, triggering the linear rec709 fallback
   }
 
+  // FIXME: this will warn on XYZ profiles
+  // FIXME: this will not work if output is CLUT -- is this a problem?
+  dt_iop_order_iccprofile_info_t *profile_info =
+    dt_ioppr_add_profile_info_to_list(self->dev, d->input->type, d->input->filename, p->intent);
+
+  /* We have a camera input matrix, these are not generated from files but in colorin,
+   * so we need to fetch and replace them from somewhere.
+   */
+  // FIXME: this is a hack, instead make dt_ioppr_add_profile_info_to_list() be able to determine camera profile depending on curent pixelpipe
+  if(profile_info->type >= DT_COLORSPACE_EMBEDDED_ICC && profile_info->type <= DT_COLORSPACE_ALTERNATE_MATRIX)
+  {
+    memcpy(profile_info->matrix_in, d->cmatrix, sizeof(profile_info->matrix_in));
+    mat3inv_float(profile_info->matrix_out, profile_info->matrix_in);
+    // FIXME: why don't we copy the LUTs and coeffs as well? will these LUTs/coeffs be right?
+  }
+
+  if(isnan(profile_info->matrix_in[0]))
+  {
+    piece->process_cl_ready = 0;
+    d->xform_cam_Lab = cmsCreateTransform(d->input, input_format, Lab, TYPE_LabA_FLT, p->intent, 0);
+  }
+
   // prepare transformation matrix or lcms2 transforms as fallback
   if(d->nrgb)
   {
     // user wants us to clip to a given RGB profile
-    if(dt_colorspaces_get_matrix_from_input_profile(d->input, d->cmatrix, d->lut[0], d->lut[1], d->lut[2],
-                                                    LUT_SAMPLES))
+    if(isnan(profile_info->matrix_in[0]))
     {
-      piece->process_cl_ready = 0;
-      d->cmatrix[0] = NAN;
-      d->xform_cam_Lab = cmsCreateTransform(d->input, input_format, Lab, TYPE_LabA_FLT, p->intent, 0);
       d->xform_cam_nrgb = cmsCreateTransform(d->input, input_format, d->nrgb, TYPE_RGBA_FLT, p->intent, 0);
       d->xform_nrgb_Lab = cmsCreateTransform(d->nrgb, TYPE_RGBA_FLT, Lab, TYPE_LabA_FLT, p->intent, 0);
     }
@@ -1689,17 +1711,6 @@ void commit_params(struct dt_iop_module_t *self, dt_iop_params_t *p1, dt_dev_pix
       dt_colorspaces_get_matrix_from_output_profile(d->nrgb, omat, lutr, lutg, lutb, 1);
       mat3mul(d->nmatrix, omat, d->cmatrix);
       dt_colorspaces_get_matrix_from_input_profile(d->nrgb, d->lmatrix, lutr, lutg, lutb, 1);
-    }
-  }
-  else
-  {
-    // default mode: unbound processing
-    if(dt_colorspaces_get_matrix_from_input_profile(d->input, d->cmatrix, d->lut[0], d->lut[1], d->lut[2],
-                                                    LUT_SAMPLES))
-    {
-      piece->process_cl_ready = 0;
-      d->cmatrix[0] = NAN;
-      d->xform_cam_Lab = cmsCreateTransform(d->input, input_format, Lab, TYPE_LabA_FLT, p->intent, 0);
     }
   }
 
@@ -1720,7 +1731,7 @@ void commit_params(struct dt_iop_module_t *self, dt_iop_params_t *p1, dt_dev_pix
   }
 
   // user selected a non-supported input profile, check that:
-  if(!d->xform_cam_Lab && isnan(d->cmatrix[0]))
+  if(!d->xform_cam_Lab && isnan(profile_info->matrix_in[0]))
   {
     if(p->type == DT_COLORSPACE_FILE)
       fprintf(stderr, "[colorin] unsupported input profile `%s' has been replaced by linear Rec709 RGB!\n", p->filename);
@@ -1729,41 +1740,23 @@ void commit_params(struct dt_iop_module_t *self, dt_iop_params_t *p1, dt_dev_pix
     dt_control_log(_("unsupported input profile has been replaced by linear Rec709 RGB!"));
     if(d->input && d->clear_input) dt_colorspaces_cleanup_profile(d->input);
     d->nrgb = NULL;
+    // below code assumes that the this is a matrix profile
     d->input = dt_colorspaces_get_profile(DT_COLORSPACE_LIN_REC709, "", DT_PROFILE_DIRECTION_IN)->profile;
     d->clear_input = 0;
-    if(dt_colorspaces_get_matrix_from_input_profile(d->input, d->cmatrix, d->lut[0], d->lut[1], d->lut[2],
-                                                    LUT_SAMPLES))
-    {
-      piece->process_cl_ready = 0;
-      d->cmatrix[0] = NAN;
-      d->xform_cam_Lab = cmsCreateTransform(d->input, TYPE_RGBA_FLT, Lab, TYPE_LabA_FLT, p->intent, 0);
-    }
   }
 
-  d->nonlinearlut = 0;
-
-  // now try to initialize unbounded mode:
-  // we do a extrapolation for input values above 1.0f.
-  // unfortunately we can only do this if we got the computation
-  // in our hands, i.e. for the fast builtin-dt-matrix-profile path.
-  for(int k = 0; k < 3; k++)
-  {
-    // omit luts marked as linear (negative as marker)
-    if(d->lut[k][0] >= 0.0f)
-    {
-      d->nonlinearlut++;
-
-      const float x[4] = { 0.7f, 0.8f, 0.9f, 1.0f };
-      const float y[4] = { lerp_lut(d->lut[k], x[0]), lerp_lut(d->lut[k], x[1]), lerp_lut(d->lut[k], x[2]),
-                           lerp_lut(d->lut[k], x[3]) };
-      dt_iop_estimate_exp(x, y, 4, d->unbounded_coeffs[k]);
-    }
-    else
-      d->unbounded_coeffs[k][0] = -1.0f;
-  }
+  // FIXME: future: use fast matrix inlines in process code above
+  memcpy(d->cmatrix, profile_info->matrix_in, sizeof(d->cmatrix));
+  // FIXME: this depends on lut_samples being same here and in iop_profile
+  memcpy(d->lut[0], profile_info->lut_in[0], LUT_SAMPLES);
+  memcpy(d->lut[1], profile_info->lut_in[1], LUT_SAMPLES);
+  memcpy(d->lut[2], profile_info->lut_in[2], LUT_SAMPLES);
+  d->nonlinearlut = profile_info->nonlinearlut;
+  memcpy(d->unbounded_coeffs, profile_info->unbounded_coeffs_in, sizeof(d->unbounded_coeffs));
 
   // commit color profiles to pipeline
   dt_ioppr_set_pipe_work_profile_info(self->dev, piece->pipe, d->type_work, d->filename_work, DT_INTENT_PERCEPTUAL);
+  // FIXME: could just pass in profile_info, if set its matrix here
   dt_ioppr_set_pipe_input_profile_info(self->dev, piece->pipe, d->type, d->filename, p->intent, d->cmatrix);
 }
 

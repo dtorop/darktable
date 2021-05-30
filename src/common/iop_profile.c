@@ -797,12 +797,14 @@ dt_ioppr_set_pipe_input_profile_info(struct dt_develop_t *dev,
 {
   dt_iop_order_iccprofile_info_t *profile_info = dt_ioppr_add_profile_info_to_list(dev, type, filename, intent);
 
+  // FIXME: currently this will never happen -- profile add/generate never returns error
   if(profile_info == NULL)
   {
     fprintf(stderr,
             "[dt_ioppr_set_pipe_input_profile_info] unsupported input profile %i %s, it will be replaced with "
             "linear rec2020\n",
             type, filename);
+    // FIXME: the colorin code uses Rec.709 as fallback
     profile_info = dt_ioppr_add_profile_info_to_list(dev, DT_COLORSPACE_LIN_REC2020, "", intent);
   }
 
