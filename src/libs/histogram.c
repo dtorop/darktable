@@ -811,7 +811,7 @@ static void _lib_histogram_draw_vectorscope(dt_lib_histogram_t *d, cairo_t *cr,
   cairo_mask(cr, graph_pat);
   //cairo_mask_surface(cr, graph_surface, 0., 0.);
   cairo_set_operator(cr, CAIRO_OPERATOR_HARD_LIGHT);
-  cairo_set_source_rgba(cr, 1.0, 1.0, 1.0, 0.4);
+  cairo_set_source_rgba(cr, 1.0, 1.0, 1.0, 0.5);
   cairo_mask(cr, graph_pat);
 #endif
   cairo_pattern_destroy(bkgd_pat);
