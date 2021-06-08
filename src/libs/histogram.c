@@ -350,30 +350,31 @@ static void _lib_histogram_vectorscope_bkgd(dt_lib_histogram_t *d, const dt_iop_
   const int stride = cairo_format_stride_for_width(CAIRO_FORMAT_RGB24, diam_px);
   // loop appears to be too small to benefit w/OpenMP
   // FIXME: is this still true? -- all this will only run once per colorspace change, so doesn't need to be extra-fast
-  for(size_t out_y = 0; out_y < diam_px; out_y++)
-    for(size_t out_x = 0; out_x < diam_px; out_x++)
+  for(size_t y = 0; y < diam_px; y++)
+    for(size_t x = 0; x < diam_px; x++)
     {
-      uint8_t *const restrict px = d->vectorscope_bkgd + out_y * stride + out_x * 4U;
-      float in_x = max_radius * 2.0f * (((out_x + 0.5f) / diam_px) - 0.5f);
-      float in_y = max_radius * 2.0f * (((out_y + 0.5f) / diam_px) - 0.5f);
-      // FIXME: this seems to go in the wrong direction -- just use exponent?
-      log_scale(d, &in_x, &in_y, max_radius);
+      uint8_t *const restrict px = d->vectorscope_bkgd + y * stride + x * 4U;
+      // FIXME: should be / (diam_px-1)? same in other places?
+      float a = max_radius * 2.0f * (x / (float)(diam_px-1) - 0.5f);
+      float b = max_radius * 2.0f * (y / (float)(diam_px-1) - 0.5f);
+      // FIXME: should we be doing log_scale of [-1,1] rather than [-max_diam,max_diam]?
+      log_scale(d, &a, &b, max_radius);
       float XYZ_D50[4] DT_ALIGNED_PIXEL, RGB[4] DT_ALIGNED_PIXEL;
+      // FIXME: look at how hue controls on colorbalance rgb are drawn -- what lightness level -- use similar math
       if(vs_type == DT_LIB_HISTOGRAM_VECTORSCOPE_CIELUV)
       {
-        // FIXME: just convert Luv -> JzAzBz and fall through?
-        const float b[4] DT_ALIGNED_PIXEL = {65.0f, in_x, in_y};
+        const float Luv[4] DT_ALIGNED_PIXEL = {65.0f, a, b};
         float xyY[4] DT_ALIGNED_PIXEL;
-        dt_Luv_to_xyY(b, xyY);
+        dt_Luv_to_xyY(Luv, xyY);
         // FIXME: do have to worry about chromatic adaptation? this assumes that the histogram profile white point is the same as PCS whitepoint (D50) -- if we have a D65 whitepoint profile, how does the result change if we adapt to D65 then convert to L*u*v* with a D65 whitepoint?
         dt_xyY_to_XYZ(xyY, XYZ_D50);
       }
       else if(vs_type == DT_LIB_HISTOGRAM_VECTORSCOPE_JZAZBZ)
       {
-        const float b[4] DT_ALIGNED_PIXEL = {0.008f, in_x, in_y};
+        const float JzAzBz[4] DT_ALIGNED_PIXEL = {0.008f, a, b};
         // FIXME: can optimize the XYZ_D65 -> RGB conversion by pre-multiplying matrix?
         float XYZ_D65[4] DT_ALIGNED_PIXEL;
-        dt_JzAzBz_2_XYZ(b, XYZ_D65);
+        dt_JzAzBz_2_XYZ(JzAzBz, XYZ_D65);
         dt_XYZ_D65_2_XYZ_D50(XYZ_D65, XYZ_D50);
       }
       else
