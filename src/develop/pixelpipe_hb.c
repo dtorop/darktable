@@ -1105,6 +1105,7 @@ static int dt_dev_pixelpipe_process_rec(dt_dev_pixelpipe_t *pipe, dt_develop_t *
   gboolean cache_available = FALSE;
   uint64_t basichash = 0;
   uint64_t hash = 0;
+#if 0
   // do not get gamma from cache on preview pipe so we can compute the final scope
   const gboolean preview_gamma = ((pipe->type & DT_DEV_PIXELPIPE_PREVIEW) == DT_DEV_PIXELPIPE_PREVIEW
                                   && module
@@ -1144,6 +1145,7 @@ static int dt_dev_pixelpipe_process_rec(dt_dev_pixelpipe_t *pipe, dt_develop_t *
   // FIXME: better yet, don't even cache the gamma output in this case -- but then we'd need to allocate a temporary output buffer and garbage collect it
   // FIXME: do this by reweighting cache to low priority when it is previewpipe gamma or a prior iop needs UI update -- though then do we run into trouble with input/output cache overwriting?
   if(!(preview_gamma || update_prior_iop_gui))
+#endif
   {
     dt_dev_pixelpipe_cache_fullhash(pipe->image.id, roi_out, pipe, pos, &basichash, &hash);
     cache_available = dt_dev_pixelpipe_cache_available(&(pipe->cache), hash);

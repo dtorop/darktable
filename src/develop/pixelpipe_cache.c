@@ -98,9 +98,11 @@ uint64_t dt_dev_pixelpipe_cache_basichash(int imgid, struct dt_dev_pixelpipe_t *
   uint64_t hash = 5381 + imgid + (pipe->type & DT_DEV_PIXELPIPE_FAST);
   // go through all modules up to module and compute a weird hash using the operation and params.
   GList *pieces = pipe->nodes;
+  //printf("imgid %d module %d\n", imgid, module);
   for(int k = 0; k < module && pieces; k++)
   {
     dt_dev_pixelpipe_iop_t *piece = (dt_dev_pixelpipe_iop_t *)pieces->data;
+    //printf("checking for cache %s\n", piece->module->op);
     dt_develop_t *dev = piece->module->dev;
     if(!(dev->gui_module && dev->gui_module != piece->module
          && (dev->gui_module->operation_tags_filter() & piece->module->operation_tags())))
@@ -118,6 +120,22 @@ uint64_t dt_dev_pixelpipe_cache_basichash(int imgid, struct dt_dev_pixelpipe_t *
           const char *str = (const char *)darktable.lib->proxy.colorpicker.primary_sample->point;
           for(size_t i = 0; i < sizeof(float) * 2; i++) hash = ((hash << 5) + hash) ^ str[i];
         }
+      }
+    }
+    if((pipe->type & DT_DEV_PIXELPIPE_PREVIEW) == DT_DEV_PIXELPIPE_PREVIEW)
+    {
+      //if(k+1 == module) printf("last is %s\n", piece->module->op);
+      // preview pipe gamma is used for final scope/colorpicker, so we
+      // can't cache it between pipe runs
+      const gboolean is_gamma = k+1 == module && strcmp(piece->module->op, "gamma") == 0;
+      // FIXME: is this less specific than prior check?
+      const gboolean is_histogram = piece->enabled && piece->module->expanded && (piece->request_histogram & DT_REQUEST_ON);
+      // FIXME: is this less specific than prior check?
+      const gboolean is_picker = piece->enabled && piece->module->expanded && piece->module->request_color_pick != DT_REQUEST_COLORPICK_OFF;
+      if(is_gamma || is_histogram || is_picker)
+      {
+        printf("imgid %d module %d %s is_gamma %d is_histogram %d is_picker %d\n", imgid, module, piece->module->op, is_gamma, is_histogram, is_picker);
+        hash = ((hash << 5) + hash) ^ pipe->input_timestamp;
       }
     }
     pieces = g_list_next(pieces);
