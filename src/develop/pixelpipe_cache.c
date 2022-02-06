@@ -119,14 +119,6 @@ uint64_t dt_dev_pixelpipe_cache_basichash(int imgid, struct dt_dev_pixelpipe_t *
           for(size_t i = 0; i < sizeof(float) * 2; i++) hash = ((hash << 5) + hash) ^ str[i];
         }
       }
-      // FIXME: have to check for GUI attached?
-      // FIXME: remove this unless this case actually work
-#if 0
-      if(piece->request_histogram & DT_REQUEST_ON)
-      {
-        hash = ((hash << 5) + hash) ^ 1;
-      }
-#endif
     }
     pieces = g_list_next(pieces);
   }

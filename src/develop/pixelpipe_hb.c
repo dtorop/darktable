@@ -1116,10 +1116,10 @@ static int dt_dev_pixelpipe_process_rec(dt_dev_pixelpipe_t *pipe, dt_develop_t *
   // FIXME: when disable rgbcurve and other iops needing histogram, should refresh to hide the histogram -- or else get rid of enabled check below and check for expanded instead
   // FIXME: check how this is working with colorpicker
   // FIXME: should reweight caches if currently active iop has active histogram/picker?
+  // FIXME: this doesn't actually update the picker in rgb curve until mouseover the iop -- though moving the picker does update this
   gboolean update_prior_iop_gui = FALSE;
   if((pipe->type & DT_DEV_PIXELPIPE_PREVIEW) == DT_DEV_PIXELPIPE_PREVIEW)
   {
-    //printf("scanning from %s\n", module ? module->op : "-");
     GList *l = g_list_previous(pieces);
     while(l)
     {
@@ -1139,24 +1139,11 @@ static int dt_dev_pixelpipe_process_rec(dt_dev_pixelpipe_t *pipe, dt_develop_t *
       l = g_list_previous(l);
     }
     if(!update_prior_iop_gui) printf("%s: no prior UI update\n", module ? module->op : "-");
-    //printf("update_prior_iop_gui %d\n", update_prior_iop_gui);
   }
 
   // FIXME: better yet, don't even cache the gamma output in this case -- but then we'd need to allocate a temporary output buffer and garbage collect it
-#if 0
-  if(!((pipe->type & DT_DEV_PIXELPIPE_PREVIEW) == DT_DEV_PIXELPIPE_PREVIEW
-       && module && piece
-       && ((strcmp(module->op, "gamma") == 0)
-           || ((dev->gui_attached || !(piece->request_histogram & DT_REQUEST_ONLY_IN_GUI))
-               && (piece->request_histogram & DT_REQUEST_ON))
-           || _request_color_pick(pipe, dev, module))))
-#elif 0
-  if(!((pipe->type & DT_DEV_PIXELPIPE_PREVIEW) == DT_DEV_PIXELPIPE_PREVIEW
-       && module
-       && ((strcmp(module->op, "gamma") == 0))))
-#else
+  // FIXME: do this by reweighting cache to low priority when it is previewpipe gamma or a prior iop needs UI update -- though then do we run into trouble with input/output cache overwriting?
   if(!(preview_gamma || update_prior_iop_gui))
-#endif
   {
     dt_dev_pixelpipe_cache_fullhash(pipe->image.id, roi_out, pipe, pos, &basichash, &hash);
     cache_available = dt_dev_pixelpipe_cache_available(&(pipe->cache), hash);
