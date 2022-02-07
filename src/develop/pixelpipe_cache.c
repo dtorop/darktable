@@ -133,7 +133,7 @@ uint64_t dt_dev_pixelpipe_cache_basichash(int imgid, struct dt_dev_pixelpipe_t *
       // can't cache it between pipe runs
       const gboolean is_gamma = k+1 == module && strcmp(piece->module->op, "gamma") == 0;
       // FIXME: is this less specific than prior check?
-      const gboolean is_histogram = piece->enabled && piece->module->expanded && (piece->request_histogram & DT_REQUEST_ON);
+      const gboolean is_histogram = /* piece->enabled && */ piece->module->expanded && (piece->request_histogram & DT_REQUEST_ON);
       // FIXME: is this less specific than prior check?
       // FIXME: this is already dealt with above?
       const gboolean is_picker = piece->enabled && piece->module->expanded && piece->module->request_color_pick != DT_REQUEST_COLORPICK_OFF;

@@ -1085,11 +1085,60 @@ static int dt_dev_pixelpipe_process_rec(dt_dev_pixelpipe_t *pipe, dt_develop_t *
     module = (dt_iop_module_t *)modules->data;
     piece = (dt_dev_pixelpipe_iop_t *)pieces->data;
     // skip this module?
+    // FIXME: if we wanted to update background histogram for disabled iops (curves/levels) then this check would only skip module if there was no histogram
     if(!piece->enabled
        || (dev->gui_module && dev->gui_module != module
            && dev->gui_module->operation_tags_filter() & module->operation_tags()))
-      return dt_dev_pixelpipe_process_rec(pipe, dev, output, cl_mem_output, out_format, &roi_in,
-                                          g_list_previous(modules), g_list_previous(pieces), pos - 1);
+    {
+      int ret = dt_dev_pixelpipe_process_rec(pipe, dev, output, cl_mem_output, out_format, &roi_in,
+                                             g_list_previous(modules), g_list_previous(pieces), pos - 1);
+      // FIXME: understand the tags clause above
+      if(!ret && module->expanded
+         // FIXME: do have to check for DT_REQUEST_ONLY_IN_GUI?
+         && (dev->gui_attached || !(piece->request_histogram & DT_REQUEST_ONLY_IN_GUI))
+         && (piece->request_histogram & DT_REQUEST_ON))
+      {
+        printf("making histogram for disabled module %s\n", module->op);
+        if(dt_atomic_get_int(&pipe->shutdown)) return 1;
+#if 1
+        // FIXME: do we need to deal with OpenCL? OpenCL path requires a temp buffer in output, which isn't yet initialized
+#if 0
+        if(dt_opencl_is_inited() && pipe->opencl_enabled && pipe->devid >= 0
+           && cl_mem_input != NULL)
+        {
+          printf("opencl histogram collect\n");
+        }
+#endif
+        // cheat and just copy OpenCL data back to memory --
+        // simplifies this code path, but will slow down an OpenCL
+        // pipeline
+        if(*cl_mem_output != NULL)
+        {
+          printf("moving output from OpenCL to host\n");
+          // FIXME: is output always alloc'd to cache here?
+          cl_int err = dt_opencl_copy_device_to_host(pipe->devid, *output, *cl_mem_output, roi_in.width, roi_in.height,
+                                                     dt_iop_buffer_dsc_to_bpp(*out_format));
+          dt_opencl_release_mem_object(*cl_mem_output);
+          *cl_mem_output = NULL;
+
+          if(err != CL_SUCCESS)
+          {
+            dt_print(DT_DEBUG_OPENCL,
+                     "[opencl_pixelpipe (d)] late opencl error detected while copying back to cpu buffer for histogram: %d\n",
+                     err);
+            pipe->opencl_error = 1;
+            return 1;
+          }
+        }
+        // FIXME: is this flow setup sensible?
+        dt_pixelpipe_flow_t pixelpipe_flow = (PIXELPIPE_FLOW_NONE | PIXELPIPE_FLOW_HISTOGRAM_NONE);
+        printf("collecting histogram on CPU\n");
+        collect_histogram_on_CPU(pipe, dev, *output, &roi_in, module, piece, &pixelpipe_flow);
+        // FIXME: do we need to deal with color picking?
+#endif
+      }
+      return ret;
+    }
   }
 
   if(module) g_strlcpy(module_name, module->op, MIN(sizeof(module_name), sizeof(module->op)));
