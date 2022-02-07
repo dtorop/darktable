@@ -120,6 +120,13 @@ uint64_t dt_dev_pixelpipe_cache_basichash(int imgid, struct dt_dev_pixelpipe_t *
         }
       }
     }
+    // can't cache an iop which needs to display up-to-date histogram
+    // FIXME: need to check (dev->gui_attached || !(piece->request_histogram & DT_REQUEST_ONLY_IN_GUI))
+    if(piece->module->expanded && (piece->request_histogram & DT_REQUEST_ON))
+    {
+      printf("imgid %d module %d %s not caching\n", imgid, module, piece->module->op);
+      hash = ((hash << 5) + hash) ^ pipe->input_timestamp;
+    }
     pieces = g_list_next(pieces);
   }
   return hash;
