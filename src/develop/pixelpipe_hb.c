@@ -931,6 +931,7 @@ static void collect_histogram_on_CPU(dt_dev_pixelpipe_t *pipe, dt_develop_t *dev
     if(piece->histogram && (module->request_histogram & DT_REQUEST_ON)
        && (pipe->type & DT_DEV_PIXELPIPE_PREVIEW) == DT_DEV_PIXELPIPE_PREVIEW)
     {
+      // FIXME: this boilerplate is in the GPU version as well -- just make a flag here about which collect to do?
       const size_t buf_size = 4 * piece->histogram_stats.bins_count * sizeof(uint32_t);
       module->histogram = realloc(module->histogram, buf_size);
       memcpy(module->histogram, piece->histogram, buf_size);
@@ -1100,6 +1101,31 @@ static int dt_dev_pixelpipe_process_rec(dt_dev_pixelpipe_t *pipe, dt_develop_t *
       {
         printf("making histogram for disabled module %s\n", module->op);
         if(dt_atomic_get_int(&pipe->shutdown)) return 1;
+
+#if 1
+        // cheat and just copy OpenCL data back to memory --
+        // simplifies this code path, but will slow down an OpenCL
+        // pipeline
+        if(*cl_mem_output != NULL)
+        {
+          printf("moving output from OpenCL to host\n");
+          // FIXME: is output always alloc'd to cache here?
+          cl_int err = dt_opencl_copy_device_to_host(pipe->devid, *output, *cl_mem_output, roi_in.width, roi_in.height,
+                                                     dt_iop_buffer_dsc_to_bpp(*out_format));
+          dt_opencl_release_mem_object(*cl_mem_output);
+          *cl_mem_output = NULL;
+
+          if(err != CL_SUCCESS)
+          {
+            dt_print(DT_DEBUG_OPENCL,
+                     "[opencl_pixelpipe (d)] late opencl error detected while copying back to cpu buffer for histogram: %d\n",
+                     err);
+            pipe->opencl_error = 1;
+            return 1;
+          }
+        }
+#endif
+
         if(dt_opencl_is_inited() && pipe->opencl_enabled && pipe->devid >= 0
            && *cl_mem_output != NULL)
         {
@@ -1112,6 +1138,7 @@ static int dt_dev_pixelpipe_process_rec(dt_dev_pixelpipe_t *pipe, dt_develop_t *
           const size_t bpp = dt_iop_buffer_dsc_to_bpp(*out_format);
           size_t outbufsize = bpp * roi_in.width * roi_in.height;
 
+          // FIXME: need to transform to module colorspace first
           histogram_collect_cl(pipe->devid, piece, *cl_mem_output, &roi_in, &(piece->histogram),
                                piece->histogram_max, *output, outbufsize);
           if(piece->histogram && (module->request_histogram & DT_REQUEST_ON)
@@ -1131,6 +1158,14 @@ static int dt_dev_pixelpipe_process_rec(dt_dev_pixelpipe_t *pipe, dt_develop_t *
           // FIXME: is this flow setup sensible?
           dt_pixelpipe_flow_t pixelpipe_flow = (PIXELPIPE_FLOW_NONE | PIXELPIPE_FLOW_HISTOGRAM_NONE);
           printf("collecting histogram on CPU\n");
+
+          // transform to module input colorspace to get meaningful histogram
+          const dt_iop_order_iccprofile_info_t *const work_profile
+            = ((*out_format)->cst != iop_cs_RAW) ? dt_ioppr_get_pipe_work_profile_info(pipe) : NULL;
+          dt_ioppr_transform_image_colorspace(module, *output, *output, roi_in.width, roi_in.height, (*out_format)->cst,
+                                              module->input_colorspace(module, pipe, piece), &((*out_format)->cst),
+                                              work_profile);
+
           collect_histogram_on_CPU(pipe, dev, *output, &roi_in, module, piece, &pixelpipe_flow);
         }
         // FIXME: do we need to deal with color picking?
