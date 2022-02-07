@@ -1172,8 +1172,8 @@ static gboolean _area_draw_callback(GtkWidget *widget, cairo_t *crf, dt_iop_modu
   cairo_set_antialias(cr, CAIRO_ANTIALIAS_DEFAULT);
 
   // draw histogram in background
-  // only if module is enabled
-  if(self->enabled)
+  // only if module is expanded
+  if(self->expanded)
   {
     // only if no color picker
     if(self->request_color_pick != DT_REQUEST_COLORPICK_MODULE)
@@ -2384,23 +2384,6 @@ const dt_action_def_t _action_def_zones
       _action_process_zones,
       _action_elements_zones };
 
-#if 0
-static void _colorzones_history_change_callback(gpointer instance, gpointer user_data)
-{
-  dt_iop_module_t *self = (dt_iop_module_t *)user_data;
-  printf("in _colorzones_history_change_callback self %p self->off %p self->widget %p\n", self, self->off, self->widget);
-  if(!darktable.gui->reset && self->off)
-    printf("_colorzones_history_change_callback off is %d\n", gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(self->off)));
-  if(!darktable.gui->reset
-     && self->off
-     && !gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(self->off)))
-  {
-    // hide background histogram when module turns off -- it's no longer updated
-    gtk_widget_queue_draw(self->widget);
-  }
-}
-#endif
-
 void gui_reset(struct dt_iop_module_t *self)
 {
   dt_iop_colorzones_gui_data_t *c = (dt_iop_colorzones_gui_data_t *)self->gui_data;
@@ -2568,21 +2551,12 @@ void gui_init(struct dt_iop_module_t *self)
         "- centripetal is better to avoids cusps and oscillations with close nodes but is less smooth\n"
         "- monotonic is better for accuracy of pure analytical functions (log, gamma, exp)\n"));
   g_signal_connect(G_OBJECT(c->interpolator), "value-changed", G_CALLBACK(_interpolator_callback), self);
-
-#if 0
-  // hack to catch a signal when module is turned off
-  DT_DEBUG_CONTROL_SIGNAL_CONNECT(darktable.signals, DT_SIGNAL_DEVELOP_HISTORY_CHANGE,
-                                  G_CALLBACK(_colorzones_history_change_callback), self);
-#endif
 }
 
 void gui_update(struct dt_iop_module_t *self)
 {
   dt_iop_colorzones_gui_data_t *g = (dt_iop_colorzones_gui_data_t *)self->gui_data;
   dt_iop_colorzones_params_t *p = (dt_iop_colorzones_params_t *)self->params;
-#if 0
-  DT_DEBUG_CONTROL_SIGNAL_DISCONNECT(darktable.signals, G_CALLBACK(_colorzones_history_change_callback), self);
-#endif
   dt_bauhaus_combobox_set(g->select_by, p->channel);
   dt_bauhaus_slider_set(g->strength, p->strength);
   dt_bauhaus_combobox_set(g->interpolator, p->curve_type[g->channel]);

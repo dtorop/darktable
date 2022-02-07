@@ -450,18 +450,6 @@ error:
 }
 #endif
 
-static void _levels_history_change_callback(gpointer instance, gpointer user_data)
-{
-  dt_iop_module_t *self = (dt_iop_module_t *)user_data;
-  if(!darktable.gui->reset
-     && self->off
-     && !gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(self->off)))
-  {
-    // hide background histogram when module turns off -- it's no longer updated
-    gtk_widget_queue_draw(self->widget);
-  }
-}
-
 // void init_presets (dt_iop_module_so_t *self)
 //{
 //  dt_iop_levels_params_t p;
@@ -698,17 +686,11 @@ void gui_init(dt_iop_module_t *self)
   c->mode = dt_bauhaus_combobox_from_params(self, N_("mode"));
 
   gtk_box_pack_start(GTK_BOX(self->widget), c->mode_stack, TRUE, TRUE, 0);
-
-  // hack to catch a signal when module is turned off
-  DT_DEBUG_CONTROL_SIGNAL_CONNECT(darktable.signals, DT_SIGNAL_DEVELOP_HISTORY_CHANGE,
-                                  G_CALLBACK(_levels_history_change_callback), self);
 }
 
 void gui_cleanup(dt_iop_module_t *self)
 {
   dt_iop_levels_gui_data_t *g = (dt_iop_levels_gui_data_t *)self->gui_data;
-
-  DT_DEBUG_CONTROL_SIGNAL_DISCONNECT(darktable.signals, G_CALLBACK(_levels_history_change_callback), self);
 
   g_list_free(g->modes);
 
@@ -808,8 +790,8 @@ static gboolean dt_iop_levels_area_draw(GtkWidget *widget, cairo_t *crf, gpointe
   cairo_translate(cr, 0, height);
 
   // draw lum histogram in background
-  // only if the module is enabled
-  if(self->enabled)
+  // only if the module is expanded
+  if(self->expanded)
   {
     uint32_t *hist = self->histogram;
     const gboolean is_linear = darktable.lib->proxy.histogram.is_linear;

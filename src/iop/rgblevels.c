@@ -318,18 +318,6 @@ int button_pressed(struct dt_iop_module_t *self, double x, double y, double pres
   return handled;
 }
 
-static void _rgblevels_history_change_callback(gpointer instance, gpointer user_data)
-{
-  dt_iop_module_t *self = (dt_iop_module_t *)user_data;
-  if(!darktable.gui->reset
-     && self->off
-     && !gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(self->off)))
-  {
-    // hide background histogram when module turns off -- it's no longer updated
-    gtk_widget_queue_draw(self->widget);
-  }
-}
-
 void gui_post_expose(struct dt_iop_module_t *self, cairo_t *cr, int32_t width, int32_t height, int32_t pointerx,
                      int32_t pointery)
 {
@@ -464,8 +452,8 @@ static gboolean _area_draw_callback(GtkWidget *widget, cairo_t *crf, dt_iop_modu
   cairo_translate(cr, 0, height);
 
   // draw histogram in background
-  // only if the module is enabled
-  if(self->enabled)
+  // only if the module is expanded
+  if(self->expanded)
   {
     const int ch = c->channel;
     const uint32_t *hist = self->histogram;
@@ -1101,16 +1089,11 @@ void gui_init(dt_iop_module_t *self)
   // add signal handler for preview pipe finish
   DT_DEBUG_CONTROL_SIGNAL_CONNECT(darktable.signals, DT_SIGNAL_DEVELOP_PREVIEW_PIPE_FINISHED,
                             G_CALLBACK(_develop_ui_pipe_finished_callback), self);
-
-  // hack to catch a signal when module is turned off
-  DT_DEBUG_CONTROL_SIGNAL_CONNECT(darktable.signals, DT_SIGNAL_DEVELOP_HISTORY_CHANGE,
-                                  G_CALLBACK(_rgblevels_history_change_callback), self);
 }
 
 void gui_cleanup(dt_iop_module_t *self)
 {
   DT_DEBUG_CONTROL_SIGNAL_DISCONNECT(darktable.signals, G_CALLBACK(_develop_ui_pipe_finished_callback), self);
-  DT_DEBUG_CONTROL_SIGNAL_DISCONNECT(darktable.signals, G_CALLBACK(_rgblevels_history_change_callback), self);
 
   IOP_GUI_FREE;
 }
