@@ -98,11 +98,9 @@ uint64_t dt_dev_pixelpipe_cache_basichash(int imgid, struct dt_dev_pixelpipe_t *
   uint64_t hash = 5381 + imgid + (pipe->type & DT_DEV_PIXELPIPE_FAST);
   // go through all modules up to module and compute a weird hash using the operation and params.
   GList *pieces = pipe->nodes;
-  //printf("imgid %d module %d\n", imgid, module);
   for(int k = 0; k < module && pieces; k++)
   {
     dt_dev_pixelpipe_iop_t *piece = (dt_dev_pixelpipe_iop_t *)pieces->data;
-    //printf("checking for cache %s\n", piece->module->op);
     dt_develop_t *dev = piece->module->dev;
     if(!(dev->gui_module && dev->gui_module != piece->module
          && (dev->gui_module->operation_tags_filter() & piece->module->operation_tags())))

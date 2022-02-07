@@ -1199,55 +1199,10 @@ static int dt_dev_pixelpipe_process_rec(dt_dev_pixelpipe_t *pipe, dt_develop_t *
   {
     return 1;
   }
-  gboolean cache_available = FALSE;
   uint64_t basichash = 0;
   uint64_t hash = 0;
-#if 0
-  // do not get gamma from cache on preview pipe so we can compute the final scope
-  const gboolean preview_gamma = ((pipe->type & DT_DEV_PIXELPIPE_PREVIEW) == DT_DEV_PIXELPIPE_PREVIEW
-                                  && module
-                                  && ((strcmp(module->op, "gamma") == 0)));
-  // if there is an earlier iop visible with a histogram or color
-  // picker, we can't pull results from cache as we need to update
-  // that UI
-  // FIXME: alternative would be to only show histogram in iop if it is active (as current code) & expanded, and then here only test to see if an active/expanded module needs histogram
-  // FIXME: when disable rgbcurve and other iops needing histogram, should refresh to hide the histogram -- or else get rid of enabled check below and check for expanded instead
-  // FIXME: check how this is working with colorpicker
-  // FIXME: should reweight caches if currently active iop has active histogram/picker?
-  // FIXME: this doesn't actually update the picker in rgb curve until mouseover the iop -- though moving the picker does update this
-  gboolean update_prior_iop_gui = FALSE;
-  if((pipe->type & DT_DEV_PIXELPIPE_PREVIEW) == DT_DEV_PIXELPIPE_PREVIEW)
-  {
-    GList *l = g_list_previous(pieces);
-    while(l)
-    {
-      dt_dev_pixelpipe_iop_t *p = (dt_dev_pixelpipe_iop_t *)l->data;
-      //printf("checking %s request_histogram %d request_color_pick %d\n", p->module->op, p->request_histogram, p->module->request_color_pick);
-      // FIXME: maybe don't need to check for DT_REQUEST_ONLY_IN_GUI -- and maybe it is extraneous anyhow
-      if (((dev->gui_attached || !(p->request_histogram & DT_REQUEST_ONLY_IN_GUI))
-           // FIXME: should the module take care of removing histogram request if it's not enabled/expanded?
-           && p->enabled && p->module->expanded
-           && (p->request_histogram & DT_REQUEST_ON))
-          || _request_color_pick(pipe, dev, p->module))
-      {
-        printf("%s: prior module %s needs UI update\n", module->op, p->module->op);
-        update_prior_iop_gui = TRUE;
-        break;
-      }
-      l = g_list_previous(l);
-    }
-    if(!update_prior_iop_gui) printf("%s: no prior UI update\n", module ? module->op : "-");
-  }
-
-  // FIXME: better yet, don't even cache the gamma output in this case -- but then we'd need to allocate a temporary output buffer and garbage collect it
-  // FIXME: do this by reweighting cache to low priority when it is previewpipe gamma or a prior iop needs UI update -- though then do we run into trouble with input/output cache overwriting?
-  if(!(preview_gamma || update_prior_iop_gui))
-#endif
-  {
-    dt_dev_pixelpipe_cache_fullhash(pipe->image.id, roi_out, pipe, pos, &basichash, &hash);
-    cache_available = dt_dev_pixelpipe_cache_available(&(pipe->cache), hash);
-  }
-  if(cache_available)
+  dt_dev_pixelpipe_cache_fullhash(pipe->image.id, roi_out, pipe, pos, &basichash, &hash);
+  if(dt_dev_pixelpipe_cache_available(&(pipe->cache), hash))
   {
     dt_print(DT_DEBUG_PARAMS, "[pixelpipe] dt_dev_pixelpipe_process_rec, cache available for pipe %i with hash %lu\n", pipe->type, (long unsigned int)hash);
     // if(module) printf("found valid buf pos %d in cache for module %s %s %lu\n", pos, module->op, pipe ==

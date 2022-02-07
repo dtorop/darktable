@@ -1009,14 +1009,6 @@ static void _gui_off_callback(GtkToggleButton *togglebutton, gpointer user_data)
       if(module->dev->proxy.chroma_adaptation == module)
         module->dev->proxy.chroma_adaptation = NULL;
 
-#if 0
-      // hide background histogram when module turns off -- it is no longer updated
-      // FIXME: how do we access "piece"?
-      // FIXME: rather than all this, just update background histogram when module is expanded?
-      if(piece->request_histogram & DT_REQUEST_ON)
-        gtk_widget_queue_draw(self->widget);
-#endif
-
       dt_dev_add_history_item(module->dev, module, FALSE);
 
       if(!basics && dt_conf_get_bool("darkroom/ui/activate_expand") && module->expanded)
