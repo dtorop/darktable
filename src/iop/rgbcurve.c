@@ -1355,6 +1355,39 @@ void change_image(struct dt_iop_module_t *self)
   }
 }
 
+static void _module_toggled(GtkToggleButton *togglebutton, gpointer user_data)
+{
+  printf("rgbcurve _module_toggled\n");
+  dt_iop_module_t *self = (dt_iop_module_t *)user_data;
+  //dt_iop_rgbcurve_gui_data_t *g = (dt_iop_rgbcurve_gui_data_t *)self->gui_data;
+  if(!darktable.gui->reset)
+  {
+    gboolean active = gtk_toggle_button_get_active(togglebutton);
+    printf("rgbcurve module active %d\n", active);
+    if(!active)
+    {
+      // hide background histogram when module turns off
+      gtk_widget_queue_draw(self->widget);
+    }
+  }
+}
+
+static void _rgbcurve_history_change_callback(gpointer instance, gpointer user_data)
+{
+  dt_iop_module_t *self = (dt_iop_module_t *)user_data;
+  printf("in _rgbcurve_history_change_callback\n");
+  if(!darktable.gui->reset)
+  {
+    gboolean active = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(self->off));
+    printf("_rgbcurve_history_change_callback module active %d\n", active);
+    if(!active)
+    {
+      // hide background histogram when module turns off
+      gtk_widget_queue_draw(self->widget);
+    }
+  }
+}
+
 void gui_init(struct dt_iop_module_t *self)
 {
   dt_iop_rgbcurve_gui_data_t *g = IOP_GUI_ALLOC(rgbcurve);
@@ -1449,6 +1482,13 @@ void gui_init(struct dt_iop_module_t *self)
 
   g->cmb_preserve_colors = dt_bauhaus_combobox_from_params(self, "preserve_colors");
   gtk_widget_set_tooltip_text(g->cmb_preserve_colors, _("method to preserve colors when applying contrast"));
+
+  printf("rgbcurve setting up callback\n");
+  g_signal_connect(G_OBJECT(self->off), "toggled", G_CALLBACK(_module_toggled), self);
+  printf("rgbcurve catching history changed\n");
+  // hack to catch a signal when module is turned off -- and in many other cases
+  DT_DEBUG_CONTROL_SIGNAL_CONNECT(darktable.signals, DT_SIGNAL_DEVELOP_HISTORY_CHANGE,
+                                  G_CALLBACK(_rgbcurve_history_change_callback), self);
 }
 
 void gui_update(struct dt_iop_module_t *self)
@@ -1472,6 +1512,8 @@ void gui_update(struct dt_iop_module_t *self)
 void gui_cleanup(struct dt_iop_module_t *self)
 {
   dt_iop_rgbcurve_gui_data_t *g = (dt_iop_rgbcurve_gui_data_t *)self->gui_data;
+
+  DT_DEBUG_CONTROL_SIGNAL_DISCONNECT(darktable.signals, G_CALLBACK(_rgbcurve_history_change_callback), self);
 
   for(int k = 0; k < DT_IOP_RGBCURVE_MAX_CHANNELS; k++) dt_draw_curve_destroy(g->minmax_curve[k]);
 
