@@ -1146,6 +1146,7 @@ static void _tonecurve_history_change_callback(gpointer instance, gpointer user_
 {
   dt_iop_module_t *self = (dt_iop_module_t *)user_data;
   if(!darktable.gui->reset
+     && self->off
      && !gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(self->off)))
   {
     // hide background histogram when module turns off -- it's no longer updated
