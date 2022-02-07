@@ -1361,7 +1361,7 @@ static void _rgbcurve_history_change_callback(gpointer instance, gpointer user_d
   if(!darktable.gui->reset
      && !gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(self->off)))
   {
-    // refresh will hide background histogram when module turns off
+    // hide background histogram when module turns off -- it's no longer updated
     gtk_widget_queue_draw(self->widget);
   }
 }

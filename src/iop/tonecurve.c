@@ -1142,6 +1142,17 @@ static gboolean dt_iop_tonecurve_key_press(GtkWidget *widget, GdkEventKey *event
 
 #undef TONECURVE_DEFAULT_STEP
 
+static void _tonecurve_history_change_callback(gpointer instance, gpointer user_data)
+{
+  dt_iop_module_t *self = (dt_iop_module_t *)user_data;
+  if(!darktable.gui->reset
+     && !gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(self->off)))
+  {
+    // hide background histogram when module turns off -- it's no longer updated
+    gtk_widget_queue_draw(self->widget);
+  }
+}
+
 void gui_init(struct dt_iop_module_t *self)
 {
   dt_iop_tonecurve_gui_data_t *c = IOP_GUI_ALLOC(tonecurve);
@@ -1234,11 +1245,18 @@ void gui_init(struct dt_iop_module_t *self)
   c->sizegroup = GTK_SIZE_GROUP(gtk_size_group_new(GTK_SIZE_GROUP_HORIZONTAL));
   gtk_size_group_add_widget(c->sizegroup, GTK_WIDGET(c->area));
   gtk_size_group_add_widget(c->sizegroup, GTK_WIDGET(c->channel_tabs));
+
+  // hack to catch a signal when module is turned off
+  DT_DEBUG_CONTROL_SIGNAL_CONNECT(darktable.signals, DT_SIGNAL_DEVELOP_HISTORY_CHANGE,
+                                  G_CALLBACK(_tonecurve_history_change_callback), self);
 }
 
 void gui_cleanup(struct dt_iop_module_t *self)
 {
   dt_iop_tonecurve_gui_data_t *c = (dt_iop_tonecurve_gui_data_t *)self->gui_data;
+
+  DT_DEBUG_CONTROL_SIGNAL_DISCONNECT(darktable.signals, G_CALLBACK(_tonecurve_history_change_callback), self);
+
   // this one we need to unref manually. not so the initially unowned widgets.
   g_object_unref(c->sizegroup);
   dt_draw_curve_destroy(c->minmax_curve[ch_L]);
