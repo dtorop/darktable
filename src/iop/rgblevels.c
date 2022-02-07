@@ -452,45 +452,41 @@ static gboolean _area_draw_callback(GtkWidget *widget, cairo_t *crf, dt_iop_modu
   cairo_translate(cr, 0, height);
 
   // draw histogram in background
-  // only if the module is expanded
-  if(self->expanded)
+  const int ch = c->channel;
+  const uint32_t *hist = self->histogram;
+  const gboolean is_linear = darktable.lib->proxy.histogram.is_linear;
+  float hist_max;
+
+  if(p->autoscale == DT_IOP_RGBLEVELS_LINKED_CHANNELS)
+    hist_max = fmaxf(self->histogram_max[DT_IOP_RGBLEVELS_R], fmaxf(self->histogram_max[DT_IOP_RGBLEVELS_G],self->histogram_max[DT_IOP_RGBLEVELS_B]));
+  else
+    hist_max = self->histogram_max[ch];
+
+  if (!is_linear)
+    hist_max = logf(1.0 + hist_max);
+
+  if(hist && hist_max > 0.0f)
   {
-    const int ch = c->channel;
-    const uint32_t *hist = self->histogram;
-    const gboolean is_linear = darktable.lib->proxy.histogram.is_linear;
-    float hist_max;
+    cairo_push_group_with_content(cr, CAIRO_CONTENT_COLOR);
+    cairo_scale(cr, width / 255.0, -(height - DT_PIXEL_APPLY_DPI(5)) / hist_max);
 
     if(p->autoscale == DT_IOP_RGBLEVELS_LINKED_CHANNELS)
-      hist_max = fmaxf(self->histogram_max[DT_IOP_RGBLEVELS_R], fmaxf(self->histogram_max[DT_IOP_RGBLEVELS_G],self->histogram_max[DT_IOP_RGBLEVELS_B]));
-    else
-      hist_max = self->histogram_max[ch];
-
-    if (!is_linear)
-      hist_max = logf(1.0 + hist_max);
-
-    if(hist && hist_max > 0.0f)
     {
-      cairo_push_group_with_content(cr, CAIRO_CONTENT_COLOR);
-      cairo_scale(cr, width / 255.0, -(height - DT_PIXEL_APPLY_DPI(5)) / hist_max);
-
-      if(p->autoscale == DT_IOP_RGBLEVELS_LINKED_CHANNELS)
+      cairo_set_operator(cr, CAIRO_OPERATOR_ADD);
+      for(int k=DT_IOP_RGBLEVELS_R; k<DT_IOP_RGBLEVELS_MAX_CHANNELS; k++)
       {
-        cairo_set_operator(cr, CAIRO_OPERATOR_ADD);
-        for(int k=DT_IOP_RGBLEVELS_R; k<DT_IOP_RGBLEVELS_MAX_CHANNELS; k++)
-        {
-          set_color(cr, darktable.bauhaus->graph_colors[k]);
-          dt_draw_histogram_8(cr, hist, 4, k, is_linear);
-        }
+        set_color(cr, darktable.bauhaus->graph_colors[k]);
+        dt_draw_histogram_8(cr, hist, 4, k, is_linear);
       }
-      else if(p->autoscale == DT_IOP_RGBLEVELS_INDEPENDENT_CHANNELS)
-      {
-        set_color(cr, darktable.bauhaus->graph_colors[ch]);
-        dt_draw_histogram_8(cr, hist, 4, ch, is_linear);
-      }
-
-      cairo_pop_group_to_source(cr);
-      cairo_paint_with_alpha(cr, 0.2);
     }
+    else if(p->autoscale == DT_IOP_RGBLEVELS_INDEPENDENT_CHANNELS)
+    {
+      set_color(cr, darktable.bauhaus->graph_colors[ch]);
+      dt_draw_histogram_8(cr, hist, 4, ch, is_linear);
+    }
+
+    cairo_pop_group_to_source(cr);
+    cairo_paint_with_alpha(cr, 0.2);
   }
 
   // Cleaning up

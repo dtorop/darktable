@@ -1172,33 +1172,29 @@ static gboolean _area_draw_callback(GtkWidget *widget, cairo_t *crf, dt_iop_modu
   cairo_set_antialias(cr, CAIRO_ANTIALIAS_DEFAULT);
 
   // draw histogram in background
-  // only if module is expanded
-  if(self->expanded)
+  // only if no color picker
+  if(self->request_color_pick != DT_REQUEST_COLORPICK_MODULE)
   {
-    // only if no color picker
-    if(self->request_color_pick != DT_REQUEST_COLORPICK_MODULE)
+    const int ch_hist = p.channel;
+    const uint32_t *hist = self->histogram;
+    const gboolean is_linear = darktable.lib->proxy.histogram.is_linear;
+    const float hist_max = is_linear ? self->histogram_max[ch_hist]
+                                     : logf(1.0f + self->histogram_max[ch_hist]);
+    if(hist && hist_max > 0.0f)
     {
-      const int ch_hist = p.channel;
-      const uint32_t *hist = self->histogram;
-      const gboolean is_linear = darktable.lib->proxy.histogram.is_linear;
-      const float hist_max = is_linear ? self->histogram_max[ch_hist]
-                                       : logf(1.0f + self->histogram_max[ch_hist]);
-      if(hist && hist_max > 0.0f)
-      {
-        cairo_save(cr);
-        cairo_translate(cr, 0, height);
-        cairo_scale(cr, width / 255.0, -(height - DT_PIXEL_APPLY_DPI(5)) / hist_max);
+      cairo_save(cr);
+      cairo_translate(cr, 0, height);
+      cairo_scale(cr, width / 255.0, -(height - DT_PIXEL_APPLY_DPI(5)) / hist_max);
 
-        cairo_set_source_rgba(cr, .2, .2, .2, 0.5);
-        dt_draw_histogram_8_zoomed(cr, hist, 4, ch_hist, c->zoom_factor, c->offset_x * 255.f,
-                                   c->offset_y * hist_max, is_linear);
+      cairo_set_source_rgba(cr, .2, .2, .2, 0.5);
+      dt_draw_histogram_8_zoomed(cr, hist, 4, ch_hist, c->zoom_factor, c->offset_x * 255.f,
+                                 c->offset_y * hist_max, is_linear);
 
-        cairo_restore(cr);
-      }
+      cairo_restore(cr);
     }
-
-    _draw_color_picker(self, cr, &p, c, width, height, picked_color, picker_min, picker_max);
   }
+
+  _draw_color_picker(self, cr, &p, c, width, height, picked_color, picker_min, picker_max);
 
   if(c->edit_by_area)
   {

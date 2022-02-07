@@ -827,151 +827,147 @@ static gboolean _area_draw_callback(GtkWidget *widget, cairo_t *crf, dt_iop_modu
   }
 
   // draw histogram in background
-  // only if module is expanded
-  if(self->expanded)
+  const uint32_t *hist = self->histogram;
+  const gboolean is_linear = darktable.lib->proxy.histogram.is_linear;
+  float hist_max;
+
+  if(autoscale == DT_S_SCALE_AUTOMATIC_RGB)
+    hist_max = fmaxf(self->histogram_max[DT_IOP_RGBCURVE_R], fmaxf(self->histogram_max[DT_IOP_RGBCURVE_G],self->histogram_max[DT_IOP_RGBCURVE_B]));
+  else
+    hist_max = self->histogram_max[ch];
+
+  if (!is_linear)
+    hist_max = logf(1.0 + hist_max);
+
+  if(hist && hist_max > 0.0f)
   {
-    const uint32_t *hist = self->histogram;
-    const gboolean is_linear = darktable.lib->proxy.histogram.is_linear;
-    float hist_max;
+    cairo_push_group_with_content(cr, CAIRO_CONTENT_COLOR);
+    cairo_scale(cr, width / 255.0, -(height - DT_PIXEL_APPLY_DPI(5)) / hist_max);
 
     if(autoscale == DT_S_SCALE_AUTOMATIC_RGB)
-      hist_max = fmaxf(self->histogram_max[DT_IOP_RGBCURVE_R], fmaxf(self->histogram_max[DT_IOP_RGBCURVE_G],self->histogram_max[DT_IOP_RGBCURVE_B]));
-    else
-      hist_max = self->histogram_max[ch];
-
-    if (!is_linear)
-      hist_max = logf(1.0 + hist_max);
-
-    if(hist && hist_max > 0.0f)
     {
-      cairo_push_group_with_content(cr, CAIRO_CONTENT_COLOR);
-      cairo_scale(cr, width / 255.0, -(height - DT_PIXEL_APPLY_DPI(5)) / hist_max);
-
-      if(autoscale == DT_S_SCALE_AUTOMATIC_RGB)
+      cairo_set_operator(cr, CAIRO_OPERATOR_ADD);
+      for(int k=DT_IOP_RGBCURVE_R; k<DT_IOP_RGBCURVE_MAX_CHANNELS; k++)
       {
-        cairo_set_operator(cr, CAIRO_OPERATOR_ADD);
-        for(int k=DT_IOP_RGBCURVE_R; k<DT_IOP_RGBCURVE_MAX_CHANNELS; k++)
-        {
-          set_color(cr, darktable.bauhaus->graph_colors[k]);
-          dt_draw_histogram_8_zoomed(cr, hist, 4, k, g->zoom_factor, g->offset_x * 255.0, g->offset_y * hist_max,
-                                     is_linear);
-        }
-      }
-      else if(autoscale == DT_S_SCALE_MANUAL_RGB)
-      {
-        set_color(cr, darktable.bauhaus->graph_colors[ch]);
-        dt_draw_histogram_8_zoomed(cr, hist, 4, ch, g->zoom_factor, g->offset_x * 255.0, g->offset_y * hist_max,
+        set_color(cr, darktable.bauhaus->graph_colors[k]);
+        dt_draw_histogram_8_zoomed(cr, hist, 4, k, g->zoom_factor, g->offset_x * 255.0, g->offset_y * hist_max,
                                    is_linear);
       }
-
-      cairo_pop_group_to_source(cr);
-      cairo_paint_with_alpha(cr, 0.2);
+    }
+    else if(autoscale == DT_S_SCALE_MANUAL_RGB)
+    {
+      set_color(cr, darktable.bauhaus->graph_colors[ch]);
+      dt_draw_histogram_8_zoomed(cr, hist, 4, ch, g->zoom_factor, g->offset_x * 255.0, g->offset_y * hist_max,
+                                 is_linear);
     }
 
-    if(self->request_color_pick != DT_REQUEST_COLORPICK_OFF)
+    cairo_pop_group_to_source(cr);
+    cairo_paint_with_alpha(cr, 0.2);
+  }
+
+  if(self->request_color_pick != DT_REQUEST_COLORPICK_OFF)
+  {
+    const dt_iop_order_iccprofile_info_t *const work_profile
+        = dt_ioppr_get_iop_work_profile_info(self, self->dev->iop);
+
+    dt_aligned_pixel_t picker_mean, picker_min, picker_max;
+
+    // the global live samples ...
+    GSList *samples = darktable.lib->proxy.colorpicker.live_samples;
+    if(samples)
     {
-      const dt_iop_order_iccprofile_info_t *const work_profile
-          = dt_ioppr_get_iop_work_profile_info(self, self->dev->iop);
-
-      dt_aligned_pixel_t picker_mean, picker_min, picker_max;
-
-      // the global live samples ...
-      GSList *samples = darktable.lib->proxy.colorpicker.live_samples;
-      if(samples)
+      const dt_iop_order_iccprofile_info_t *const histogram_profile = dt_ioppr_get_histogram_profile_info(dev);
+      if(work_profile && histogram_profile)
       {
-        const dt_iop_order_iccprofile_info_t *const histogram_profile = dt_ioppr_get_histogram_profile_info(dev);
-        if(work_profile && histogram_profile)
+        for(; samples; samples = g_slist_next(samples))
         {
-          for(; samples; samples = g_slist_next(samples))
+          dt_colorpicker_sample_t *sample = samples->data;
+
+          // this functions need a 4c image
+          for(int k = 0; k < 3; k++)
           {
-            dt_colorpicker_sample_t *sample = samples->data;
-
-            // this functions need a 4c image
-            for(int k = 0; k < 3; k++)
-            {
-              picker_mean[k] = sample->scope[DT_LIB_COLORPICKER_STATISTIC_MEAN][k];
-              picker_min[k] = sample->scope[DT_LIB_COLORPICKER_STATISTIC_MIN][k];
-              picker_max[k] = sample->scope[DT_LIB_COLORPICKER_STATISTIC_MAX][k];
-            }
-            picker_mean[3] = picker_min[3] = picker_max[3] = 1.f;
-
-            dt_ioppr_transform_image_colorspace_rgb(picker_mean, picker_mean, 1, 1, histogram_profile,
-                                                    work_profile, "rgb curve");
-            dt_ioppr_transform_image_colorspace_rgb(picker_min, picker_min, 1, 1, histogram_profile, work_profile,
-                                                    "rgb curve");
-            dt_ioppr_transform_image_colorspace_rgb(picker_max, picker_max, 1, 1, histogram_profile, work_profile,
-                                                    "rgb curve");
-
-            picker_scale(picker_mean, picker_mean, p, work_profile);
-            picker_scale(picker_min, picker_min, p, work_profile);
-            picker_scale(picker_max, picker_max, p, work_profile);
-
-            // Convert abcissa to log coordinates if needed
-            picker_min[ch] = _curve_to_mouse(picker_min[ch], g->zoom_factor, g->offset_x);
-            picker_max[ch] = _curve_to_mouse(picker_max[ch], g->zoom_factor, g->offset_x);
-            picker_mean[ch] = _curve_to_mouse(picker_mean[ch], g->zoom_factor, g->offset_x);
-
-            cairo_set_source_rgba(cr, 0.5, 0.7, 0.5, 0.15);
-            cairo_rectangle(cr, width * picker_min[ch], 0, width * fmax(picker_max[ch] - picker_min[ch], 0.0f),
-                            -height);
-            cairo_fill(cr);
-            cairo_set_source_rgba(cr, 0.5, 0.7, 0.5, 0.5);
-            cairo_move_to(cr, width * picker_mean[ch], 0);
-            cairo_line_to(cr, width * picker_mean[ch], -height);
-            cairo_stroke(cr);
+            picker_mean[k] = sample->scope[DT_LIB_COLORPICKER_STATISTIC_MEAN][k];
+            picker_min[k] = sample->scope[DT_LIB_COLORPICKER_STATISTIC_MIN][k];
+            picker_max[k] = sample->scope[DT_LIB_COLORPICKER_STATISTIC_MAX][k];
           }
-      }
-      }
+          picker_mean[3] = picker_min[3] = picker_max[3] = 1.f;
 
-      // ... and the local sample
-      if(self->picked_color_max[ch] >= 0.0f)
-      {
-        PangoLayout *layout;
-        PangoRectangle ink;
-        PangoFontDescription *desc = pango_font_description_copy_static(darktable.bauhaus->pango_font_desc);
-        pango_font_description_set_weight(desc, PANGO_WEIGHT_BOLD);
-        pango_font_description_set_absolute_size(desc, PANGO_SCALE);
-        layout = pango_cairo_create_layout(cr);
-        pango_layout_set_font_description(layout, desc);
+          dt_ioppr_transform_image_colorspace_rgb(picker_mean, picker_mean, 1, 1, histogram_profile,
+                                                  work_profile, "rgb curve");
+          dt_ioppr_transform_image_colorspace_rgb(picker_min, picker_min, 1, 1, histogram_profile, work_profile,
+                                                  "rgb curve");
+          dt_ioppr_transform_image_colorspace_rgb(picker_max, picker_max, 1, 1, histogram_profile, work_profile,
+                                                  "rgb curve");
 
-        picker_scale(self->picked_color, picker_mean, p, work_profile);
-        picker_scale(self->picked_color_min, picker_min, p, work_profile);
-        picker_scale(self->picked_color_max, picker_max, p, work_profile);
+          picker_scale(picker_mean, picker_mean, p, work_profile);
+          picker_scale(picker_min, picker_min, p, work_profile);
+          picker_scale(picker_max, picker_max, p, work_profile);
 
-        // scale conservatively to 100% of width:
-        snprintf(text, sizeof(text), "100.00 / 100.00 ( +100.00)");
-        pango_layout_set_text(layout, text, -1);
-        pango_layout_get_pixel_extents(layout, &ink, NULL);
-        pango_font_description_set_absolute_size(desc, width * 1.0 / ink.width * PANGO_SCALE);
-        pango_layout_set_font_description(layout, desc);
+          // Convert abcissa to log coordinates if needed
+          picker_min[ch] = _curve_to_mouse(picker_min[ch], g->zoom_factor, g->offset_x);
+          picker_max[ch] = _curve_to_mouse(picker_max[ch], g->zoom_factor, g->offset_x);
+          picker_mean[ch] = _curve_to_mouse(picker_mean[ch], g->zoom_factor, g->offset_x);
 
-        picker_min[ch] = _curve_to_mouse(picker_min[ch], g->zoom_factor, g->offset_x);
-        picker_max[ch] = _curve_to_mouse(picker_max[ch], g->zoom_factor, g->offset_x);
-        picker_mean[ch] = _curve_to_mouse(picker_mean[ch], g->zoom_factor, g->offset_x);
+          cairo_set_source_rgba(cr, 0.5, 0.7, 0.5, 0.15);
+          cairo_rectangle(cr, width * picker_min[ch], 0, width * fmax(picker_max[ch] - picker_min[ch], 0.0f),
+                          -height);
+          cairo_fill(cr);
+          cairo_set_source_rgba(cr, 0.5, 0.7, 0.5, 0.5);
+          cairo_move_to(cr, width * picker_mean[ch], 0);
+          cairo_line_to(cr, width * picker_mean[ch], -height);
+          cairo_stroke(cr);
+        }
+    }
+    }
 
-        cairo_set_source_rgba(cr, 0.7, 0.5, 0.5, 0.33);
-        cairo_rectangle(cr, width * picker_min[ch], 0, width * fmax(picker_max[ch] - picker_min[ch], 0.0f),
-                        -height);
-        cairo_fill(cr);
-        cairo_set_source_rgba(cr, 0.9, 0.7, 0.7, 0.5);
-        cairo_move_to(cr, width * picker_mean[ch], 0);
-        cairo_line_to(cr, width * picker_mean[ch], -height);
-        cairo_stroke(cr);
+    // ... and the local sample
+    if(self->picked_color_max[ch] >= 0.0f)
+    {
+      PangoLayout *layout;
+      PangoRectangle ink;
+      PangoFontDescription *desc = pango_font_description_copy_static(darktable.bauhaus->pango_font_desc);
+      pango_font_description_set_weight(desc, PANGO_WEIGHT_BOLD);
+      pango_font_description_set_absolute_size(desc, PANGO_SCALE);
+      layout = pango_cairo_create_layout(cr);
+      pango_layout_set_font_description(layout, desc);
 
-        picker_scale(self->picked_color, picker_mean, p, work_profile);
-        picker_scale(self->picked_output_color, picker_min, p, work_profile);
-        snprintf(text, sizeof(text), "%.1f → %.1f", picker_mean[ch] * 255.f, picker_min[ch] * 255.f);
+      picker_scale(self->picked_color, picker_mean, p, work_profile);
+      picker_scale(self->picked_color_min, picker_min, p, work_profile);
+      picker_scale(self->picked_color_max, picker_max, p, work_profile);
 
-        cairo_set_source_rgb(cr, 0.1, 0.1, 0.1);
-        cairo_set_font_size(cr, DT_PIXEL_APPLY_DPI(0.04) * height);
-        pango_layout_set_text(layout, text, -1);
-        pango_layout_get_pixel_extents(layout, &ink, NULL);
-        cairo_move_to(cr, 0.02f * width, -0.94 * height - ink.height - ink.y);
-        pango_cairo_show_layout(cr, layout);
-        cairo_stroke(cr);
-        pango_font_description_free(desc);
-        g_object_unref(layout);
-      }
+      // scale conservatively to 100% of width:
+      snprintf(text, sizeof(text), "100.00 / 100.00 ( +100.00)");
+      pango_layout_set_text(layout, text, -1);
+      pango_layout_get_pixel_extents(layout, &ink, NULL);
+      pango_font_description_set_absolute_size(desc, width * 1.0 / ink.width * PANGO_SCALE);
+      pango_layout_set_font_description(layout, desc);
+
+      picker_min[ch] = _curve_to_mouse(picker_min[ch], g->zoom_factor, g->offset_x);
+      picker_max[ch] = _curve_to_mouse(picker_max[ch], g->zoom_factor, g->offset_x);
+      picker_mean[ch] = _curve_to_mouse(picker_mean[ch], g->zoom_factor, g->offset_x);
+
+      cairo_set_source_rgba(cr, 0.7, 0.5, 0.5, 0.33);
+      cairo_rectangle(cr, width * picker_min[ch], 0, width * fmax(picker_max[ch] - picker_min[ch], 0.0f),
+                      -height);
+      cairo_fill(cr);
+      cairo_set_source_rgba(cr, 0.9, 0.7, 0.7, 0.5);
+      cairo_move_to(cr, width * picker_mean[ch], 0);
+      cairo_line_to(cr, width * picker_mean[ch], -height);
+      cairo_stroke(cr);
+
+      picker_scale(self->picked_color, picker_mean, p, work_profile);
+      picker_scale(self->picked_output_color, picker_min, p, work_profile);
+      snprintf(text, sizeof(text), "%.1f → %.1f", picker_mean[ch] * 255.f, picker_min[ch] * 255.f);
+
+      cairo_set_source_rgb(cr, 0.1, 0.1, 0.1);
+      cairo_set_font_size(cr, DT_PIXEL_APPLY_DPI(0.04) * height);
+      pango_layout_set_text(layout, text, -1);
+      pango_layout_get_pixel_extents(layout, &ink, NULL);
+      cairo_move_to(cr, 0.02f * width, -0.94 * height - ink.height - ink.y);
+      pango_cairo_show_layout(cr, layout);
+      cairo_stroke(cr);
+      pango_font_description_free(desc);
+      g_object_unref(layout);
     }
   }
 

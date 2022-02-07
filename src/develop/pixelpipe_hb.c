@@ -1165,8 +1165,7 @@ static int dt_dev_pixelpipe_process_rec(dt_dev_pixelpipe_t *pipe, dt_develop_t *
           else
           {
             // on failure, we'll just have no histogram, don't bother with fallback to CPU
-            //free(module->histogram);
-            //module->histogram = NULL;
+            // FIXME: do need better error handling?
             module->histogram_max[0] = module->histogram_max[1] = module->histogram_max[2] = module->histogram_max[3]
               = 0;
           }
@@ -1378,6 +1377,7 @@ static int dt_dev_pixelpipe_process_rec(dt_dev_pixelpipe_t *pipe, dt_develop_t *
     return 1;
   }
 
+  // FIXME: weight even lower if it is not worth caching (e.g. preview pipe gamma or module preceded by a disabled module which has a histogram), but not so low that it is used for the next step in the pixelpipe when we still need the cache line as input
   gboolean important = FALSE;
   if((pipe->type & DT_DEV_PIXELPIPE_PREVIEW) == DT_DEV_PIXELPIPE_PREVIEW)
     important = (strcmp(module->op, "colorout") == 0);
