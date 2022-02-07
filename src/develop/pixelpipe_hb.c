@@ -1102,7 +1102,7 @@ static int dt_dev_pixelpipe_process_rec(dt_dev_pixelpipe_t *pipe, dt_develop_t *
         printf("making histogram for disabled module %s\n", module->op);
         if(dt_atomic_get_int(&pipe->shutdown)) return 1;
 
-#if 1
+#if 0
         // cheat and just copy OpenCL data back to memory --
         // simplifies this code path, but will slow down an OpenCL
         // pipeline
@@ -1126,31 +1126,49 @@ static int dt_dev_pixelpipe_process_rec(dt_dev_pixelpipe_t *pipe, dt_develop_t *
         }
 #endif
 
+        const dt_iop_order_iccprofile_info_t *const work_profile
+            = ((*out_format)->cst != iop_cs_RAW) ? dt_ioppr_get_pipe_work_profile_info(pipe) : NULL;
+
         if(dt_opencl_is_inited() && pipe->opencl_enabled && pipe->devid >= 0
            && *cl_mem_output != NULL)
         {
-          printf("opencl histogram collect\n");
-          // we abuse the empty output buffer on host for intermediate storage of data in
-          // histogram_collect_cl()
-          // FIXME: just bring below declaration up higher?
-          // FIXME: if we pas in NULL to histogram_collect_cl, we'll get a buffer alloc'd, just do that?
-          // FIXME: make this into a function -- it's boilerplate
-          const size_t bpp = dt_iop_buffer_dsc_to_bpp(*out_format);
-          size_t outbufsize = bpp * roi_in.width * roi_in.height;
-
-          // FIXME: need to transform to module colorspace first
-          histogram_collect_cl(pipe->devid, piece, *cl_mem_output, &roi_in, &(piece->histogram),
-                               piece->histogram_max, *output, outbufsize);
-          if(piece->histogram && (module->request_histogram & DT_REQUEST_ON)
-             && (pipe->type & DT_DEV_PIXELPIPE_PREVIEW) == DT_DEV_PIXELPIPE_PREVIEW)
+          gboolean success_opencl = dt_ioppr_transform_image_colorspace_cl(
+              module, piece->pipe->devid, *cl_mem_output, *cl_mem_output, roi_in.width, roi_in.height, (*out_format)->cst,
+              module->input_colorspace(module, pipe, piece), &(*out_format)->cst,
+              work_profile);
+          if(success_opencl)
           {
-            const size_t buf_size = sizeof(uint32_t) * 4 * piece->histogram_stats.bins_count;
-            module->histogram = realloc(module->histogram, buf_size);
-            memcpy(module->histogram, piece->histogram, buf_size);
-            module->histogram_stats = piece->histogram_stats;
-            memcpy(module->histogram_max, piece->histogram_max, sizeof(piece->histogram_max));
+            printf("opencl histogram collect\n");
+            // we abuse the empty output buffer on host for intermediate storage of data in
+            // histogram_collect_cl()
+            // FIXME: just bring below declaration up higher?
+            // FIXME: if we pas in NULL to histogram_collect_cl, we'll get a buffer alloc'd, just do that?
+            // FIXME: make this into a function -- it's boilerplate
+            const size_t bpp = dt_iop_buffer_dsc_to_bpp(*out_format);
+            size_t outbufsize = bpp * roi_in.width * roi_in.height;
 
-            if(module->widget) dt_control_queue_redraw_widget(module->widget);
+            // FIXME: need to transform to module colorspace first
+            histogram_collect_cl(pipe->devid, piece, *cl_mem_output, &roi_in, &(piece->histogram),
+                                 piece->histogram_max, *output, outbufsize);
+            if(piece->histogram && (module->request_histogram & DT_REQUEST_ON)
+               && (pipe->type & DT_DEV_PIXELPIPE_PREVIEW) == DT_DEV_PIXELPIPE_PREVIEW)
+            {
+              const size_t buf_size = sizeof(uint32_t) * 4 * piece->histogram_stats.bins_count;
+              module->histogram = realloc(module->histogram, buf_size);
+              memcpy(module->histogram, piece->histogram, buf_size);
+              module->histogram_stats = piece->histogram_stats;
+              memcpy(module->histogram_max, piece->histogram_max, sizeof(piece->histogram_max));
+
+              if(module->widget) dt_control_queue_redraw_widget(module->widget);
+            }
+          }
+          else
+          {
+            // on failure, we'll just have no histogram, don't bother with fallback to CPU
+            //free(module->histogram);
+            //module->histogram = NULL;
+            module->histogram_max[0] = module->histogram_max[1] = module->histogram_max[2] = module->histogram_max[3]
+              = 0;
           }
         }
         else
@@ -1160,8 +1178,6 @@ static int dt_dev_pixelpipe_process_rec(dt_dev_pixelpipe_t *pipe, dt_develop_t *
           printf("collecting histogram on CPU\n");
 
           // transform to module input colorspace to get meaningful histogram
-          const dt_iop_order_iccprofile_info_t *const work_profile
-            = ((*out_format)->cst != iop_cs_RAW) ? dt_ioppr_get_pipe_work_profile_info(pipe) : NULL;
           dt_ioppr_transform_image_colorspace(module, *output, *output, roi_in.width, roi_in.height, (*out_format)->cst,
                                               module->input_colorspace(module, pipe, piece), &((*out_format)->cst),
                                               work_profile);
