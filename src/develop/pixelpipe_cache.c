@@ -125,6 +125,7 @@ uint64_t dt_dev_pixelpipe_cache_basichash(int imgid, struct dt_dev_pixelpipe_t *
     // can't cache if preceded by a module which shows a histogram --
     // histogram won't update when that module is skipped via cache
     // FIXME: alternative would be to cache the histogram (& picker?) output for these iops
+    // FIXME: do have to check for DT_REQUEST_ONLY_IN_GUI?
     const gboolean is_histogram = piece->module->expanded && (piece->request_histogram & DT_REQUEST_ON);
     // preview pipe gamma is used for final scope/colorpicker, so we
     // can't cache it between pipe runs

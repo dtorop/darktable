@@ -1086,7 +1086,6 @@ static int dt_dev_pixelpipe_process_rec(dt_dev_pixelpipe_t *pipe, dt_develop_t *
     module = (dt_iop_module_t *)modules->data;
     piece = (dt_dev_pixelpipe_iop_t *)pieces->data;
     // skip this module?
-    // FIXME: if we wanted to update background histogram for disabled iops (curves/levels) then this check would only skip module if there was no histogram
     if(!piece->enabled
        || (dev->gui_module && dev->gui_module != module
            && dev->gui_module->operation_tags_filter() & module->operation_tags()))
@@ -1099,32 +1098,7 @@ static int dt_dev_pixelpipe_process_rec(dt_dev_pixelpipe_t *pipe, dt_develop_t *
          && (dev->gui_attached || !(piece->request_histogram & DT_REQUEST_ONLY_IN_GUI))
          && (piece->request_histogram & DT_REQUEST_ON))
       {
-        printf("making histogram for disabled module %s\n", module->op);
         if(dt_atomic_get_int(&pipe->shutdown)) return 1;
-
-#if 0
-        // cheat and just copy OpenCL data back to memory --
-        // simplifies this code path, but will slow down an OpenCL
-        // pipeline
-        if(*cl_mem_output != NULL)
-        {
-          printf("moving output from OpenCL to host\n");
-          // FIXME: is output always alloc'd to cache here?
-          cl_int err = dt_opencl_copy_device_to_host(pipe->devid, *output, *cl_mem_output, roi_in.width, roi_in.height,
-                                                     dt_iop_buffer_dsc_to_bpp(*out_format));
-          dt_opencl_release_mem_object(*cl_mem_output);
-          *cl_mem_output = NULL;
-
-          if(err != CL_SUCCESS)
-          {
-            dt_print(DT_DEBUG_OPENCL,
-                     "[opencl_pixelpipe (d)] late opencl error detected while copying back to cpu buffer for histogram: %d\n",
-                     err);
-            pipe->opencl_error = 1;
-            return 1;
-          }
-        }
-#endif
 
         const dt_iop_order_iccprofile_info_t *const work_profile
             = ((*out_format)->cst != iop_cs_RAW) ? dt_ioppr_get_pipe_work_profile_info(pipe) : NULL;
@@ -1138,16 +1112,13 @@ static int dt_dev_pixelpipe_process_rec(dt_dev_pixelpipe_t *pipe, dt_develop_t *
               work_profile);
           if(success_opencl)
           {
-            printf("opencl histogram collect\n");
             // we abuse the empty output buffer on host for intermediate storage of data in
             // histogram_collect_cl()
             // FIXME: just bring below declaration up higher?
-            // FIXME: if we pas in NULL to histogram_collect_cl, we'll get a buffer alloc'd, just do that?
             // FIXME: make this into a function -- it's boilerplate
             const size_t bpp = dt_iop_buffer_dsc_to_bpp(*out_format);
             size_t outbufsize = bpp * roi_in.width * roi_in.height;
 
-            // FIXME: need to transform to module colorspace first
             histogram_collect_cl(pipe->devid, piece, *cl_mem_output, &roi_in, &(piece->histogram),
                                  piece->histogram_max, *output, outbufsize);
             if(piece->histogram && (module->request_histogram & DT_REQUEST_ON)
@@ -1172,9 +1143,7 @@ static int dt_dev_pixelpipe_process_rec(dt_dev_pixelpipe_t *pipe, dt_develop_t *
         }
         else
         {
-          // FIXME: is this flow setup sensible?
           dt_pixelpipe_flow_t pixelpipe_flow = (PIXELPIPE_FLOW_NONE | PIXELPIPE_FLOW_HISTOGRAM_NONE);
-          printf("collecting histogram on CPU\n");
 
           // transform to module input colorspace to get meaningful histogram
           dt_ioppr_transform_image_colorspace(module, *output, *output, roi_in.width, roi_in.height, (*out_format)->cst,
@@ -1183,7 +1152,7 @@ static int dt_dev_pixelpipe_process_rec(dt_dev_pixelpipe_t *pipe, dt_develop_t *
 
           collect_histogram_on_CPU(pipe, dev, *output, &roi_in, module, piece, &pixelpipe_flow);
         }
-        // FIXME: do we need to deal with color picking?
+        // FIXME: do we need to deal with color picking? -- or will it just turn off for disabled iops
       }
       return ret;
     }
