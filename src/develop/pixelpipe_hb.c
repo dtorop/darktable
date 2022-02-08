@@ -581,6 +581,40 @@ static void histogram_collect_cl(int devid, dt_dev_pixelpipe_iop_t *piece, cl_me
 
   if(tmpbuf) dt_free_align(tmpbuf);
 }
+
+static void collect_histogram_on_GPU(dt_dev_pixelpipe_t *pipe, dt_develop_t *dev,
+                                     cl_mem img, const dt_iop_roi_t *roi,
+                                     size_t bpp, float *buffer,
+                                     dt_iop_module_t *module, dt_dev_pixelpipe_iop_t *piece,
+                                     dt_pixelpipe_flow_t *pixelpipe_flow)
+{
+  // histogram collection for module
+  if((dev->gui_attached || !(piece->request_histogram & DT_REQUEST_ONLY_IN_GUI))
+     && (piece->request_histogram & DT_REQUEST_ON))
+  {
+    // we abuse the empty output buffer on host for intermediate storage of data in
+    // histogram_collect_cl()
+    size_t outbufsize = bpp * roi->width * roi->height;
+
+    histogram_collect_cl(pipe->devid, piece, img, roi, &(piece->histogram),
+                         piece->histogram_max, buffer, outbufsize);
+    *pixelpipe_flow |= (PIXELPIPE_FLOW_HISTOGRAM_ON_GPU);
+    *pixelpipe_flow &= ~(PIXELPIPE_FLOW_HISTOGRAM_NONE | PIXELPIPE_FLOW_HISTOGRAM_ON_CPU);
+
+    if(piece->histogram && (module->request_histogram & DT_REQUEST_ON)
+       && (pipe->type & DT_DEV_PIXELPIPE_PREVIEW) == DT_DEV_PIXELPIPE_PREVIEW)
+    {
+      const size_t buf_size = sizeof(uint32_t) * 4 * piece->histogram_stats.bins_count;
+      module->histogram = realloc(module->histogram, buf_size);
+      memcpy(module->histogram, piece->histogram, buf_size);
+      module->histogram_stats = piece->histogram_stats;
+      memcpy(module->histogram_max, piece->histogram_max, sizeof(piece->histogram_max));
+
+      if(module->widget) dt_control_queue_redraw_widget(module->widget);
+    }
+  }
+  return;
+}
 #endif
 
 // helper for per-module color picking
@@ -1102,7 +1136,9 @@ static int dt_dev_pixelpipe_process_rec(dt_dev_pixelpipe_t *pipe, dt_develop_t *
 
         const dt_iop_order_iccprofile_info_t *const work_profile
             = ((*out_format)->cst != iop_cs_RAW) ? dt_ioppr_get_pipe_work_profile_info(pipe) : NULL;
+        dt_pixelpipe_flow_t pixelpipe_flow = (PIXELPIPE_FLOW_NONE | PIXELPIPE_FLOW_HISTOGRAM_NONE);
 
+#ifdef HAVE_OPENCL
         if(dt_opencl_is_inited() && pipe->opencl_enabled && pipe->devid >= 0
            && *cl_mem_output != NULL)
         {
@@ -1112,26 +1148,8 @@ static int dt_dev_pixelpipe_process_rec(dt_dev_pixelpipe_t *pipe, dt_develop_t *
               work_profile);
           if(success_opencl)
           {
-            // we abuse the empty output buffer on host for intermediate storage of data in
-            // histogram_collect_cl()
-            // FIXME: just bring below declaration up higher?
-            // FIXME: make this into a function -- it's boilerplate
             const size_t bpp = dt_iop_buffer_dsc_to_bpp(*out_format);
-            size_t outbufsize = bpp * roi_in.width * roi_in.height;
-
-            histogram_collect_cl(pipe->devid, piece, *cl_mem_output, &roi_in, &(piece->histogram),
-                                 piece->histogram_max, *output, outbufsize);
-            if(piece->histogram && (module->request_histogram & DT_REQUEST_ON)
-               && (pipe->type & DT_DEV_PIXELPIPE_PREVIEW) == DT_DEV_PIXELPIPE_PREVIEW)
-            {
-              const size_t buf_size = sizeof(uint32_t) * 4 * piece->histogram_stats.bins_count;
-              module->histogram = realloc(module->histogram, buf_size);
-              memcpy(module->histogram, piece->histogram, buf_size);
-              module->histogram_stats = piece->histogram_stats;
-              memcpy(module->histogram_max, piece->histogram_max, sizeof(piece->histogram_max));
-
-              if(module->widget) dt_control_queue_redraw_widget(module->widget);
-            }
+            collect_histogram_on_GPU(pipe, dev, *cl_mem_output, &roi_in, bpp, *output, module, piece, &pixelpipe_flow);
           }
           else
           {
@@ -1142,9 +1160,8 @@ static int dt_dev_pixelpipe_process_rec(dt_dev_pixelpipe_t *pipe, dt_develop_t *
           }
         }
         else
+#endif
         {
-          dt_pixelpipe_flow_t pixelpipe_flow = (PIXELPIPE_FLOW_NONE | PIXELPIPE_FLOW_HISTOGRAM_NONE);
-
           // transform to module input colorspace to get meaningful histogram
           dt_ioppr_transform_image_colorspace(module, *output, *output, roi_in.width, roi_in.height, (*out_format)->cst,
                                               module->input_colorspace(module, pipe, piece), &((*out_format)->cst),
@@ -1516,29 +1533,9 @@ static int dt_dev_pixelpipe_process_rec(dt_dev_pixelpipe_t *pipe, dt_develop_t *
         }
 
         // histogram collection for module
-        if(success_opencl && (dev->gui_attached || !(piece->request_histogram & DT_REQUEST_ONLY_IN_GUI))
-           && (piece->request_histogram & DT_REQUEST_ON))
+        if(success_opencl)
         {
-          // we abuse the empty output buffer on host for intermediate storage of data in
-          // histogram_collect_cl()
-          size_t outbufsize = bpp * roi_out->width * roi_out->height;
-
-          histogram_collect_cl(pipe->devid, piece, cl_mem_input, &roi_in, &(piece->histogram),
-                               piece->histogram_max, *output, outbufsize);
-          pixelpipe_flow |= (PIXELPIPE_FLOW_HISTOGRAM_ON_GPU);
-          pixelpipe_flow &= ~(PIXELPIPE_FLOW_HISTOGRAM_NONE | PIXELPIPE_FLOW_HISTOGRAM_ON_CPU);
-
-          if(piece->histogram && (module->request_histogram & DT_REQUEST_ON)
-             && (pipe->type & DT_DEV_PIXELPIPE_PREVIEW) == DT_DEV_PIXELPIPE_PREVIEW)
-          {
-            const size_t buf_size = sizeof(uint32_t) * 4 * piece->histogram_stats.bins_count;
-            module->histogram = realloc(module->histogram, buf_size);
-            memcpy(module->histogram, piece->histogram, buf_size);
-            module->histogram_stats = piece->histogram_stats;
-            memcpy(module->histogram_max, piece->histogram_max, sizeof(piece->histogram_max));
-
-            if(module->widget) dt_control_queue_redraw_widget(module->widget);
-          }
+          collect_histogram_on_GPU(pipe, dev, cl_mem_input, &roi_in, bpp, *output, module, piece, &pixelpipe_flow);
         }
 
         if(dt_atomic_get_int(&pipe->shutdown))
