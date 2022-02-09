@@ -1124,54 +1124,8 @@ static int dt_dev_pixelpipe_process_rec(dt_dev_pixelpipe_t *pipe, dt_develop_t *
        || (dev->gui_module && dev->gui_module != module
            && dev->gui_module->operation_tags_filter() & module->operation_tags()))
     {
-      int ret = dt_dev_pixelpipe_process_rec(pipe, dev, output, cl_mem_output, out_format, &roi_in,
-                                             g_list_previous(modules), g_list_previous(pieces), pos - 1);
-      // FIXME: understand the tags clause above
-      if(!ret && module->expanded
-         // FIXME: do have to check for DT_REQUEST_ONLY_IN_GUI?
-         && (dev->gui_attached || !(piece->request_histogram & DT_REQUEST_ONLY_IN_GUI))
-         && (piece->request_histogram & DT_REQUEST_ON))
-      {
-        if(dt_atomic_get_int(&pipe->shutdown)) return 1;
-
-        const dt_iop_order_iccprofile_info_t *const work_profile
-            = ((*out_format)->cst != iop_cs_RAW) ? dt_ioppr_get_pipe_work_profile_info(pipe) : NULL;
-        dt_pixelpipe_flow_t pixelpipe_flow = (PIXELPIPE_FLOW_NONE | PIXELPIPE_FLOW_HISTOGRAM_NONE);
-
-#ifdef HAVE_OPENCL
-        if(dt_opencl_is_inited() && pipe->opencl_enabled && pipe->devid >= 0
-           && *cl_mem_output != NULL)
-        {
-          gboolean success_opencl = dt_ioppr_transform_image_colorspace_cl(
-              module, piece->pipe->devid, *cl_mem_output, *cl_mem_output, roi_in.width, roi_in.height, (*out_format)->cst,
-              module->input_colorspace(module, pipe, piece), &(*out_format)->cst,
-              work_profile);
-          if(success_opencl)
-          {
-            const size_t bpp = dt_iop_buffer_dsc_to_bpp(*out_format);
-            collect_histogram_on_GPU(pipe, dev, *cl_mem_output, &roi_in, bpp, *output, module, piece, &pixelpipe_flow);
-          }
-          else
-          {
-            // on failure, we'll just have no histogram, don't bother with fallback to CPU
-            // FIXME: do need better error handling?
-            module->histogram_max[0] = module->histogram_max[1] = module->histogram_max[2] = module->histogram_max[3]
-              = 0;
-          }
-        }
-        else
-#endif
-        {
-          // transform to module input colorspace to get meaningful histogram
-          dt_ioppr_transform_image_colorspace(module, *output, *output, roi_in.width, roi_in.height, (*out_format)->cst,
-                                              module->input_colorspace(module, pipe, piece), &((*out_format)->cst),
-                                              work_profile);
-
-          collect_histogram_on_CPU(pipe, dev, *output, &roi_in, module, piece, &pixelpipe_flow);
-        }
-        // FIXME: do we need to deal with color picking? -- or will it just turn off for disabled iops
-      }
-      return ret;
+      return dt_dev_pixelpipe_process_rec(pipe, dev, output, cl_mem_output, out_format, &roi_in,
+                                          g_list_previous(modules), g_list_previous(pieces), pos - 1);
     }
   }
 
