@@ -121,7 +121,6 @@ uint64_t dt_dev_pixelpipe_cache_basichash(int imgid, struct dt_dev_pixelpipe_t *
       }
     }
 
-#if 1
     // can't cache if preceded by a module which shows a histogram --
     // histogram won't update when that module is skipped via cache
     // FIXME: alternative would be to cache the histogram (& picker?) output for these iops
@@ -135,29 +134,6 @@ uint64_t dt_dev_pixelpipe_cache_basichash(int imgid, struct dt_dev_pixelpipe_t *
     {
       hash = ((hash << 5) + hash) ^ pipe->input_timestamp;
     }
-#else
-    // If scope or picker depends on current/prior iops, then if
-    // pixelpipe is updated we must not use cache because the related
-    // scope/picker output is not cached.
-    // FIXME: alternative would be to cache the histogram & picker output for these iops
-    if((pipe->type & DT_DEV_PIXELPIPE_PREVIEW) == DT_DEV_PIXELPIPE_PREVIEW)
-    {
-      //if(k+1 == module) printf("last is %s\n", piece->module->op);
-      // preview pipe gamma is used for final scope/colorpicker, so we
-      // can't cache it between pipe runs
-      const gboolean is_gamma = k+1 == module && strcmp(piece->module->op, "gamma") == 0;
-      // FIXME: is this less specific than prior check?
-      const gboolean is_histogram = /* piece->enabled && */ piece->module->expanded && (piece->request_histogram & DT_REQUEST_ON);
-      // FIXME: is this less specific than prior check?
-      // FIXME: this is already dealt with above?
-      const gboolean is_picker = piece->enabled && piece->module->expanded && piece->module->request_color_pick != DT_REQUEST_COLORPICK_OFF;
-      if(is_gamma || is_histogram || is_picker)
-      {
-        printf("imgid %d module %d %s is_gamma %d is_histogram %d is_picker %d\n", imgid, module, piece->module->op, is_gamma, is_histogram, is_picker);
-        hash = ((hash << 5) + hash) ^ pipe->input_timestamp;
-      }
-    }
-#endif
     pieces = g_list_next(pieces);
   }
   return hash;
