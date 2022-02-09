@@ -1172,29 +1172,33 @@ static gboolean _area_draw_callback(GtkWidget *widget, cairo_t *crf, dt_iop_modu
   cairo_set_antialias(cr, CAIRO_ANTIALIAS_DEFAULT);
 
   // draw histogram in background
-  // only if no color picker
-  if(self->request_color_pick != DT_REQUEST_COLORPICK_MODULE)
+  // only if module is enabled
+  if(self->enabled)
   {
-    const int ch_hist = p.channel;
-    const uint32_t *hist = self->histogram;
-    const gboolean is_linear = darktable.lib->proxy.histogram.is_linear;
-    const float hist_max = is_linear ? self->histogram_max[ch_hist]
-                                     : logf(1.0f + self->histogram_max[ch_hist]);
-    if(hist && hist_max > 0.0f)
+    // only if no color picker
+    if(self->request_color_pick != DT_REQUEST_COLORPICK_MODULE)
     {
-      cairo_save(cr);
-      cairo_translate(cr, 0, height);
-      cairo_scale(cr, width / 255.0, -(height - DT_PIXEL_APPLY_DPI(5)) / hist_max);
+      const int ch_hist = p.channel;
+      const uint32_t *hist = self->histogram;
+      const gboolean is_linear = darktable.lib->proxy.histogram.is_linear;
+      const float hist_max = is_linear ? self->histogram_max[ch_hist]
+                                       : logf(1.0f + self->histogram_max[ch_hist]);
+      if(hist && hist_max > 0.0f)
+      {
+        cairo_save(cr);
+        cairo_translate(cr, 0, height);
+        cairo_scale(cr, width / 255.0, -(height - DT_PIXEL_APPLY_DPI(5)) / hist_max);
 
-      cairo_set_source_rgba(cr, .2, .2, .2, 0.5);
-      dt_draw_histogram_8_zoomed(cr, hist, 4, ch_hist, c->zoom_factor, c->offset_x * 255.f,
-                                 c->offset_y * hist_max, is_linear);
+        cairo_set_source_rgba(cr, .2, .2, .2, 0.5);
+        dt_draw_histogram_8_zoomed(cr, hist, 4, ch_hist, c->zoom_factor, c->offset_x * 255.f,
+                                   c->offset_y * hist_max, is_linear);
 
-      cairo_restore(cr);
+        cairo_restore(cr);
+      }
     }
-  }
 
-  _draw_color_picker(self, cr, &p, c, width, height, picked_color, picker_min, picker_max);
+    _draw_color_picker(self, cr, &p, c, width, height, picked_color, picker_min, picker_max);
+  }
 
   if(c->edit_by_area)
   {
@@ -2553,6 +2557,7 @@ void gui_update(struct dt_iop_module_t *self)
 {
   dt_iop_colorzones_gui_data_t *g = (dt_iop_colorzones_gui_data_t *)self->gui_data;
   dt_iop_colorzones_params_t *p = (dt_iop_colorzones_params_t *)self->params;
+
   dt_bauhaus_combobox_set(g->select_by, p->channel);
   dt_bauhaus_slider_set(g->strength, p->strength);
   dt_bauhaus_combobox_set(g->interpolator, p->curve_type[g->channel]);

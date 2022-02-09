@@ -1399,114 +1399,118 @@ static gboolean dt_iop_tonecurve_draw(GtkWidget *widget, cairo_t *crf, gpointer 
   cairo_translate(cr, 0, height);
 
   // draw histogram in background
-  float *raw_mean, *raw_min, *raw_max;
-  float *raw_mean_output;
-  dt_aligned_pixel_t picker_mean, picker_min, picker_max;
-  const gboolean is_linear = darktable.lib->proxy.histogram.is_linear;
-
-  raw_mean = gd->picked_color;
-  raw_min = gd->picked_color_min;
-  raw_max = gd->picked_color_max;
-  raw_mean_output = gd->picked_output_color;
-
-  const uint32_t *hist = self->histogram;
-  const float hist_max = is_linear ? self->histogram_max[ch] : logf(1.0 + self->histogram_max[ch]);
-  if(hist && hist_max > 0.0f)
+  // only if module is enabled
+  if(self->enabled)
   {
-    cairo_save(cr);
-    cairo_scale(cr, width / 255.0, -(height - DT_PIXEL_APPLY_DPI(5)) / hist_max);
-    cairo_move_to(cr, 0, height);
-    set_color(cr, darktable.bauhaus->inset_histogram);
+    float *raw_mean, *raw_min, *raw_max;
+    float *raw_mean_output;
+    dt_aligned_pixel_t picker_mean, picker_min, picker_max;
+    const gboolean is_linear = darktable.lib->proxy.histogram.is_linear;
 
-    if (ch == ch_L && c->loglogscale > 0.0f)
-    {
-      dt_draw_histogram_8_log_base(cr, hist, 4, ch, is_linear, c->loglogscale + 1.0f);
-    }
-    else
-    {
-      dt_draw_histogram_8(cr, hist, 4, ch, is_linear);
-    }
-    cairo_restore(cr);
-  }
+    raw_mean = gd->picked_color;
+    raw_min = gd->picked_color_min;
+    raw_max = gd->picked_color_max;
+    raw_mean_output = gd->picked_output_color;
 
-  cairo_move_to(cr, 0, height);
-  if(self->request_color_pick == DT_REQUEST_COLORPICK_MODULE &&
-     gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(c->colorpicker)))
-  {
-    // the global live samples ...
-    cairo_set_line_width(cr, DT_PIXEL_APPLY_DPI(3));
-
-    for(GSList *samples = darktable.lib->proxy.colorpicker.live_samples; samples; samples = g_slist_next(samples))
-    {
-      dt_colorpicker_sample_t *sample = samples->data;
-
-      picker_scale(sample->lab[DT_LIB_COLORPICKER_STATISTIC_MEAN], picker_mean);
-      picker_scale(sample->lab[DT_LIB_COLORPICKER_STATISTIC_MIN], picker_min);
-      picker_scale(sample->lab[DT_LIB_COLORPICKER_STATISTIC_MAX], picker_max);
-
-      // Convert abcissa to log coordinates if needed
-      picker_min[ch] = to_log(picker_min[ch], c->loglogscale, ch, c->semilog, 0);
-      picker_max[ch] = to_log(picker_max[ch], c->loglogscale, ch, c->semilog, 0);
-      picker_mean[ch] = to_log(picker_mean[ch], c->loglogscale, ch, c->semilog, 0);
-
-      cairo_set_source_rgba(cr, 0.5, 0.7, 0.5, 0.35);
-      cairo_rectangle(cr, width * picker_min[ch], 0, width * fmax(picker_max[ch] - picker_min[ch], 0.0f),
-                      -height);
-      cairo_fill(cr);
-      cairo_set_source_rgba(cr, 0.5, 0.7, 0.5, 0.5);
-      cairo_move_to(cr, width * picker_mean[ch], 0);
-      cairo_line_to(cr, width * picker_mean[ch], -height);
-      cairo_stroke(cr);
-    }
-
-    // ... and the local sample
-    if(raw_max[0] >= 0.0f)
+    const uint32_t *hist = self->histogram;
+    const float hist_max = is_linear ? self->histogram_max[ch] : logf(1.0 + self->histogram_max[ch]);
+    if(hist && hist_max > 0.0f)
     {
       cairo_save(cr);
-      PangoLayout *layout;
-      PangoRectangle ink;
-      PangoFontDescription *desc = pango_font_description_copy_static(darktable.bauhaus->pango_font_desc);
-      pango_font_description_set_weight(desc, PANGO_WEIGHT_BOLD);
-      pango_font_description_set_absolute_size(desc, PANGO_SCALE);
-      layout = pango_cairo_create_layout(cr);
-      pango_layout_set_font_description(layout, desc);
+      cairo_scale(cr, width / 255.0, -(height - DT_PIXEL_APPLY_DPI(5)) / hist_max);
+      cairo_move_to(cr, 0, height);
+      set_color(cr, darktable.bauhaus->inset_histogram);
 
-      picker_scale(raw_mean, picker_mean);
-      picker_scale(raw_min, picker_min);
-      picker_scale(raw_max, picker_max);
-
-      // scale conservatively to 100% of width:
-      snprintf(text, sizeof(text), "100.00 / 100.00 ( +100.00)");
-      pango_layout_set_text(layout, text, -1);
-      pango_layout_get_pixel_extents(layout, &ink, NULL);
-      pango_font_description_set_absolute_size(desc, width*1.0/ink.width * PANGO_SCALE);
-      pango_layout_set_font_description(layout, desc);
-
-      picker_min[ch] = to_log(picker_min[ch], c->loglogscale, ch, c->semilog, 0);
-      picker_max[ch] = to_log(picker_max[ch], c->loglogscale, ch, c->semilog, 0);
-      picker_mean[ch] = to_log(picker_mean[ch], c->loglogscale, ch, c->semilog, 0);
-
-      cairo_set_source_rgba(cr, 0.7, 0.5, 0.5, 0.35);
-      cairo_rectangle(cr, width * picker_min[ch], 0, width * fmax(picker_max[ch] - picker_min[ch], 0.0f),
-                      -height);
-      cairo_fill(cr);
-      cairo_set_source_rgba(cr, 0.9, 0.7, 0.7, 0.5);
-      cairo_move_to(cr, width * picker_mean[ch], 0);
-      cairo_line_to(cr, width * picker_mean[ch], -height);
-      cairo_stroke(cr);
-
-      snprintf(text, sizeof(text), "%.1f → %.1f", raw_mean[ch], raw_mean_output[ch]);
-
-      set_color(cr, darktable.bauhaus->graph_fg);
-      cairo_set_font_size(cr, DT_PIXEL_APPLY_DPI(0.04) * height);
-      pango_layout_set_text(layout, text, -1);
-      pango_layout_get_pixel_extents(layout, &ink, NULL);
-      cairo_move_to(cr, 0.02f * width, -0.94 * height - ink.height - ink.y);
-      pango_cairo_show_layout(cr, layout);
-      cairo_stroke(cr);
-      pango_font_description_free(desc);
-      g_object_unref(layout);
+      if (ch == ch_L && c->loglogscale > 0.0f)
+      {
+        dt_draw_histogram_8_log_base(cr, hist, 4, ch, is_linear, c->loglogscale + 1.0f);
+      }
+      else
+      {
+        dt_draw_histogram_8(cr, hist, 4, ch, is_linear);
+      }
       cairo_restore(cr);
+    }
+
+    cairo_move_to(cr, 0, height);
+    if(self->request_color_pick == DT_REQUEST_COLORPICK_MODULE &&
+       gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(c->colorpicker)))
+    {
+      // the global live samples ...
+      cairo_set_line_width(cr, DT_PIXEL_APPLY_DPI(3));
+
+      for(GSList *samples = darktable.lib->proxy.colorpicker.live_samples; samples; samples = g_slist_next(samples))
+      {
+        dt_colorpicker_sample_t *sample = samples->data;
+
+        picker_scale(sample->lab[DT_LIB_COLORPICKER_STATISTIC_MEAN], picker_mean);
+        picker_scale(sample->lab[DT_LIB_COLORPICKER_STATISTIC_MIN], picker_min);
+        picker_scale(sample->lab[DT_LIB_COLORPICKER_STATISTIC_MAX], picker_max);
+
+        // Convert abcissa to log coordinates if needed
+        picker_min[ch] = to_log(picker_min[ch], c->loglogscale, ch, c->semilog, 0);
+        picker_max[ch] = to_log(picker_max[ch], c->loglogscale, ch, c->semilog, 0);
+        picker_mean[ch] = to_log(picker_mean[ch], c->loglogscale, ch, c->semilog, 0);
+
+        cairo_set_source_rgba(cr, 0.5, 0.7, 0.5, 0.35);
+        cairo_rectangle(cr, width * picker_min[ch], 0, width * fmax(picker_max[ch] - picker_min[ch], 0.0f),
+                        -height);
+        cairo_fill(cr);
+        cairo_set_source_rgba(cr, 0.5, 0.7, 0.5, 0.5);
+        cairo_move_to(cr, width * picker_mean[ch], 0);
+        cairo_line_to(cr, width * picker_mean[ch], -height);
+        cairo_stroke(cr);
+      }
+
+      // ... and the local sample
+      if(raw_max[0] >= 0.0f)
+      {
+        cairo_save(cr);
+        PangoLayout *layout;
+        PangoRectangle ink;
+        PangoFontDescription *desc = pango_font_description_copy_static(darktable.bauhaus->pango_font_desc);
+        pango_font_description_set_weight(desc, PANGO_WEIGHT_BOLD);
+        pango_font_description_set_absolute_size(desc, PANGO_SCALE);
+        layout = pango_cairo_create_layout(cr);
+        pango_layout_set_font_description(layout, desc);
+
+        picker_scale(raw_mean, picker_mean);
+        picker_scale(raw_min, picker_min);
+        picker_scale(raw_max, picker_max);
+
+        // scale conservatively to 100% of width:
+        snprintf(text, sizeof(text), "100.00 / 100.00 ( +100.00)");
+        pango_layout_set_text(layout, text, -1);
+        pango_layout_get_pixel_extents(layout, &ink, NULL);
+        pango_font_description_set_absolute_size(desc, width*1.0/ink.width * PANGO_SCALE);
+        pango_layout_set_font_description(layout, desc);
+
+        picker_min[ch] = to_log(picker_min[ch], c->loglogscale, ch, c->semilog, 0);
+        picker_max[ch] = to_log(picker_max[ch], c->loglogscale, ch, c->semilog, 0);
+        picker_mean[ch] = to_log(picker_mean[ch], c->loglogscale, ch, c->semilog, 0);
+
+        cairo_set_source_rgba(cr, 0.7, 0.5, 0.5, 0.35);
+        cairo_rectangle(cr, width * picker_min[ch], 0, width * fmax(picker_max[ch] - picker_min[ch], 0.0f),
+                        -height);
+        cairo_fill(cr);
+        cairo_set_source_rgba(cr, 0.9, 0.7, 0.7, 0.5);
+        cairo_move_to(cr, width * picker_mean[ch], 0);
+        cairo_line_to(cr, width * picker_mean[ch], -height);
+        cairo_stroke(cr);
+
+        snprintf(text, sizeof(text), "%.1f → %.1f", raw_mean[ch], raw_mean_output[ch]);
+
+        set_color(cr, darktable.bauhaus->graph_fg);
+        cairo_set_font_size(cr, DT_PIXEL_APPLY_DPI(0.04) * height);
+        pango_layout_set_text(layout, text, -1);
+        pango_layout_get_pixel_extents(layout, &ink, NULL);
+        cairo_move_to(cr, 0.02f * width, -0.94 * height - ink.height - ink.y);
+        pango_cairo_show_layout(cr, layout);
+        cairo_stroke(cr);
+        pango_font_description_free(desc);
+        g_object_unref(layout);
+        cairo_restore(cr);
+      }
     }
   }
 

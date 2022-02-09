@@ -827,7 +827,7 @@ static gboolean _area_draw_callback(GtkWidget *widget, cairo_t *crf, dt_iop_modu
   }
 
   // draw histogram in background
-  // only if module is expanded
+  // only if module is enabled
   if(self->enabled)
   {
     const uint32_t *hist = self->histogram;

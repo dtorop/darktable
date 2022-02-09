@@ -790,16 +790,20 @@ static gboolean dt_iop_levels_area_draw(GtkWidget *widget, cairo_t *crf, gpointe
   cairo_translate(cr, 0, height);
 
   // draw lum histogram in background
-  uint32_t *hist = self->histogram;
-  const gboolean is_linear = darktable.lib->proxy.histogram.is_linear;
-  float hist_max = is_linear ? self->histogram_max[0] : logf(1.0 + self->histogram_max[0]);
-  if(hist && hist_max > 0.0f)
+  // only if the module is enabled
+  if(self->enabled)
   {
-    cairo_save(cr);
-    cairo_scale(cr, width / 255.0, -(height - DT_PIXEL_APPLY_DPI(5)) / hist_max);
-    cairo_set_source_rgba(cr, .2, .2, .2, 0.5);
-    dt_draw_histogram_8(cr, hist, 4, 0, is_linear);
-    cairo_restore(cr);
+    uint32_t *hist = self->histogram;
+    const gboolean is_linear = darktable.lib->proxy.histogram.is_linear;
+    float hist_max = is_linear ? self->histogram_max[0] : logf(1.0 + self->histogram_max[0]);
+    if(hist && hist_max > 0.0f)
+    {
+      cairo_save(cr);
+      cairo_scale(cr, width / 255.0, -(height - DT_PIXEL_APPLY_DPI(5)) / hist_max);
+      cairo_set_source_rgba(cr, .2, .2, .2, 0.5);
+      dt_draw_histogram_8(cr, hist, 4, 0, is_linear);
+      cairo_restore(cr);
+    }
   }
 
   // Cleaning up
