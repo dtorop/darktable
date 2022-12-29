@@ -803,8 +803,8 @@ static void _pixelpipe_pick_from_image(dt_iop_module_t *module,
   // FIXME: is _pixelpipe_picker_helper() to set this up?
   if(sample->size == DT_LIB_COLORPICKER_SIZE_BOX)
   {
-    box[0] = CLAMP(sample->box[0] * roi_in->width, 0, roi_in->width);
-    box[1] = CLAMP(sample->box[1] * roi_in->height, 0, roi_in->height);
+    box[0] = CLAMP(sample->box[0] * roi_in->width, 0, roi_in->width - 1);
+    box[1] = CLAMP(sample->box[1] * roi_in->height, 0, roi_in->height - 1);
     box[2] = CLAMP(sample->box[2] * roi_in->width, 0, roi_in->width);
     box[3] = CLAMP(sample->box[3] * roi_in->height, 0, roi_in->height);
   }
