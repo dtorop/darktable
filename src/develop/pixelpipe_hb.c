@@ -612,6 +612,7 @@ static void _histogram_collect_cl(int devid, dt_dev_pixelpipe_iop_t *piece, cl_m
 #endif
 
 // calculate box in current module's coordinates for the color picker
+// FIXME: move this to common color picker code?
 static int _pixelpipe_picker_box(dt_iop_module_t *module, const dt_iop_roi_t *roi,
                                  const dt_colorpicker_sample_t *const sample,
                                  dt_pixelpipe_picker_source_t picker_source, int *box)
@@ -801,6 +802,7 @@ static void _pixelpipe_pick_from_image(dt_iop_module_t *module,
                                        const dt_iop_order_iccprofile_info_t *const histogram_profile,
                                        dt_colorpicker_sample_t *const sample)
 {
+  // FIXME: don't need this intermediary value, just put right into sample->display
   lib_colorpicker_sample_statistics picked_rgb;
   int box[4];
 
@@ -836,12 +838,14 @@ static void _pixelpipe_pick_samples(dt_develop_t *dev, dt_iop_module_t *module,
                                     const float *const input,
                                     const dt_iop_roi_t *roi_in)
 {
+  // FIXME: can just inline here the _pixelpipe_pick_from_image() code, and at the end do all the colorspace conversions as needed?
   const dt_iop_order_iccprofile_info_t *const histogram_profile = dt_ioppr_get_histogram_profile_info(dev);
   const dt_iop_order_iccprofile_info_t *const display_profile
     = dt_ioppr_add_profile_info_to_list(dev, darktable.color_profiles->display_type,
                                         darktable.color_profiles->display_filename,
                                         INTENT_RELATIVE_COLORIMETRIC);
 
+  // FIXME: locally crete a GSList item which contains as data the primary picker if it exists, pointing to the start of the live samples, or if not the first of the live samples. Then this can be a single loop, with the colorspace changing code included.
   GSList *samples = darktable.lib->proxy.colorpicker.live_samples;
   while(samples)
   {
@@ -1020,7 +1024,7 @@ static int pixelpipe_process_on_CPU(dt_dev_pixelpipe_t *pipe, dt_develop_t *dev,
   if(_request_color_pick(pipe, dev, module))
   {
     // ensure that we are using the right color space
-    // FIXME: do we have to convert entire image colorspace if just picking a point?
+    // FIXME: do we have to convert entire image colorspace if just picking a point? what if we sample in whatever the current colorspace is, then convert it to picker colorspace (work profile)?
     dt_iop_colorspace_type_t picker_cst = _transform_for_picker(module, pipe->dsc.cst);
     dt_ioppr_transform_image_colorspace(module, input, input, roi_in->width, roi_in->height,
                                         input_format->cst, picker_cst, &input_format->cst,
