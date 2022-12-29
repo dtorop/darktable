@@ -792,6 +792,7 @@ error:
 #endif
 
 static void _pixelpipe_pick_from_image(dt_iop_module_t *module,
+                                       const dt_iop_buffer_dsc_t *dsc,
                                        const float *const pixel, const dt_iop_roi_t *roi_in,
                                        const dt_iop_order_iccprofile_info_t *const display_profile,
                                        const dt_iop_order_iccprofile_info_t *const histogram_profile,
@@ -799,33 +800,23 @@ static void _pixelpipe_pick_from_image(dt_iop_module_t *module,
 {
   if(sample->size == DT_LIB_COLORPICKER_SIZE_BOX)
   {
+    // note that this was inclusive of right/bottom, changing to match others as exclusive of
+    // FIXME: is _pixelpipe_picker_helper() to set this up?
     const int box[4] = {
-      MIN(roi_in->width - 1,  MAX(0, sample->box[0] * roi_in->width)),
-      MIN(roi_in->height - 1, MAX(0, sample->box[1] * roi_in->height)),
-      MIN(roi_in->width - 1,  MAX(0, sample->box[2] * roi_in->width)),
-      MIN(roi_in->height - 1, MAX(0, sample->box[3] * roi_in->height))
+      MIN(roi_in->width,  MAX(0, sample->box[0] * roi_in->width)),
+      MIN(roi_in->height, MAX(0, sample->box[1] * roi_in->height)),
+      MIN(roi_in->width,  MAX(0, sample->box[2] * roi_in->width)),
+      MIN(roi_in->height, MAX(0, sample->box[3] * roi_in->height))
     };
-    const int box_pixels = (box[3] - box[1] + 1) * (box[2] - box[0] + 1);
-    lib_colorpicker_sample_statistics picked_rgb = { { 0.0f },
-                                                     { FLT_MAX, FLT_MAX, FLT_MAX },
-                                                     { FLT_MIN, FLT_MIN, FLT_MIN } };
-    dt_aligned_pixel_t acc = { 0.0f };
+    lib_colorpicker_sample_statistics picked_rgb;
 
-    for(int j = box[1]; j <= box[3]; j++)
-      for(int i = box[0]; i <= box[2]; i++)
-      {
-        for_each_channel(ch, aligned(picked_rgb, acc) aligned(pixel:64))
-        {
-          const float v = pixel[4 * (roi_in->width * j + i) + ch];
-          picked_rgb[DT_LIB_COLORPICKER_STATISTIC_MIN][ch]
-              = MIN(picked_rgb[DT_LIB_COLORPICKER_STATISTIC_MIN][ch], v);
-          picked_rgb[DT_LIB_COLORPICKER_STATISTIC_MAX][ch]
-              = MAX(picked_rgb[DT_LIB_COLORPICKER_STATISTIC_MAX][ch], v);
-          acc[ch] += v;
-        }
-      }
-    for_each_channel(ch, aligned(picked_rgb, acc:16))
-      picked_rgb[DT_LIB_COLORPICKER_STATISTIC_MEAN][ch] = acc[ch] / box_pixels;
+    dt_color_picker_helper(dsc, pixel, roi_in, box,
+                           picked_rgb[DT_LIB_COLORPICKER_STATISTIC_MEAN],
+                           picked_rgb[DT_LIB_COLORPICKER_STATISTIC_MIN],
+                           picked_rgb[DT_LIB_COLORPICKER_STATISTIC_MAX],
+                           IOP_CS_RGB, IOP_CS_RGB,
+                           // FIXME: this is ignored, just use NULL?
+                           histogram_profile);
 
     // convenient to have pixels in display profile, which makes them easy to display
     memcpy(sample->display[0], picked_rgb[0], sizeof(lib_colorpicker_sample_statistics));
@@ -865,7 +856,9 @@ static void _pixelpipe_pick_from_image(dt_iop_module_t *module,
 }
 
 static void _pixelpipe_pick_samples(dt_develop_t *dev, dt_iop_module_t *module,
-                                    const float *const input, const dt_iop_roi_t *roi_in)
+                                    const dt_iop_buffer_dsc_t *dsc,
+                                    const float *const input,
+                                    const dt_iop_roi_t *roi_in)
 {
   const dt_iop_order_iccprofile_info_t *const histogram_profile = dt_ioppr_get_histogram_profile_info(dev);
   const dt_iop_order_iccprofile_info_t *const display_profile
@@ -878,12 +871,12 @@ static void _pixelpipe_pick_samples(dt_develop_t *dev, dt_iop_module_t *module,
   {
     dt_colorpicker_sample_t *sample = samples->data;
     if(!sample->locked)
-      _pixelpipe_pick_from_image(module, input, roi_in, display_profile, histogram_profile, sample);
+      _pixelpipe_pick_from_image(module, dsc, input, roi_in, display_profile, histogram_profile, sample);
     samples = g_slist_next(samples);
   }
 
   if(darktable.lib->proxy.colorpicker.picker_proxy)
-    _pixelpipe_pick_from_image(module, input, roi_in, display_profile, histogram_profile,
+    _pixelpipe_pick_from_image(module, dsc, input, roi_in, display_profile, histogram_profile,
                                darktable.lib->proxy.colorpicker.primary_sample);
 }
 
@@ -2103,7 +2096,8 @@ static int dt_dev_pixelpipe_process_rec(dt_dev_pixelpipe_t *pipe, dt_develop_t *
   {
     // Pick RGB/Lab for the primary colorpicker and live samples
     if(darktable.lib->proxy.colorpicker.picker_proxy || darktable.lib->proxy.colorpicker.live_samples)
-      _pixelpipe_pick_samples(dev, module, (const float *const )input, &roi_in);
+      _pixelpipe_pick_samples(dev, module, *out_format,
+                              (const float *const )input, &roi_in);
 
     // FIXME: read this from dt_ioppr_get_pipe_output_profile_info()?
     const dt_iop_order_iccprofile_info_t *const display_profile
