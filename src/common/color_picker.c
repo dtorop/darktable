@@ -32,6 +32,7 @@ static inline size_t _box_size(const int *const box)
 
 // define custom reduction operations to handle pixel stats/weights
 // we can't return an array from a function, so wrap the array type in a struct
+// FIXME: use lib_colorpicker_sample_statistics instead?
 typedef struct _stats_pixel {
   dt_aligned_pixel_t acc, min, max;
 } _stats_pixel;
@@ -102,16 +103,13 @@ static inline void _color_picker_rgb_or_lab(dt_aligned_pixel_t avg, dt_aligned_p
                                             const float *const pixels, const size_t width)
 {
   for(size_t i = 0; i < width; i += 4)
-  {
-    dt_aligned_pixel_t pick;
-    copy_pixel(pick, pixels + i);
     for_each_channel(k)
     {
-      avg[k] += pick[k];
-      min[k] = fminf(min[k], pick[k]);
-      max[k] = fmaxf(max[k], pick[k]);
+      const float v = pixels[i + k];
+      avg[k] += v;
+      min[k] = fminf(min[k], v);
+      max[k] = fmaxf(max[k], v);
     }
-  }
 }
 
 #ifdef _OPENMP
@@ -361,6 +359,7 @@ void dt_color_picker_helper(const dt_iop_buffer_dsc_t *dsc, const float *const p
     float *const DT_ALIGNED_ARRAY tempbuf = dt_alloc_perthread_float(4 * roi->width, &padded_size); //TODO: alloc in caller
 
     // blur without clipping negatives because Lab a and b channels can be legitimately negative
+    // FIXME: this blurs whole image even when just a bit is sampled
     blur_2D_Bspline(pixel, denoised, tempbuf, roi->width, roi->height, 1, FALSE);
 
     color_picker_helper_4ch(denoised, roi, box,
