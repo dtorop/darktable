@@ -32,7 +32,7 @@ static inline size_t _box_size(const int *const box)
 
 // define custom reduction operations to handle pixel stats/weights
 // we can't return an array from a function, so wrap the array type in a struct
-// FIXME: use lib_colorpicker_sample_statistics instead?
+// FIXME: use lib_colorpicker_sample_statistics instead? or do we need a locally allocated version of the data for the sake of speed?
 typedef struct _stats_pixel {
   dt_aligned_pixel_t acc, min, max;
 } _stats_pixel;
@@ -47,7 +47,7 @@ typedef struct _count_pixel { DT_ALIGNED_PIXEL uint32_t v[4]; } _count_pixel;
 
 #if defined(_OPENMP) && _CUSTOM_REDUCTIONS
 
-static inline _stats_pixel _reduce_stats_pixel(_stats_pixel stats, _stats_pixel newval)
+static inline _stats_pixel _reduce_stats(_stats_pixel stats, _stats_pixel newval)
 {
   for_four_channels(c)
   {
@@ -57,7 +57,7 @@ static inline _stats_pixel _reduce_stats_pixel(_stats_pixel stats, _stats_pixel 
   }
   return stats;
 }
-#pragma omp declare reduction(vstats:_stats_pixel:omp_out=_reduce_stats_pixel(omp_out,omp_in)) \
+#pragma omp declare reduction(vstats:_stats_pixel:omp_out=_reduce_stats(omp_out,omp_in)) \
   initializer(omp_priv = omp_orig)
 
 static inline _count_pixel _add_counts(_count_pixel acc, _count_pixel newval)
@@ -174,8 +174,7 @@ static inline void _color_picker_jzczhz(dt_aligned_pixel_t avg, dt_aligned_pixel
 }
 
 static void color_picker_helper_4ch(const float *const pixel, const dt_iop_roi_t *const roi, const int *const box,
-                                    dt_aligned_pixel_t picked_color, dt_aligned_pixel_t picked_color_min,
-                                    dt_aligned_pixel_t picked_color_max,
+                                    lib_colorpicker_sample_statistics pick,
                                     const dt_iop_colorspace_type_t cst_from,
                                     const dt_iop_colorspace_type_t cst_to,
                                     const dt_iop_order_iccprofile_info_t *const profile)
@@ -250,18 +249,19 @@ static void color_picker_helper_4ch(const float *const pixel, const dt_iop_roi_t
     }
   }
 
+  // copy all four channels, as four some colorspaces there may be
+  // meaningful data in the fourth pixel
   for_four_channels(c)
   {
-    picked_color[c] = stats.acc[c] / (float)size;
-    picked_color_min[c] = stats.min[c];
-    picked_color_max[c] = stats.max[c];
+    pick[DT_LIB_COLORPICKER_STATISTIC_MEAN][c] = stats.acc[c] / (float)size;
+    pick[DT_LIB_COLORPICKER_STATISTIC_MIN][c] = stats.min[c];
+    pick[DT_LIB_COLORPICKER_STATISTIC_MAX][c] = stats.max[c];
   }
 }
 
 static void color_picker_helper_bayer(const dt_iop_buffer_dsc_t *const dsc, const float *const pixel,
                                       const dt_iop_roi_t *const roi, const int *const box,
-                                      dt_aligned_pixel_t picked_color, dt_aligned_pixel_t picked_color_min,
-                                      dt_aligned_pixel_t picked_color_max)
+                                      lib_colorpicker_sample_statistics pick)
 {
   const int width = roi->width;
   const uint32_t filters = dsc->filters;
@@ -292,17 +292,17 @@ static void color_picker_helper_bayer(const dt_iop_buffer_dsc_t *const dsc, cons
       weights.v[c]++;
     }
 
-  copy_pixel(picked_color_min, stats.min);
-  copy_pixel(picked_color_max, stats.max);
+  copy_pixel(pick[DT_LIB_COLORPICKER_STATISTIC_MIN], stats.min);
+  copy_pixel(pick[DT_LIB_COLORPICKER_STATISTIC_MAX], stats.max);
   // and finally normalize data. For bayer, there is twice as much green.
   for_each_channel(c)
-    picked_color[c] = weights.v[c] ? (stats.acc[c] / (float)weights.v[c]) : 0.0f;
+    pick[DT_LIB_COLORPICKER_STATISTIC_MEAN][c] =
+      weights.v[c] ? (stats.acc[c] / (float)weights.v[c]) : 0.0f;
 }
 
 static void color_picker_helper_xtrans(const dt_iop_buffer_dsc_t *const dsc, const float *const pixel,
                                        const dt_iop_roi_t *const roi, const int *const box,
-                                       dt_aligned_pixel_t picked_color, dt_aligned_pixel_t picked_color_min,
-                                       dt_aligned_pixel_t picked_color_max)
+                                       lib_colorpicker_sample_statistics pick)
 {
   const int width = roi->width;
   const uint8_t(*const xtrans)[6] = (const uint8_t(*const)[6])dsc->xtrans;
@@ -333,12 +333,13 @@ static void color_picker_helper_xtrans(const dt_iop_buffer_dsc_t *const dsc, con
       weights.v[c]++;
     }
 
-  copy_pixel(picked_color_min, stats.min);
-  copy_pixel(picked_color_max, stats.max);
+  copy_pixel(pick[DT_LIB_COLORPICKER_STATISTIC_MIN], stats.min);
+  copy_pixel(pick[DT_LIB_COLORPICKER_STATISTIC_MAX], stats.max);
   // and finally normalize data.
   // X-Trans RGB weighting averages to 2:5:2 for each 3x3 cell
   for_each_channel(c)
-    picked_color[c] = weights.v[c] ? (stats.acc[c] / (float)weights.v[c]) : 0.0f;
+    pick[DT_LIB_COLORPICKER_STATISTIC_MEAN][c] =
+      weights.v[c] ? (stats.acc[c] / (float)weights.v[c]) : 0.0f;
 }
 
 // picked_color, picked_color_min and picked_color_max should be aligned
@@ -361,30 +362,21 @@ void dt_color_picker_helper(const dt_iop_buffer_dsc_t *dsc, const float *const p
 
     // blur without clipping negatives because Lab a and b channels can be legitimately negative
     // FIXME: this blurs whole image even when just a bit is sampled
+    // FIXME: if multiple samples are made, the blur is called each time -- instead if this is to even happen outside of per-module, do this once
     blur_2D_Bspline(pixel, denoised, tempbuf, roi->width, roi->height, 1, FALSE);
 
-    color_picker_helper_4ch(denoised, roi, box,
-                            pick[DT_LIB_COLORPICKER_STATISTIC_MEAN],
-                            pick[DT_LIB_COLORPICKER_STATISTIC_MIN],
-                            pick[DT_LIB_COLORPICKER_STATISTIC_MAX],
-                            image_cst, picker_cst, profile);
+    color_picker_helper_4ch(denoised, roi, box, pick, image_cst, picker_cst, profile);
 
     dt_free_align(denoised);
     dt_free_align(tempbuf);
   }
   else if(dsc->channels == 1u && dsc->filters != 0u && dsc->filters != 9u)
   {
-    color_picker_helper_bayer(dsc, pixel, roi, box,
-                              pick[DT_LIB_COLORPICKER_STATISTIC_MEAN],
-                              pick[DT_LIB_COLORPICKER_STATISTIC_MIN],
-                              pick[DT_LIB_COLORPICKER_STATISTIC_MAX]);
+    color_picker_helper_bayer(dsc, pixel, roi, box, pick);
   }
   else if(dsc->channels == 1u && dsc->filters == 9u)
   {
-    color_picker_helper_xtrans(dsc, pixel, roi, box,
-                              pick[DT_LIB_COLORPICKER_STATISTIC_MEAN],
-                              pick[DT_LIB_COLORPICKER_STATISTIC_MIN],
-                              pick[DT_LIB_COLORPICKER_STATISTIC_MAX]);
+    color_picker_helper_xtrans(dsc, pixel, roi, box, pick);
   }
   else
     dt_unreachable_codepath();
