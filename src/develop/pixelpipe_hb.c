@@ -808,6 +808,7 @@ static void _pixelpipe_pick_from_image(dt_iop_module_t *module,
     return;
 
   // pixel input is in display profile, hence the sample output will be as well
+  // FIXME: previously we used special purpose code here, but the generic color picker code blurs the image -- do we want to keep this behavior? and similarly if we *do* want to blur the image, should we do this once rather than once for each sample?
   dt_color_picker_helper(dsc, pixel, roi_in, box,
                          sample->display[DT_LIB_COLORPICKER_STATISTIC_MEAN],
                          sample->display[DT_LIB_COLORPICKER_STATISTIC_MIN],
@@ -841,8 +842,18 @@ static void _pixelpipe_pick_samples(dt_develop_t *dev, dt_iop_module_t *module,
                                         darktable.color_profiles->display_filename,
                                         INTENT_RELATIVE_COLORIMETRIC);
 
-  // FIXME: locally crete a GSList item which contains as data the primary picker if it exists, pointing to the start of the live samples, or if not the first of the live samples. Then this can be a single loop, with the colorspace changing code included.
+  // if we have a primary picker, prepend to the list of any live
+  // samples, so that we don't have to differentiate when looping
+  // through the pixels
   GSList *samples = darktable.lib->proxy.colorpicker.live_samples;
+  GSList primary;
+  if(darktable.lib->proxy.colorpicker.picker_proxy)
+  {
+    primary.data = darktable.lib->proxy.colorpicker.primary_sample;
+    primary.next = samples;
+    samples = &primary;
+  }
+
   while(samples)
   {
     dt_colorpicker_sample_t *sample = samples->data;
@@ -850,10 +861,6 @@ static void _pixelpipe_pick_samples(dt_develop_t *dev, dt_iop_module_t *module,
       _pixelpipe_pick_from_image(module, dsc, input, roi_in, display_profile, histogram_profile, sample);
     samples = g_slist_next(samples);
   }
-
-  if(darktable.lib->proxy.colorpicker.picker_proxy)
-    _pixelpipe_pick_from_image(module, dsc, input, roi_in, display_profile, histogram_profile,
-                               darktable.lib->proxy.colorpicker.primary_sample);
 }
 
 // returns 1 if blend process need the module default colorspace
