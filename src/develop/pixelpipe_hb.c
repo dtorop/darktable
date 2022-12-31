@@ -802,34 +802,30 @@ static void _pixelpipe_pick_from_image(dt_iop_module_t *module,
                                        const dt_iop_order_iccprofile_info_t *const histogram_profile,
                                        dt_colorpicker_sample_t *const sample)
 {
-  // FIXME: don't need this intermediary value, just put right into sample->display
-  lib_colorpicker_sample_statistics picked_rgb;
   int box[4];
 
   if(_pixelpipe_picker_box(module, roi_in, sample, PIXELPIPE_PICKER_OUTPUT, box))
     return;
 
+  // pixel input is in display profile, hence the sample output will be as well
   dt_color_picker_helper(dsc, pixel, roi_in, box,
-                         picked_rgb[DT_LIB_COLORPICKER_STATISTIC_MEAN],
-                         picked_rgb[DT_LIB_COLORPICKER_STATISTIC_MIN],
-                         picked_rgb[DT_LIB_COLORPICKER_STATISTIC_MAX],
+                         sample->display[DT_LIB_COLORPICKER_STATISTIC_MEAN],
+                         sample->display[DT_LIB_COLORPICKER_STATISTIC_MIN],
+                         sample->display[DT_LIB_COLORPICKER_STATISTIC_MAX],
                          IOP_CS_RGB, IOP_CS_RGB,
                          // FIXME: this is ignored, just use NULL?
                          histogram_profile);
-
-  // convenient to have pixels in display profile, which makes them easy to display
-  memcpy(sample->display[0], picked_rgb[0], sizeof(lib_colorpicker_sample_statistics));
 
   // NOTE: conversions assume that dt_aligned_pixel_t[x] has no
   // padding, e.g. is equivalent to float[x*4], and that on failure
   // it's OK not to touch output
   int converted_cst;
-  dt_ioppr_transform_image_colorspace(module, picked_rgb[0], sample->lab[0], 3, 1,
+  dt_ioppr_transform_image_colorspace(module, sample->display[0], sample->lab[0], 3, 1,
                                       IOP_CS_RGB, IOP_CS_LAB,
                                       &converted_cst, display_profile);
   if(display_profile && histogram_profile)
     dt_ioppr_transform_image_colorspace_rgb
-      (picked_rgb[0], sample->scope[0], 3, 1,
+      (sample->display[0], sample->scope[0], 3, 1,
        display_profile, histogram_profile, "primary picker");
 }
 
