@@ -342,9 +342,10 @@ static void color_picker_helper_xtrans(const dt_iop_buffer_dsc_t *const dsc, con
 }
 
 // picked_color, picked_color_min and picked_color_max should be aligned
-void dt_color_picker_helper(const dt_iop_buffer_dsc_t *dsc, const float *const pixel, const dt_iop_roi_t *roi,
-                            const int *const box, dt_aligned_pixel_t picked_color, dt_aligned_pixel_t picked_color_min,
-                            dt_aligned_pixel_t picked_color_max, const dt_iop_colorspace_type_t image_cst,
+void dt_color_picker_helper(const dt_iop_buffer_dsc_t *dsc, const float *const pixel,
+                            const dt_iop_roi_t *roi, const int *const box,
+                            lib_colorpicker_sample_statistics pick,
+                            const dt_iop_colorspace_type_t image_cst,
                             const dt_iop_colorspace_type_t picker_cst,
                             const dt_iop_order_iccprofile_info_t *const profile)
 {
@@ -363,7 +364,9 @@ void dt_color_picker_helper(const dt_iop_buffer_dsc_t *dsc, const float *const p
     blur_2D_Bspline(pixel, denoised, tempbuf, roi->width, roi->height, 1, FALSE);
 
     color_picker_helper_4ch(denoised, roi, box,
-                            picked_color, picked_color_min, picked_color_max,
+                            pick[DT_LIB_COLORPICKER_STATISTIC_MEAN],
+                            pick[DT_LIB_COLORPICKER_STATISTIC_MIN],
+                            pick[DT_LIB_COLORPICKER_STATISTIC_MAX],
                             image_cst, picker_cst, profile);
 
     dt_free_align(denoised);
@@ -371,13 +374,17 @@ void dt_color_picker_helper(const dt_iop_buffer_dsc_t *dsc, const float *const p
   }
   else if(dsc->channels == 1u && dsc->filters != 0u && dsc->filters != 9u)
   {
-    color_picker_helper_bayer(dsc, pixel, roi, box, picked_color,
-                              picked_color_min, picked_color_max);
+    color_picker_helper_bayer(dsc, pixel, roi, box,
+                              pick[DT_LIB_COLORPICKER_STATISTIC_MEAN],
+                              pick[DT_LIB_COLORPICKER_STATISTIC_MIN],
+                              pick[DT_LIB_COLORPICKER_STATISTIC_MAX]);
   }
   else if(dsc->channels == 1u && dsc->filters == 9u)
   {
-    color_picker_helper_xtrans(dsc, pixel, roi, box, picked_color,
-                               picked_color_min, picked_color_max);
+    color_picker_helper_xtrans(dsc, pixel, roi, box,
+                              pick[DT_LIB_COLORPICKER_STATISTIC_MEAN],
+                              pick[DT_LIB_COLORPICKER_STATISTIC_MIN],
+                              pick[DT_LIB_COLORPICKER_STATISTIC_MAX]);
   }
   else
     dt_unreachable_codepath();
