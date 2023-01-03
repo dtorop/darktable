@@ -274,8 +274,8 @@ static void _color_picker_work_1ch(const float *const pixel,
                          .max = { -FLT_MAX, -FLT_MAX, -FLT_MAX, -FLT_MAX } };
   const size_t size = _box_size(box);
 
-  // cutoffs for using threads depends on # of samples and complexity
-  // of the colorspace conversion
+  // worker logic is slightly different from 4-channel as we need to
+  // keep track of position in the mosiac
 #if defined(_OPENMP) && _CUSTOM_REDUCTIONS
 #pragma omp parallel for default(none) if (size > min_for_threads)      \
   dt_omp_firstprivate(worker, pixel, width, roi, box, data)             \
@@ -323,18 +323,22 @@ void dt_color_picker_helper(const dt_iop_buffer_dsc_t *dsc, const float *const p
 
     if(image_cst == IOP_CS_LAB && picker_cst == IOP_CS_LCH)
     {
+      // used in blending for Lab modules (e.g. color zones and tone curve)
       _color_picker_work_4ch(denoised, roi, box, pick, NULL, _color_picker_lch, 500);
     }
     else if(image_cst == IOP_CS_RGB && picker_cst == IOP_CS_HSL)
     {
+      // used in scene-referred blending for RGB mdoules
       _color_picker_work_4ch(denoised, roi, box, pick, NULL, _color_picker_hsl, 250);
     }
     else if(image_cst == IOP_CS_RGB && picker_cst == IOP_CS_JZCZHZ)
     {
+      // used in display-referred blending for RGB mdoules
       _color_picker_work_4ch(denoised, roi, box, pick, profile, _color_picker_jzczhz, 100);
     }
     else if(image_cst == picker_cst || picker_cst == IOP_CS_NONE)
     {
+      // used in most per-module pickers and the global picker
       _color_picker_work_4ch(denoised, roi, box, pick, NULL, _color_picker_rgb_or_lab, 1000);
     }
     else
