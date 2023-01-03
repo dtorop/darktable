@@ -34,7 +34,7 @@ static inline size_t _box_size(const int *const box)
 // we can't return an array from a function, so wrap the array type in a struct
 // FIXME: use lib_colorpicker_sample_statistics instead? or do we need a locally allocated version of the data for the sake of speed?
 typedef struct _stats_pixel {
-  lib_colorpicker_stats v;
+  dt_aligned_pixel_t acc, min, max;
 } _stats_pixel;
 typedef struct _count_pixel { DT_ALIGNED_PIXEL uint32_t v[4]; } _count_pixel;
 
@@ -51,9 +51,9 @@ static inline _stats_pixel _reduce_stats(_stats_pixel stats, _stats_pixel newval
 {
   for_four_channels(c)
   {
-    stats.v[DT_PICK_MEAN][c] += newval.v[DT_PICK_MEAN][c];
-    stats.v[DT_PICK_MIN][c] = MIN(stats.v[DT_PICK_MIN][c], newval.v[DT_PICK_MIN][c]);
-    stats.v[DT_PICK_MAX][c] = MAX(stats.v[DT_PICK_MAX][c], newval.v[DT_PICK_MAX][c]);
+    stats.acc[c] += newval.acc[c];
+    stats.min[c] = MIN(stats.min[c], newval.min[c]);
+    stats.max[c] = MAX(stats.max[c], newval.max[c]);
   }
   return stats;
 }
@@ -98,21 +98,20 @@ static inline void rgb_to_JzCzhz(const dt_aligned_pixel_t rgb, dt_aligned_pixel_
 }
 
 // FIXME: set these up as helpers as in common histogram code?
-static inline void _color_picker_rgb_or_lab(lib_colorpicker_stats stats,
+static inline void _color_picker_rgb_or_lab(_stats_pixel *const stats,
                                             const float *const pixels, const size_t width)
 {
   for(size_t i = 0; i < width; i += 4)
     for_each_channel(k, aligned(pixels:16))
     {
       const float v = pixels[i + k];
-      stats[DT_PICK_MEAN][k] += v;
-      stats[DT_PICK_MIN][k] = MIN(stats[DT_PICK_MIN][k], v);
-      stats[DT_PICK_MAX][k] = MAX(stats[DT_PICK_MAX][k], v);
+      stats->acc[k] += v;
+      stats->min[k] = MIN(stats->min[k], v);
+      stats->max[k] = MAX(stats->max[k], v);
     }
 }
 
-// FIXME: will this invoke properly with SIMD?
-static inline void _color_picker_lch(lib_colorpicker_stats stats,
+static inline void _color_picker_lch(_stats_pixel *const stats,
                                      const float *const pixels, const size_t width)
 {
   for(size_t i = 0; i < width; i += 4)
@@ -122,15 +121,14 @@ static inline void _color_picker_lch(lib_colorpicker_stats stats,
     pick[3] = pick[2] < 0.5f ? pick[2] + 0.5f : pick[2] - 0.5f;
     for_four_channels(k, aligned(pixels:16))
     {
-      stats[DT_PICK_MEAN][k] += pick[k];
-      stats[DT_PICK_MIN][k] = MIN(stats[DT_PICK_MIN][k], pick[k]);
-      stats[DT_PICK_MAX][k] = MAX(stats[DT_PICK_MAX][k], pick[k]);
+      stats->acc[k] += pick[k];
+      stats->min[k] = MIN(stats->min[k], pick[k]);
+      stats->max[k] = MAX(stats->max[k], pick[k]);
     }
   }
 }
 
-// FIXME: will this invoke properly with SIMD?
-static inline void _color_picker_hsl(lib_colorpicker_stats stats,
+static inline void _color_picker_hsl(_stats_pixel *const stats,
                                      const float *const pixels, const size_t width)
 {
   for(size_t i = 0; i < width; i += 4)
@@ -140,14 +138,14 @@ static inline void _color_picker_hsl(lib_colorpicker_stats stats,
     pick[3] = pick[0] < 0.5f ? pick[0] + 0.5f : pick[0] - 0.5f;
     for_four_channels(k, aligned(pixels:16))
     {
-      stats[DT_PICK_MEAN][k] += pick[k];
-      stats[DT_PICK_MIN][k] = MIN(stats[DT_PICK_MIN][k], pick[k]);
-      stats[DT_PICK_MAX][k] = MAX(stats[DT_PICK_MAX][k], pick[k]);
+      stats->acc[k] += pick[k];
+      stats->min[k] = MIN(stats->min[k], pick[k]);
+      stats->max[k] = MAX(stats->max[k], pick[k]);
     }
   }
 }
 
-static inline void _color_picker_jzczhz(lib_colorpicker_stats stats,
+static inline void _color_picker_jzczhz(_stats_pixel *const stats,
                                         const float *const pixels, const size_t width,
                                         const dt_iop_order_iccprofile_info_t *const profile)
 {
@@ -158,9 +156,9 @@ static inline void _color_picker_jzczhz(lib_colorpicker_stats stats,
     pick[3] = pick[2] < 0.5f ? pick[2] + 0.5f : pick[2] - 0.5f;
     for_four_channels(k, aligned(pixels:16))
     {
-      stats[DT_PICK_MEAN][k] += pick[k];
-      stats[DT_PICK_MIN][k] = MIN(stats[DT_PICK_MIN][k], pick[k]);
-      stats[DT_PICK_MAX][k] = MAX(stats[DT_PICK_MAX][k], pick[k]);
+      stats->acc[k] += pick[k];
+      stats->min[k] = MIN(stats->min[k], pick[k]);
+      stats->max[k] = MAX(stats->max[k], pick[k]);
     }
   }
 }
@@ -178,9 +176,9 @@ static void color_picker_helper_4ch(const float *const pixel, const dt_iop_roi_t
   const size_t off_mul = 4 * width;
   const size_t off_add = 4 * box[0];
 
-  _stats_pixel stats = { .v = { { 0.0f, 0.0f, 0.0f, 0.0f },
-                                { FLT_MAX, FLT_MAX, FLT_MAX, FLT_MAX },
-                                { -FLT_MAX, -FLT_MAX, -FLT_MAX, -FLT_MAX } } };
+  _stats_pixel stats = { .acc = { 0.0f, 0.0f, 0.0f, 0.0f },
+                         .min = { FLT_MAX, FLT_MAX, FLT_MAX, FLT_MAX },
+                         .max = { -FLT_MAX, -FLT_MAX, -FLT_MAX, -FLT_MAX } };
 
   // cutoffs for using threads depends on # of samples and complexity
   // of the colorspace conversion
@@ -195,7 +193,7 @@ static void color_picker_helper_4ch(const float *const pixel, const dt_iop_roi_t
     for(size_t j = box[1]; j < box[3]; j++)
     {
       const size_t offset = j * off_mul + off_add;
-      _color_picker_lch(stats.v, pixel + offset, stride);
+      _color_picker_lch(&stats, pixel + offset, stride);
     }
   }
   else if(cst_from == IOP_CS_RGB && cst_to == IOP_CS_HSL)
@@ -208,7 +206,7 @@ static void color_picker_helper_4ch(const float *const pixel, const dt_iop_roi_t
     for(size_t j = box[1]; j < box[3]; j++)
     {
       const size_t offset = j * off_mul + off_add;
-      _color_picker_hsl(stats.v, pixel + offset, stride);
+      _color_picker_hsl(&stats, pixel + offset, stride);
     }
   }
   else if(cst_from == IOP_CS_RGB && cst_to == IOP_CS_JZCZHZ)
@@ -221,7 +219,7 @@ static void color_picker_helper_4ch(const float *const pixel, const dt_iop_roi_t
     for(size_t j = box[1]; j < box[3]; j++)
     {
       const size_t offset = j * off_mul + off_add;
-      _color_picker_jzczhz(stats.v, pixel + offset, stride, profile);
+      _color_picker_jzczhz(&stats, pixel + offset, stride, profile);
     }
   }
   else
@@ -238,7 +236,7 @@ static void color_picker_helper_4ch(const float *const pixel, const dt_iop_roi_t
     for(size_t j = box[1]; j < box[3]; j++)
     {
       const size_t offset = j * off_mul + off_add;
-      _color_picker_rgb_or_lab(stats.v, pixel + offset, stride);
+      _color_picker_rgb_or_lab(&stats, pixel + offset, stride);
     }
   }
 
@@ -246,9 +244,9 @@ static void color_picker_helper_4ch(const float *const pixel, const dt_iop_roi_t
   // meaningful data in the fourth pixel
   for_four_channels(c)
   {
-    pick[DT_PICK_MEAN][c] = stats.v[DT_PICK_MEAN][c] / (float)size;
-    pick[DT_PICK_MIN][c] = stats.v[DT_PICK_MIN][c];
-    pick[DT_PICK_MAX][c] = stats.v[DT_PICK_MAX][c];
+    pick[DT_PICK_MEAN][c] = stats.acc[c] / (float)size;
+    pick[DT_PICK_MIN][c] = stats.min[c];
+    pick[DT_PICK_MAX][c] = stats.max[c];
   }
 }
 
@@ -260,9 +258,9 @@ static void color_picker_helper_bayer(const dt_iop_buffer_dsc_t *const dsc, cons
   const uint32_t filters = dsc->filters;
 
   _count_pixel weights = { { 0u, 0u, 0u, 0u } };
-  _stats_pixel stats = { .v = { { 0.0f, 0.0f, 0.0f, 0.0f },
-                                { FLT_MAX, FLT_MAX, FLT_MAX, FLT_MAX },
-                                { -FLT_MAX, -FLT_MAX, -FLT_MAX, -FLT_MAX } } };
+  _stats_pixel stats = { .acc = { 0.0f, 0.0f, 0.0f, 0.0f },
+                         .min = { FLT_MAX, FLT_MAX, FLT_MAX, FLT_MAX },
+                         .max = { -FLT_MAX, -FLT_MAX, -FLT_MAX, -FLT_MAX } };
 
   // cutoff for using threads depends on # of samples
 #if defined(_OPENMP) && _CUSTOM_REDUCTIONS
@@ -275,22 +273,23 @@ static void color_picker_helper_bayer(const dt_iop_buffer_dsc_t *const dsc, cons
     for(size_t i = box[0]; i < box[2]; i++)
     {
       const int c = FC(j + roi->y, i + roi->x, filters);
+      // FIXME: fold into line below
       const size_t k = width * j + i;
 
       const float px = pixel[k];
 
-      stats.v[DT_PICK_MEAN][c] += px;
-      stats.v[DT_PICK_MIN][c] = MIN(stats.v[DT_PICK_MIN][c], px);
-      stats.v[DT_PICK_MAX][c] = MAX(stats.v[DT_PICK_MAX][c], px);
+      stats.acc[c] += px;
+      stats.min[c] = MIN(stats.min[c], px);
+      stats.max[c] = MAX(stats.max[c], px);
       weights.v[c]++;
     }
 
-  copy_pixel(pick[DT_PICK_MIN], stats.v[DT_PICK_MIN]);
-  copy_pixel(pick[DT_PICK_MAX], stats.v[DT_PICK_MAX]);
+  copy_pixel(pick[DT_PICK_MIN], stats.min);
+  copy_pixel(pick[DT_PICK_MAX], stats.max);
   // and finally normalize data. For bayer, there is twice as much green.
   for_each_channel(c)
     pick[DT_PICK_MEAN][c] =
-      weights.v[c] ? (stats.v[DT_PICK_MEAN][c] / (float)weights.v[c]) : 0.0f;
+      weights.v[c] ? (stats.acc[c] / (float)weights.v[c]) : 0.0f;
 }
 
 static void color_picker_helper_xtrans(const dt_iop_buffer_dsc_t *const dsc, const float *const pixel,
@@ -301,9 +300,9 @@ static void color_picker_helper_xtrans(const dt_iop_buffer_dsc_t *const dsc, con
   const uint8_t(*const xtrans)[6] = (const uint8_t(*const)[6])dsc->xtrans;
 
   _count_pixel weights = { { 0u, 0u, 0u, 0u } };
-  _stats_pixel stats = { .v = { { 0.0f, 0.0f, 0.0f, 0.0f },
-                                { FLT_MAX, FLT_MAX, FLT_MAX, FLT_MAX },
-                                { -FLT_MAX, -FLT_MAX, -FLT_MAX, -FLT_MAX } } };
+  _stats_pixel stats = { .acc = { 0.0f, 0.0f, 0.0f, 0.0f },
+                         .min = { FLT_MAX, FLT_MAX, FLT_MAX, FLT_MAX },
+                         .max = { -FLT_MAX, -FLT_MAX, -FLT_MAX, -FLT_MAX } };
 
   // cutoff for using threads depends on # of samples
 #if defined(_OPENMP) && _CUSTOM_REDUCTIONS
@@ -316,23 +315,24 @@ static void color_picker_helper_xtrans(const dt_iop_buffer_dsc_t *const dsc, con
     for(size_t i = box[0]; i < box[2]; i++)
     {
       const int c = FCxtrans(j, i, roi, xtrans);
+      // FIXME: fold into line below
       const size_t k = width * j + i;
 
       const float px = pixel[k];
 
-      stats.v[DT_PICK_MEAN][c] += px;
-      stats.v[DT_PICK_MIN][c] = MIN(stats.v[DT_PICK_MIN][c], px);
-      stats.v[DT_PICK_MAX][c] = MAX(stats.v[DT_PICK_MAX][c], px);
+      stats.acc[c] += px;
+      stats.min[c] = MIN(stats.min[c], px);
+      stats.max[c] = MAX(stats.max[c], px);
       weights.v[c]++;
     }
 
-  copy_pixel(pick[DT_PICK_MIN], stats.v[DT_PICK_MIN]);
-  copy_pixel(pick[DT_PICK_MAX], stats.v[DT_PICK_MAX]);
+  copy_pixel(pick[DT_PICK_MIN], stats.min);
+  copy_pixel(pick[DT_PICK_MAX], stats.max);
   // and finally normalize data.
   // X-Trans RGB weighting averages to 2:5:2 for each 3x3 cell
   for_each_channel(c)
     pick[DT_PICK_MEAN][c] =
-      weights.v[c] ? (stats.v[DT_PICK_MEAN][c] / (float)weights.v[c]) : 0.0f;
+      weights.v[c] ? (stats.acc[c] / (float)weights.v[c]) : 0.0f;
 }
 
 // picked_color, picked_color_min and picked_color_max should be aligned
