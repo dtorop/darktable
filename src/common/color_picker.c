@@ -97,9 +97,18 @@ static inline void rgb_to_JzCzhz(const dt_aligned_pixel_t rgb, dt_aligned_pixel_
   dt_JzAzBz_2_JzCzhz(JzAzBz, JzCzhz);
 }
 
-typedef void((*picker_worker)(_stats_pixel *const stats,
-                              const float *const pixels, const size_t width,
-                              const void *const data));
+typedef void((*picker_worker_4ch)(_stats_pixel *const stats,
+                                  const float *const pixels, const size_t width,
+                                  // FIXME: could be gconstpointer
+                                  const void *const data));
+typedef void((*picker_worker_1ch)(_stats_pixel *const stats,
+                                  _count_pixel *const weights,
+                                  const float *const pixels,
+                                  const size_t j,
+                                  const dt_iop_roi_t *const roi,
+                                  const int *const box,
+                                  // FIXME: could be gconstpointer
+                                  const void *const data));
 
 static inline void _color_picker_rgb_or_lab(_stats_pixel *const stats,
                                             const float *const pixels, const size_t width,
@@ -170,14 +179,34 @@ static inline void _color_picker_jzczhz(_stats_pixel *const stats,
   }
 }
 
-static void _color_picker_work(const float *const pixel, const dt_iop_roi_t *const roi, const int *const box,
-                               lib_colorpicker_stats pick,
-                               const void *const data,
-                               const picker_worker worker,
-                               const size_t min_for_threads)
+static inline void _color_picker_bayer(_stats_pixel *const stats,
+                                       _count_pixel *const weights,
+                                       const float *const pixels,
+                                       const size_t j,
+                                       const dt_iop_roi_t *const roi,
+                                       const int *const box,
+                                       const void *const data)
+{
+  const uint32_t filters = GPOINTER_TO_UINT(data);
+  for(size_t i = box[0]; i < box[2]; i++)
+  {
+    const int c = FC(j + roi->y, i + roi->x, filters);
+    const float px = pixels[i];
+    stats->acc[c] += px;
+    stats->min[c] = MIN(stats->min[c], px);
+    stats->max[c] = MAX(stats->max[c], px);
+    weights->v[c]++;
+  }
+}
+
+static void _color_picker_work_4ch(const float *const pixel,
+                                   const dt_iop_roi_t *const roi, const int *const box,
+                                   lib_colorpicker_stats pick,
+                                   const void *const data,
+                                   const picker_worker_4ch worker,
+                                   const size_t min_for_threads)
 {
   const int width = roi->width;
-
   const size_t size = _box_size(box);
   const size_t stride = 4 * (size_t)(box[2] - box[0]);
   const size_t off_mul = 4 * width;
@@ -209,6 +238,39 @@ static void _color_picker_work(const float *const pixel, const dt_iop_roi_t *con
   }
 }
 
+static void _color_picker_work_1ch(const float *const pixel,
+                                   const dt_iop_roi_t *const roi, const int *const box,
+                                   lib_colorpicker_stats pick,
+                                   const void *const data,
+                                   const picker_worker_1ch worker,
+                                   const size_t min_for_threads)
+{
+  const int width = roi->width;
+  _count_pixel weights = { { 0u, 0u, 0u, 0u } };
+  _stats_pixel stats = { .acc = { 0.0f, 0.0f, 0.0f, 0.0f },
+                         .min = { FLT_MAX, FLT_MAX, FLT_MAX, FLT_MAX },
+                         .max = { -FLT_MAX, -FLT_MAX, -FLT_MAX, -FLT_MAX } };
+  const size_t size = _box_size(box);
+
+#if defined(_OPENMP) && _CUSTOM_REDUCTIONS
+#pragma omp parallel for default(none) if (size > min_for_threads)      \
+  dt_omp_firstprivate(worker, pixel, width, roi, box, data)             \
+  reduction(vstats : stats) reduction(vsum : weights)                   \
+  schedule(static)
+#endif
+  for(size_t j = box[1]; j < box[3]; j++)
+  {
+    worker(&stats, &weights, pixel + width * j, j, roi, box, data);
+  }
+
+  copy_pixel(pick[DT_PICK_MIN], stats.min);
+  copy_pixel(pick[DT_PICK_MAX], stats.max);
+  // and finally normalize data. For bayer, there is twice as much green.
+  for_each_channel(c)
+    pick[DT_PICK_MEAN][c] =
+    weights.v[c] ? (stats.acc[c] / (float)weights.v[c]) : 0.0f;
+}
+
 static void color_picker_helper_4ch(const float *const pixel, const dt_iop_roi_t *const roi, const int *const box,
                                     lib_colorpicker_stats pick,
                                     const dt_iop_colorspace_type_t cst_from,
@@ -219,25 +281,25 @@ static void color_picker_helper_4ch(const float *const pixel, const dt_iop_roi_t
   // of the colorspace conversion
   if(cst_from == IOP_CS_LAB && cst_to == IOP_CS_LCH)
   {
-    _color_picker_work(pixel, roi, box, pick, NULL, _color_picker_lch, 500);
+    _color_picker_work_4ch(pixel, roi, box, pick, NULL, _color_picker_lch, 500);
   }
   else if(cst_from == IOP_CS_RGB && cst_to == IOP_CS_HSL)
   {
-    _color_picker_work(pixel, roi, box, pick, NULL, _color_picker_hsl, 250);
+    _color_picker_work_4ch(pixel, roi, box, pick, NULL, _color_picker_hsl, 250);
   }
   else if(cst_from == IOP_CS_RGB && cst_to == IOP_CS_JZCZHZ)
   {
-    _color_picker_work(pixel, roi, box, pick, profile, _color_picker_jzczhz, 100);
+    _color_picker_work_4ch(pixel, roi, box, pick, profile, _color_picker_jzczhz, 100);
   }
   else if(cst_from == cst_to || cst_to == IOP_CS_NONE)
   {
-    _color_picker_work(pixel, roi, box, pick, NULL, _color_picker_rgb_or_lab, 1000);
+    _color_picker_work_4ch(pixel, roi, box, pick, NULL, _color_picker_rgb_or_lab, 1000);
   }
   else
   {
     // fallback, better than crashing as happens with monochromes
-    dt_print(DT_DEBUG_DEV, "[color_picker_helper_4ch_parallel] unknown colorspace conversion from %d to %d\n", cst_from, cst_to);
-    _color_picker_work(pixel, roi, box, pick, NULL, _color_picker_rgb_or_lab, 1000);
+    dt_print(DT_DEBUG_DEV, "[colorpicker] unknown colorspace conversion from %d to %d\n", cst_from, cst_to);
+    _color_picker_work_4ch(pixel, roi, box, pick, NULL, _color_picker_rgb_or_lab, 1000);
   }
 }
 
@@ -245,38 +307,8 @@ static void color_picker_helper_bayer(const dt_iop_buffer_dsc_t *const dsc, cons
                                       const dt_iop_roi_t *const roi, const int *const box,
                                       lib_colorpicker_stats pick)
 {
-  const int width = roi->width;
-  const uint32_t filters = dsc->filters;
-
-  _count_pixel weights = { { 0u, 0u, 0u, 0u } };
-  _stats_pixel stats = { .acc = { 0.0f, 0.0f, 0.0f, 0.0f },
-                         .min = { FLT_MAX, FLT_MAX, FLT_MAX, FLT_MAX },
-                         .max = { -FLT_MAX, -FLT_MAX, -FLT_MAX, -FLT_MAX } };
-
-  // cutoff for using threads depends on # of samples
-#if defined(_OPENMP) && _CUSTOM_REDUCTIONS
-#pragma omp parallel for default(none) if (_box_size(box) > 25000)      \
-  dt_omp_firstprivate(pixel, width, roi, filters, box)                  \
-  reduction(vstats : stats) reduction(vsum : weights)                   \
-  schedule(static)
-#endif
-  for(size_t j = box[1]; j < box[3]; j++)
-    for(size_t i = box[0]; i < box[2]; i++)
-    {
-      const int c = FC(j + roi->y, i + roi->x, filters);
-      const float px = pixel[width * j + i];
-      stats.acc[c] += px;
-      stats.min[c] = MIN(stats.min[c], px);
-      stats.max[c] = MAX(stats.max[c], px);
-      weights.v[c]++;
-    }
-
-  copy_pixel(pick[DT_PICK_MIN], stats.min);
-  copy_pixel(pick[DT_PICK_MAX], stats.max);
-  // and finally normalize data. For bayer, there is twice as much green.
-  for_each_channel(c)
-    pick[DT_PICK_MEAN][c] =
-      weights.v[c] ? (stats.acc[c] / (float)weights.v[c]) : 0.0f;
+  _color_picker_work_1ch(pixel, roi, box, pick, GUINT_TO_POINTER(dsc->filters),
+                     _color_picker_bayer, 25000);
 }
 
 static void color_picker_helper_xtrans(const dt_iop_buffer_dsc_t *const dsc, const float *const pixel,
