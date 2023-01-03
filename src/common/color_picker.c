@@ -97,9 +97,13 @@ static inline void rgb_to_JzCzhz(const dt_aligned_pixel_t rgb, dt_aligned_pixel_
   dt_JzAzBz_2_JzCzhz(JzAzBz, JzCzhz);
 }
 
-// FIXME: set these up as helpers as in common histogram code?
+typedef void((*picker_worker)(_stats_pixel *const stats,
+                              const float *const pixels, const size_t width,
+                              const dt_iop_order_iccprofile_info_t *const profile));
+
 static inline void _color_picker_rgb_or_lab(_stats_pixel *const stats,
-                                            const float *const pixels, const size_t width)
+                                            const float *const pixels, const size_t width,
+                                            const dt_iop_order_iccprofile_info_t *const profile)
 {
   for(size_t i = 0; i < width; i += 4)
     for_each_channel(k, aligned(pixels:16))
@@ -112,7 +116,8 @@ static inline void _color_picker_rgb_or_lab(_stats_pixel *const stats,
 }
 
 static inline void _color_picker_lch(_stats_pixel *const stats,
-                                     const float *const pixels, const size_t width)
+                                     const float *const pixels, const size_t width,
+                                     const dt_iop_order_iccprofile_info_t *const profile)
 {
   for(size_t i = 0; i < width; i += 4)
   {
@@ -129,7 +134,8 @@ static inline void _color_picker_lch(_stats_pixel *const stats,
 }
 
 static inline void _color_picker_hsl(_stats_pixel *const stats,
-                                     const float *const pixels, const size_t width)
+                                     const float *const pixels, const size_t width,
+                                     const dt_iop_order_iccprofile_info_t *const profile)
 {
   for(size_t i = 0; i < width; i += 4)
   {
@@ -163,11 +169,11 @@ static inline void _color_picker_jzczhz(_stats_pixel *const stats,
   }
 }
 
-static void color_picker_helper_4ch(const float *const pixel, const dt_iop_roi_t *const roi, const int *const box,
-                                    lib_colorpicker_stats pick,
-                                    const dt_iop_colorspace_type_t cst_from,
-                                    const dt_iop_colorspace_type_t cst_to,
-                                    const dt_iop_order_iccprofile_info_t *const profile)
+static void _color_picker_work(const float *const pixel, const dt_iop_roi_t *const roi, const int *const box,
+                               lib_colorpicker_stats pick,
+                               const dt_iop_order_iccprofile_info_t *const profile,
+                               const picker_worker worker,
+                               const size_t min_for_threads)
 {
   const int width = roi->width;
 
@@ -180,64 +186,17 @@ static void color_picker_helper_4ch(const float *const pixel, const dt_iop_roi_t
                          .min = { FLT_MAX, FLT_MAX, FLT_MAX, FLT_MAX },
                          .max = { -FLT_MAX, -FLT_MAX, -FLT_MAX, -FLT_MAX } };
 
-  // cutoffs for using threads depends on # of samples and complexity
-  // of the colorspace conversion
   // FIXME: will this run faster if we use collapse(2)? will this take rejiggering of function calls?
-  if(cst_from == IOP_CS_LAB && cst_to == IOP_CS_LCH)
-  {
 #if defined(_OPENMP) && _CUSTOM_REDUCTIONS
-#pragma omp parallel for default(none) if (size > 500)                  \
-  dt_omp_firstprivate(pixel, stride, off_mul, off_add, box)             \
+#pragma omp parallel for default(none) if (size > min_for_threads)      \
+  dt_omp_firstprivate(worker, pixel, stride, off_mul, off_add, box,     \
+                      profile)                                          \
   reduction(vstats : stats) schedule(static)
 #endif
-    for(size_t j = box[1]; j < box[3]; j++)
-    {
-      const size_t offset = j * off_mul + off_add;
-      _color_picker_lch(&stats, pixel + offset, stride);
-    }
-  }
-  else if(cst_from == IOP_CS_RGB && cst_to == IOP_CS_HSL)
+  for(size_t j = box[1]; j < box[3]; j++)
   {
-#if defined(_OPENMP) && _CUSTOM_REDUCTIONS
-#pragma omp parallel for default(none) if (size > 250)                  \
-  dt_omp_firstprivate(pixel, stride, off_mul, off_add, box)             \
-  reduction(vstats : stats) schedule(static)
-#endif
-    for(size_t j = box[1]; j < box[3]; j++)
-    {
-      const size_t offset = j * off_mul + off_add;
-      _color_picker_hsl(&stats, pixel + offset, stride);
-    }
-  }
-  else if(cst_from == IOP_CS_RGB && cst_to == IOP_CS_JZCZHZ)
-  {
-#if defined(_OPENMP) && _CUSTOM_REDUCTIONS
-#pragma omp parallel for default(none) if (size > 100)                  \
-  dt_omp_firstprivate(pixel, stride, off_mul, off_add, box, profile)    \
-  reduction(vstats : stats) schedule(static)
-#endif
-    for(size_t j = box[1]; j < box[3]; j++)
-    {
-      const size_t offset = j * off_mul + off_add;
-      _color_picker_jzczhz(&stats, pixel + offset, stride, profile);
-    }
-  }
-  else
-  {
-    // fallback, better than crashing as happens with monochromes
-    if(cst_from != cst_to && cst_to != IOP_CS_NONE)
-      dt_print(DT_DEBUG_DEV, "[color_picker_helper_4ch_parallel] unknown colorspace conversion from %d to %d\n", cst_from, cst_to);
-
-#if defined(_OPENMP) && _CUSTOM_REDUCTIONS
-#pragma omp parallel for default(none) if (size > 1000)                 \
-  dt_omp_firstprivate(pixel, stride, off_mul, off_add, box)             \
-  reduction(vstats : stats) schedule(static)
-#endif
-    for(size_t j = box[1]; j < box[3]; j++)
-    {
-      const size_t offset = j * off_mul + off_add;
-      _color_picker_rgb_or_lab(&stats, pixel + offset, stride);
-    }
+    const size_t offset = j * off_mul + off_add;
+    worker(&stats, pixel + offset, stride, profile);
   }
 
   // copy all four channels, as four some colorspaces there may be
@@ -247,6 +206,38 @@ static void color_picker_helper_4ch(const float *const pixel, const dt_iop_roi_t
     pick[DT_PICK_MEAN][c] = stats.acc[c] / (float)size;
     pick[DT_PICK_MIN][c] = stats.min[c];
     pick[DT_PICK_MAX][c] = stats.max[c];
+  }
+}
+
+static void color_picker_helper_4ch(const float *const pixel, const dt_iop_roi_t *const roi, const int *const box,
+                                    lib_colorpicker_stats pick,
+                                    const dt_iop_colorspace_type_t cst_from,
+                                    const dt_iop_colorspace_type_t cst_to,
+                                    const dt_iop_order_iccprofile_info_t *const profile)
+{
+  // cutoffs for using threads depends on # of samples and complexity
+  // of the colorspace conversion
+  if(cst_from == IOP_CS_LAB && cst_to == IOP_CS_LCH)
+  {
+    _color_picker_work(pixel, roi, box, pick, profile, _color_picker_lch, 500);
+  }
+  else if(cst_from == IOP_CS_RGB && cst_to == IOP_CS_HSL)
+  {
+    _color_picker_work(pixel, roi, box, pick, profile, _color_picker_hsl, 250);
+  }
+  else if(cst_from == IOP_CS_RGB && cst_to == IOP_CS_JZCZHZ)
+  {
+    _color_picker_work(pixel, roi, box, pick, profile, _color_picker_jzczhz, 100);
+  }
+  else if(cst_from == cst_to || cst_to == IOP_CS_NONE)
+  {
+    _color_picker_work(pixel, roi, box, pick, profile, _color_picker_rgb_or_lab, 1000);
+  }
+  else
+  {
+    // fallback, better than crashing as happens with monochromes
+    dt_print(DT_DEBUG_DEV, "[color_picker_helper_4ch_parallel] unknown colorspace conversion from %d to %d\n", cst_from, cst_to);
+    _color_picker_work(pixel, roi, box, pick, profile, _color_picker_rgb_or_lab, 1000);
   }
 }
 
