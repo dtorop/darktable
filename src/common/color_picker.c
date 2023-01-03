@@ -199,6 +199,26 @@ static inline void _color_picker_bayer(_stats_pixel *const stats,
   }
 }
 
+static inline void _color_picker_xtrans(_stats_pixel *const stats,
+                                       _count_pixel *const weights,
+                                       const float *const pixels,
+                                       const size_t j,
+                                       const dt_iop_roi_t *const roi,
+                                       const int *const box,
+                                       const void *const data)
+{
+  const uint8_t(*const xtrans)[6] = (const uint8_t(*const)[6])data;
+  for(size_t i = box[0]; i < box[2]; i++)
+  {
+    const int c = FCxtrans(j, i, roi, xtrans);
+    const float px = pixels[i];
+    stats->acc[c] += px;
+    stats->min[c] = MIN(stats->min[c], px);
+    stats->max[c] = MAX(stats->max[c], px);
+    weights->v[c]++;
+  }
+}
+
 static void _color_picker_work_4ch(const float *const pixel,
                                    const dt_iop_roi_t *const roi, const int *const box,
                                    lib_colorpicker_stats pick,
@@ -266,6 +286,7 @@ static void _color_picker_work_1ch(const float *const pixel,
   copy_pixel(pick[DT_PICK_MIN], stats.min);
   copy_pixel(pick[DT_PICK_MAX], stats.max);
   // and finally normalize data. For bayer, there is twice as much green.
+  // X-Trans RGB weighting averages to 2:5:2 for each 3x3 cell
   for_each_channel(c)
     pick[DT_PICK_MEAN][c] =
     weights.v[c] ? (stats.acc[c] / (float)weights.v[c]) : 0.0f;
@@ -315,39 +336,9 @@ static void color_picker_helper_xtrans(const dt_iop_buffer_dsc_t *const dsc, con
                                        const dt_iop_roi_t *const roi, const int *const box,
                                        lib_colorpicker_stats pick)
 {
-  const int width = roi->width;
-  const uint8_t(*const xtrans)[6] = (const uint8_t(*const)[6])dsc->xtrans;
-
-  _count_pixel weights = { { 0u, 0u, 0u, 0u } };
-  _stats_pixel stats = { .acc = { 0.0f, 0.0f, 0.0f, 0.0f },
-                         .min = { FLT_MAX, FLT_MAX, FLT_MAX, FLT_MAX },
-                         .max = { -FLT_MAX, -FLT_MAX, -FLT_MAX, -FLT_MAX } };
-
-  // cutoff for using threads depends on # of samples
-#if defined(_OPENMP) && _CUSTOM_REDUCTIONS
-#pragma omp parallel for default(none) if (_box_size(box) > 20000)      \
-  dt_omp_firstprivate(pixel, width, roi, xtrans, box)                   \
-  reduction(vstats : stats) reduction(vsum : weights)                   \
-  schedule(static)
-#endif
-  for(size_t j = box[1]; j < box[3]; j++)
-    for(size_t i = box[0]; i < box[2]; i++)
-    {
-      const int c = FCxtrans(j, i, roi, xtrans);
-      const float px = pixel[width * j + i];
-      stats.acc[c] += px;
-      stats.min[c] = MIN(stats.min[c], px);
-      stats.max[c] = MAX(stats.max[c], px);
-      weights.v[c]++;
-    }
-
-  copy_pixel(pick[DT_PICK_MIN], stats.min);
-  copy_pixel(pick[DT_PICK_MAX], stats.max);
-  // and finally normalize data.
-  // X-Trans RGB weighting averages to 2:5:2 for each 3x3 cell
-  for_each_channel(c)
-    pick[DT_PICK_MEAN][c] =
-      weights.v[c] ? (stats.acc[c] / (float)weights.v[c]) : 0.0f;
+  _color_picker_work_1ch(pixel, roi, box, pick,
+                         dsc->xtrans,
+                         _color_picker_xtrans, 20000);
 }
 
 // picked_color, picked_color_min and picked_color_max should be aligned
