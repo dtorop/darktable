@@ -689,7 +689,7 @@ static void _pixelpipe_picker(dt_iop_module_t *module, dt_dev_pixelpipe_iop_t *p
   int box[4] = { 0 };
 
   // FIXME: don't need to initialize this if dt_color_picker_helper() does
-  lib_colorpicker_sample_statistics pick =
+  lib_colorpicker_stats pick =
     { { 0.0f, 0.0f, 0.0f, 0.0f },
       { INFINITY, INFINITY, INFINITY, INFINITY },
       { -INFINITY, -INFINITY, -INFINITY, -INFINITY } };
@@ -706,9 +706,9 @@ static void _pixelpipe_picker(dt_iop_module_t *module, dt_dev_pixelpipe_iop_t *p
 
   for_four_channels(k)
   {
-    picked_color_min[k] = pick[DT_LIB_COLORPICKER_STATISTIC_MIN][k];
-    picked_color_max[k] = pick[DT_LIB_COLORPICKER_STATISTIC_MAX][k];
-    picked_color[k] = pick[DT_LIB_COLORPICKER_STATISTIC_MEAN][k];
+    picked_color_min[k] = pick[DT_PICK_MIN][k];
+    picked_color_max[k] = pick[DT_PICK_MAX][k];
+    picked_color[k] = pick[DT_PICK_MEAN][k];
   }
 }
 
@@ -773,7 +773,7 @@ static void _pixelpipe_picker_cl(int devid, dt_iop_module_t *module, dt_dev_pixe
   box[3] = region[1];
 
   // FIXME: don't need to initialize this if dt_color_picker_helper() does
-  lib_colorpicker_sample_statistics pick =
+  lib_colorpicker_stats pick =
     { { 0.0f, 0.0f, 0.0f, 0.0f },
       { INFINITY, INFINITY, INFINITY, INFINITY },
       { -INFINITY, -INFINITY, -INFINITY, -INFINITY } };
@@ -784,9 +784,9 @@ static void _pixelpipe_picker_cl(int devid, dt_iop_module_t *module, dt_dev_pixe
 
   for_four_channels(k)
   {
-    picked_color_min[k] = pick[DT_LIB_COLORPICKER_STATISTIC_MIN][k];
-    picked_color_max[k] = pick[DT_LIB_COLORPICKER_STATISTIC_MAX][k];
-    picked_color[k] = pick[DT_LIB_COLORPICKER_STATISTIC_MEAN][k];
+    picked_color_min[k] = pick[DT_PICK_MIN][k];
+    picked_color_max[k] = pick[DT_PICK_MAX][k];
+    picked_color[k] = pick[DT_PICK_MEAN][k];
   }
 
 error:
