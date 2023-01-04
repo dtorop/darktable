@@ -1349,7 +1349,7 @@ void gui_init(struct dt_iop_module_t *self)
     dt_bauhaus_combobox_add(g->combobox_patch, cboxentry);
   }
 
-  dt_color_picker_new(self, DT_COLOR_PICKER_POINT | DT_COLOR_PICKER_AREA, g->combobox_patch);
+  dt_color_picker_new(self, DT_COLOR_PICKER_POINT_AREA, g->combobox_patch);
 
   g->scale_L = dt_bauhaus_slider_new_with_range(self, -100.0, 200.0, 0, 0.0f, 2);
   gtk_widget_set_tooltip_text(g->scale_L, _("adjust target color Lab 'L' channel\nlower values darken target color while higher brighten it"));
