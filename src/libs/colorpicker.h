@@ -32,7 +32,7 @@ typedef enum dt_lib_colorpicker_statistic_t
   DT_PICK_MEAN = 0,
   DT_PICK_MIN,
   DT_PICK_MAX,
-  DT_LIB_COLORPICKER_STATISTIC_N // needs to be the last one
+  DT_PICK_N // needs to be the last one
 } dt_lib_colorpicker_statistic_t;
 
 typedef dt_aligned_pixel_t lib_colorpicker_stats[DT_LIB_COLORPICKER_STATISTIC_N];
