@@ -326,22 +326,26 @@ void dt_color_picker_helper(const dt_iop_buffer_dsc_t *dsc, const float *const p
       source = denoised;
     }
 
-    if(image_cst == IOP_CS_LAB && picker_cst == IOP_CS_LCH)
+    // 4-channel raw images are monochrome, can be read as RGB
+    const dt_iop_colorspace_type_t effective_cst =
+      image_cst == IOP_CS_RAW ? IOP_CS_RGB : image_cst;
+
+    if(effective_cst == IOP_CS_LAB && picker_cst == IOP_CS_LCH)
     {
       // blending for Lab modules (e.g. color zones and tone curve)
       _color_picker_work_4ch(source, roi, box, pick, NULL, _color_picker_lch, 500);
     }
-    else if(image_cst == IOP_CS_RGB && picker_cst == IOP_CS_HSL)
+    else if(effective_cst == IOP_CS_RGB && picker_cst == IOP_CS_HSL)
     {
       // display-referred blending for RGB mdoules
       _color_picker_work_4ch(source, roi, box, pick, NULL, _color_picker_hsl, 250);
     }
-    else if(image_cst == IOP_CS_RGB && picker_cst == IOP_CS_JZCZHZ)
+    else if(effective_cst == IOP_CS_RGB && picker_cst == IOP_CS_JZCZHZ)
     {
       // scene-referred blending for RGB mdoules
       _color_picker_work_4ch(source, roi, box, pick, profile, _color_picker_jzczhz, 100);
     }
-    else if(image_cst == picker_cst)
+    else if(effective_cst == picker_cst)
     {
       // most iop pickers and the global picker
       _color_picker_work_4ch(source, roi, box, pick, NULL, _color_picker_rgb_or_lab, 1000);
@@ -349,12 +353,6 @@ void dt_color_picker_helper(const dt_iop_buffer_dsc_t *dsc, const float *const p
     else if(picker_cst == IOP_CS_NONE)
     {
       // temperature IOP when correcting non-RAW
-      _color_picker_work_4ch(source, roi, box, pick, NULL, _color_picker_rgb_or_lab, 1000);
-    }
-    else if(image_cst == IOP_CS_RAW && picker_cst == IOP_CS_RGB)
-    {
-      // exposure IOP on a monochrome image
-      // FIXME: instead of guessing, make caller just call this RGB?
       _color_picker_work_4ch(source, roi, box, pick, NULL, _color_picker_rgb_or_lab, 1000);
     }
     else
