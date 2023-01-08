@@ -351,9 +351,15 @@ void dt_color_picker_helper(const dt_iop_buffer_dsc_t *dsc, const float *const p
       // temperature IOP when correcting non-RAW
       _color_picker_work_4ch(source, roi, box, pick, NULL, _color_picker_rgb_or_lab, 1000);
     }
+    else if(image_cst == IOP_CS_RAW && picker_cst == IOP_CS_RGB)
+    {
+      // exposure IOP on a monochrome image
+      // FIXME: instead of guessing, make caller just call this RGB?
+      _color_picker_work_4ch(source, roi, box, pick, NULL, _color_picker_rgb_or_lab, 1000);
+    }
     else
     {
-      // fallback, better than crashing as happens with monochromes
+      // fallback, but this shouldn't happen
       fprintf(stderr, "[colorpicker] unknown colorspace conversion from %d to %d\n", image_cst, picker_cst);
       _color_picker_work_4ch(source, roi, box, pick, NULL, _color_picker_rgb_or_lab, 1000);
     }
