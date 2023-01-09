@@ -258,12 +258,12 @@ static void _color_picker_work_1ch(const float *const pixel,
   _stats_pixel stats = { .acc = { 0.0f, 0.0f, 0.0f, 0.0f },
                          .min = { FLT_MAX, FLT_MAX, FLT_MAX, FLT_MAX },
                          .max = { -FLT_MAX, -FLT_MAX, -FLT_MAX, -FLT_MAX } };
-  const size_t size = _box_size(box);
 
   // worker logic is slightly different from 4-channel as we need to
   // keep track of position in the mosiac
 #if defined(_OPENMP) && _CUSTOM_REDUCTIONS
-#pragma omp parallel for default(none) if (size > min_for_threads)      \
+#pragma omp parallel for default(none)                                  \
+  if (_box_size(box) > min_for_threads)                                 \
   dt_omp_firstprivate(worker, pixel, width, roi, box, data)             \
   reduction(vstats : stats) reduction(vsum : weights)                   \
   schedule(static)
@@ -365,8 +365,8 @@ void dt_color_picker_helper(const dt_iop_buffer_dsc_t *dsc, const float *const p
   if(darktable.unmuted & DT_DEBUG_PERF)
   {
     dt_get_times(&end_time);
-    fprintf(stderr, "colorpicker stats reading %d channels (filters %d) cst %d -> %d size %ld took %.3f secs (%.3f CPU)\n",
-            dsc->channels, dsc->filters, image_cst, picker_cst, _box_size(box),
+    fprintf(stderr, "colorpicker stats reading %d channels (filters %d) cst %d -> %d size %ld denoised %d took %.3f secs (%.3f CPU)\n",
+            dsc->channels, dsc->filters, image_cst, picker_cst, _box_size(box), denoise,
             end_time.clock - start_time.clock, end_time.user - start_time.user);
   }
 }
