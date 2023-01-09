@@ -82,7 +82,7 @@ static inline void _update_stats_1ch(_stats_pixel *const stats,
 static inline void _update_stats_4ch(_stats_pixel *const stats,
                                      const dt_aligned_pixel_t pick)
 {
-  // FIXME: if non Lab/RGB only use three channels, can use for_each_channel()
+  // need all channels as blend pickers may use 4th to reverse hues
   for_four_channels(k)
     _update_stats_1ch(stats, k, pick[k]);
 }
@@ -143,7 +143,6 @@ static inline void _color_picker_lch(_stats_pixel *const stats,
   {
     dt_aligned_pixel_t pick;
     dt_Lab_2_LCH(pixels + i, pick);
-    // FIXME: is this used?
     pick[3] = pick[2] < 0.5f ? pick[2] + 0.5f : pick[2] - 0.5f;
     _update_stats_4ch(stats, pick);
   }
@@ -157,7 +156,6 @@ static inline void _color_picker_hsl(_stats_pixel *const stats,
   {
     dt_aligned_pixel_t pick;
     dt_RGB_2_HSL(pixels + i, pick);
-    // FIXME: is this used?
     pick[3] = pick[0] < 0.5f ? pick[0] + 0.5f : pick[0] - 0.5f;
     _update_stats_4ch(stats, pick);
   }
@@ -172,7 +170,6 @@ static inline void _color_picker_jzczhz(_stats_pixel *const stats,
   {
     dt_aligned_pixel_t pick;
     rgb_to_JzCzhz(pixels + i, pick, profile);
-    // FIXME: is this used?
     pick[3] = pick[2] < 0.5f ? pick[2] + 0.5f : pick[2] - 0.5f;
     _update_stats_4ch(stats, pick);
   }
