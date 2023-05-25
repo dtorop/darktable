@@ -37,6 +37,7 @@ typedef enum dt_alignment_t {
 typedef struct dt_paper_info_t
 {
   char name[MAX_NAME], common_name[MAX_NAME];
+  // these are in mm
   double width, height;
 } dt_paper_info_t;
 
@@ -69,8 +70,14 @@ typedef struct dt_print_info_t
   dt_medium_info_t medium;
 } dt_print_info_t;
 
+typedef struct dt_printer_discovered_t
+{
+  char name[MAX_NAME];
+  gpointer user_data;
+} dt_printer_discovered_t;
+
 // Asynchronous printer discovery, cb will be called for each printer found
-void dt_printers_discovery(void (*cb)(dt_printer_info_t *pr, void *user_data), void *user_data);
+void dt_printers_discovery(GSourceFunc cb, void *user_data);
 void dt_printers_abort_discovery(void);
 
 // initialize the pinfo structure

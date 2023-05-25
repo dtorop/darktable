@@ -25,6 +25,7 @@ void _clear_pos(dt_image_pos *pos)
 
 void dt_printing_clear_box(dt_image_box *img)
 {
+  // FIXME: this should destroy the widgets for this box
   img->imgid = NO_IMGID;
   img->max_width = img->max_height = 0;
   img->exp_width = img->exp_height = 0;
@@ -48,7 +49,7 @@ void dt_printing_clear_boxes(dt_images_box *imgs)
 
   imgs->count = 0;
   imgs->motion_over = -1;
-  imgs->page_width = imgs->page_height = 0;
+  imgs->page_width_px = imgs->page_height_px = 0;
   imgs->page_width_mm = imgs->page_height_mm = 0;
   imgs->imgid_to_load = -1;
 }
@@ -87,10 +88,9 @@ int32_t dt_printing_get_image_box(const dt_images_box *imgs, const int x, const 
   return box;
 }
 
+// compute the printing position & width as % of the page
 void _compute_rel_pos(const dt_images_box *imgs, const dt_image_pos *ref, dt_image_pos *pos)
 {
-  // compute the printing position & width as % of the page
-
   const float ofsx        = imgs->screen.page.x;
   const float ofsy        = imgs->screen.page.y;
   const float page_width  = imgs->screen.page.width;
@@ -124,7 +124,7 @@ void dt_printing_setup_display(dt_images_box *imgs,
 
   imgs->screen.borderless = borderless;
 
-  // and now reset the box to be resised accordingly if needed
+  // and now reset the box to be resized accordingly if needed
   for(int k=0; k<imgs->count; k++)
   {
     dt_image_box *box = &imgs->box[k];
@@ -139,55 +139,68 @@ void dt_printing_setup_display(dt_images_box *imgs,
   }
 }
 
-void dt_printing_setup_box(dt_images_box *imgs, const int idx,
-                           const float x, const float y,
-                           const float width, const float height)
+void _contain_to_bounds(const float request_low, const float request_size,
+                        const float bound_low, const float bound_size,
+                        float *out_low, float *out_size)
 {
-  const float dx = fminf(imgs->screen.print_area.width,
-                         fmaxf(100.0f, width));
-  const float dy = fminf(imgs->screen.print_area.height,
-                         fmaxf(100.0f, height));
+  // apply bounds, with a sane miminum
+  *out_low = fmaxf(request_low, bound_low);
+  *out_size = CLAMPF(request_size, 100.0f, bound_size);
 
-  //  setup screen position & width
+  // if past bounds, shift back in, best case without shrinking
+  // FIXME: would it be better if the widget just wouldn't let itself be dragged outside of print area?
+  const float out_high = *out_low + *out_size;
+  const float bound_high = bound_low + bound_size;
+  if(out_high > bound_high)
+  {
+    const float off = (out_high - bound_high);
+    *out_low = fmaxf(bound_low, *out_low - off);
+  }
+}
 
+// for the given layout box at idx, set its dimensions in screen and
+// relative dimensions, but while not exceeding printable area
+void dt_printing_setup_box(dt_images_box *imgs, const int idx,
+                           const float screen_x, const float screen_y,
+                           const float screen_width, const float screen_height)
+{
   dt_image_box *box = &imgs->box[idx];
+  // FIXME: would it be better if the widget just wouldn't let itself be dragged outside of print area?
+  _contain_to_bounds(screen_x, screen_width,
+                     imgs->screen.print_area.x, imgs->screen.print_area.width,
+                     &box->screen.x, &box->screen.width);
+  _contain_to_bounds(screen_y, screen_height,
+                     imgs->screen.print_area.y, imgs->screen.print_area.height,
+                     &box->screen.y, &box->screen.height);
 
-  box->screen.x      = fmaxf(imgs->screen.print_area.x, x);
-  box->screen.y      = fmaxf(imgs->screen.print_area.y, y);
-  box->screen.width  = dx;
-  box->screen.height = dy;
-
-  if(box->screen.x + dx > imgs->screen.print_area.x + imgs->screen.print_area.width)
-  {
-    const float off = (box->screen.x + dx - imgs->screen.print_area.x - imgs->screen.print_area.width);
-    box->screen.x = fmaxf(imgs->screen.print_area.x, box->screen.x - off);
-  }
-  if(box->screen.y + dy > imgs->screen.print_area.y + imgs->screen.print_area.height)
-  {
-    const float off = (box->screen.y + dy - imgs->screen.print_area.y - imgs->screen.print_area.height);
-    box->screen.y = fmaxf(imgs->screen.print_area.y, box->screen.y - off);
-  }
-
+  // FIXME: should this be relative to printable area rather than page dimensions, so image boxes never go outside of printable area?
   _compute_rel_pos(imgs, &box->screen, &box->pos);
 
+  // add box if doesn't exist
+  // FIXME: if boxed are a GList will need to allocate before setting bounds
   if(idx == imgs->count) imgs->count++;
 }
 
+// calculate page dimensions in mm & output pixels, and depending on
+// this set each image box maximum dimensions in output pixels
 void dt_printing_setup_page(dt_images_box *imgs,
-                            const float page_width, const float page_height,
+                            const float page_width_mm, const float page_height_mm,
                             const int resolution)
 {
-  imgs->page_width_mm = page_width;
-  imgs->page_height_mm = page_height;
-  imgs->page_width  = dt_pdf_point_to_pixel(dt_pdf_mm_to_point(page_width), resolution);
-  imgs->page_height = dt_pdf_point_to_pixel(dt_pdf_mm_to_point(page_height), resolution);
+  imgs->page_width_mm = page_width_mm;
+  imgs->page_height_mm = page_height_mm;
+  imgs->page_width_px  = dt_pdf_point_to_pixel(dt_pdf_mm_to_point(page_width_mm), resolution);
+  imgs->page_height_px = dt_pdf_point_to_pixel(dt_pdf_mm_to_point(page_height_mm), resolution);
+  printf("dt_printing_setup_page page %fx%f mm, res %d -> page %fx%f px\n", page_width_mm, page_height_mm, resolution, imgs->page_width_px, imgs->page_height_px);
 
   for(int k=0; k<imgs->count; k++)
   {
     dt_image_box *box = &imgs->box[k];
 
-    box->max_width = box->pos.width * imgs->page_width;
-    box->max_height = box->pos.height * imgs->page_height;
+    // FIXME: max_width and max_height are int, why convert to that here?
+    box->max_width = box->pos.width * imgs->page_width_px;
+    box->max_height = box->pos.height * imgs->page_height_px;
+    printf("image %d screen %fx%f, pos %fx%f -> max %dx%d\n", k, box->screen.width, box->screen.height, box->pos.width, box->pos.height, box->max_width, box->max_height);
   }
 }
 
@@ -272,12 +285,15 @@ void dt_printing_get_image_pos(const dt_images_box *imgs, const dt_image_box *im
 
   dt_printing_get_screen_rel_pos(imgs, img, &rpos);
 
-  pos->x      = rpos.x * imgs->page_width;
-  pos->y      = rpos.y * imgs->page_height;
-  pos->width  = rpos.width * imgs->page_width;
-  pos->height = rpos.height * imgs->page_height;
+  pos->x      = rpos.x * imgs->page_width_px;
+  pos->y      = rpos.y * imgs->page_height_px;
+  pos->width  = rpos.width * imgs->page_width_px;
+  pos->height = rpos.height * imgs->page_height_px;
 }
 
+// FIXME: width/height area always 100,100 until the actual export!
+// FIXME: if this does the work of figuring out the actual image width within the bounding box, can we at least draw in image outline when resizing the image?
+// FIXME: if this figures out the actual image dimensions for current image, should load these into image layout (raise signal, image dimensions changed) -- or maybe resizing the image box widget does that
 void dt_printing_setup_image(dt_images_box *imgs, const int idx,
                              const dt_imgid_t imgid, const int32_t width, const int32_t height,
                              const dt_alignment_t alignment)
@@ -292,29 +308,25 @@ void dt_printing_setup_image(dt_images_box *imgs, const int idx,
   box->exp_height = height;
   box->alignment  = alignment;
 
+  dt_image_pos pos_in;
+  pos_in.x      = box->pos.x * imgs->page_width_px;
+  pos_in.y      = box->pos.y * imgs->page_height_px;
+  pos_in.width  = box->pos.width * imgs->page_width_px;
+  pos_in.height = box->pos.height * imgs->page_height_px;
+  _align_pos(&pos_in, box->alignment, box->exp_width, box->exp_height, &box->print);
   // for the print (pdf) the origin is bottom/left, so y must be inverted compared to
   // screen coordinates.
-  box->print.x      = box->pos.x * imgs->page_width;
-  box->print.y      = box->pos.y * imgs->page_height;
-  box->print.width  = box->pos.width * imgs->page_width;
-  box->print.height = box->pos.height * imgs->page_height;
-
-  dt_image_pos pos;
-  _align_pos(&box->print, box->alignment, box->exp_width, box->exp_height, &pos);
-
-  box->print.x = pos.x;
-  box->print.y = imgs->page_height - (pos.y + pos.height);
-  box->print.width = pos.width;
-  box->print.height = pos.height;
+  box->print.y = imgs->page_height_px - (box->print.y + box->print.height);
 
   // compute image size on display
 
   box->dis_width  = box->img_width;
   box->dis_height = box->img_height;
 
+  // FIXME: does this double scaling in integer space produce a bit of error?
   if(box->dis_width > box->screen.width)
   {
-    const float scale =  box->screen.width / (float)box->dis_width;
+    const float scale = box->screen.width / (float)box->dis_width;
     box->dis_width = box->screen.width;
     box->dis_height = (int32_t)(((float)box->dis_height + 0.5f) * scale);
   }

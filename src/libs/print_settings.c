@@ -37,6 +37,8 @@
 #include "gui/gtk.h"
 #include "libs/lib.h"
 #include "libs/lib_api.h"
+#include "print/page_dsc.h"
+#include "views/view.h"
 
 DT_MODULE(4)
 
@@ -95,11 +97,18 @@ typedef struct dt_lib_print_settings_t
   GtkButton *print_button;
   GtkToggleButton *lock_button;
   GtkWidget *b_top, *b_bottom, *b_left, *b_right;
+  GBinding *lock_bottom, *lock_left, *lock_right;
   GtkDarktableToggleButton *dtba[9];	             // Alignment buttons
   GList *paper_list, *media_list;
   gboolean lock_activated;
+
+  DTPageDsc *page_dsc;
+  // we own prt and imgs but they get passed in to print.c via dt_view_print_settings and dt_print_t keeps a reference
+  // FIXME: should print.c create/own prt and imgs object, and then either pass them to us, or we get a signal when it is changed and change our version? as this is saved in presets, we must keep a copy of it here
   dt_print_info_t prt;
+  // FIXME: can/should we move this into print.c data structure via view proxy?
   dt_images_box imgs;
+
   _unit_t unit;
   int v_intent, v_pintent;
   int v_icctype, v_picctype;
@@ -128,7 +137,7 @@ typedef struct dt_lib_print_job_t
   gchar *buf_icc_profile, *p_icc_profile;
   dt_iop_color_intent_t buf_icc_intent, p_icc_intent;
   dt_images_box imgs;
-  uint16_t *buf; // ??? should be removed
+  uint16_t *buf;
   dt_pdf_page_t *pdf_page;
   char pdf_filename[PATH_MAX];
 } dt_lib_print_job_t;
@@ -203,10 +212,32 @@ static void _precision_by_unit(const _unit_t unit,
 
 // unit conversion
 
-static float _to_mm(dt_lib_print_settings_t *ps,
+static float _to_mm(const dt_lib_print_settings_t *const ps,
                     const double value)
 {
   return value / units[ps->unit];
+}
+
+static gboolean _bind_to_mm(GBinding *binding, const GValue* from_value,
+                            GValue* to_value, gpointer user_data)
+{
+  const dt_lib_print_settings_t *ps = user_data;
+  // FIXME: can pull user units from gobject instead?
+  const double user_units = g_value_get_double(from_value);
+  const double mm = user_units / units[ps->unit];
+  g_value_set_double(to_value, mm);
+  return TRUE;
+}
+
+static gboolean _bind_from_mm(GBinding *binding, const GValue* from_value,
+                              GValue* to_value, gpointer user_data)
+{
+  const dt_lib_print_settings_t *ps = user_data;
+  // FIXME: can pull user units from gobject instead?
+  const double mm = g_value_get_double(from_value);
+  const double user_units = mm * units[ps->unit];
+  g_value_set_double(to_value, user_units);
+  return TRUE;
 }
 
 // horizontal mm to pixels
@@ -693,7 +724,7 @@ static void _print_button_clicked(GtkWidget *widget, gpointer user_data)
   dt_imgid_t imgid = NO_IMGID;
 
   // at least one image on a box
-
+  // FIXME: better to add bindings such that print button is only sensitive when there is >1 layout box with an image
   for(int k=0; k<ps->imgs.count; k++)
   {
     if(dt_is_valid_imgid(ps->imgs.box[k].imgid))
@@ -725,7 +756,14 @@ static void _print_button_clicked(GtkWidget *widget, gpointer user_data)
   dt_lib_print_job_t *params = calloc(1, sizeof(dt_lib_print_job_t));
   dt_control_job_set_params(job, params, _print_job_cleanup);
 
+#if 1
   memcpy(&params->prt,  &ps->prt, sizeof(dt_print_info_t));
+#else
+  // FIXME: eventually this information should be in a gobject model, but probably a seprate one from page layout info
+  g_object_get(ps->page_dsc,
+               "printer", ps->prt.printer.name,
+               NULL);
+#endif
   memcpy(&params->imgs, &ps->imgs, sizeof(ps->imgs));
 
   // what to call the image?
@@ -777,6 +815,10 @@ static void _set_printer(const dt_lib_module_t *self,
                          const char *printer_name)
 {
   dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
+#if 0
+  // FIXME: make GObjects for ps->prt.printer etc., and have them do the work of the interface with cups (subsume cups_print) and send the data back to print settings to populate comboboxes
+  dt_printer_info_t printer;
+#endif
 
   dt_get_printer_info(printer_name, &ps->prt.printer);
 
@@ -795,10 +837,15 @@ static void _set_printer(const dt_lib_module_t *self,
   {
     const dt_paper_info_t *p = (dt_paper_info_t *)papers->data;
     dt_bauhaus_combobox_add(ps->papers, p->common_name);
+    printf("adding paper '%s'\n", p->common_name);
   }
   const char *default_paper = dt_conf_get_string_const("plugins/print/print/paper");
+  printf("default paper is '%s'\n", default_paper);
   if(!dt_bauhaus_combobox_set_from_text(ps->papers, default_paper))
+  {
     dt_bauhaus_combobox_set(ps->papers, 0);
+    printf("could not set default paper\n");
+  }
 
   // add corresponding supported media
   dt_bauhaus_combobox_clear(ps->media);
@@ -813,6 +860,16 @@ static void _set_printer(const dt_lib_module_t *self,
   if(!dt_bauhaus_combobox_set_from_text(ps->media, default_medium))
     dt_bauhaus_combobox_set(ps->media, 0);
 
+  g_object_set(ps->page_dsc,
+//               "printer-name", printer.name,
+               "hw-margin-top", ps->prt.printer.hw_margin_top,
+               "hw-margin-bottom", ps->prt.printer.hw_margin_bottom,
+               "hw-margin-left", ps->prt.printer.hw_margin_left,
+               "hw-margin-right", ps->prt.printer.hw_margin_right,
+               "resolution", ps->prt.printer.resolution,
+               NULL);
+
+  // FIXME: lose this as widget callback can do this work
   dt_view_print_settings(darktable.view_manager, &ps->prt, &ps->imgs);
 }
 
@@ -821,6 +878,7 @@ _printer_changed(GtkWidget *combo, const dt_lib_module_t *self)
 {
   const gchar *printer_name = dt_bauhaus_combobox_get_text(combo);
 
+  printf("print changed, setting to '%s'\n", printer_name);
   if(printer_name)
     _set_printer (self, printer_name);
 }
@@ -834,18 +892,25 @@ _paper_changed(GtkWidget *combo, const dt_lib_module_t *self)
 
   if(!paper_name) return;
 
+  // FIXME: should do this work in page_dsc and just pass it the paper name?
   const dt_paper_info_t *paper = dt_get_paper(ps->paper_list, paper_name);
 
+  // FIXME: don't need to keep this around?
   if(paper)
     memcpy(&ps->prt.paper, paper, sizeof(dt_paper_info_t));
+
+  printf("_paper_changed paper '%s', not sending it via view\n", paper->common_name);
 
   float width, height;
   _get_page_dimension(&ps->prt, &width, &height);
 
   dt_printing_setup_page(&ps->imgs, width, height, ps->prt.printer.resolution);
 
-  dt_conf_set_string("plugins/print/print/paper", paper_name);
+  // FIXME: lose this as widget callback can do this work
   dt_view_print_settings(darktable.view_manager, &ps->prt, &ps->imgs);
+
+  // FIXME: instead set property?
+  dt_page_dsc_set_paper(ps->page_dsc, paper_name, paper);
 
   _update_slider(ps);
 }
@@ -873,6 +938,7 @@ _media_changed(GtkWidget *combo, const dt_lib_module_t *self)
 static void
 _update_slider(dt_lib_print_settings_t *ps)
 {
+  // FIXME: lose this as widget callbacks do this work
   dt_view_print_settings(darktable.view_manager, &ps->prt, &ps->imgs);
 
   // if widget are created, let's display the current image size
@@ -924,6 +990,7 @@ _update_slider(dt_lib_print_settings_t *ps)
   }
 }
 
+#if 0
 static void
 _top_border_callback(GtkWidget *spin, gpointer user_data)
 {
@@ -931,25 +998,16 @@ _top_border_callback(GtkWidget *spin, gpointer user_data)
   dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
   const double value = gtk_spin_button_get_value(GTK_SPIN_BUTTON(spin));
 
-  dt_conf_set_float("plugins/print/print/top_margin", value);
+  // FIXME: can use binding for spin button for this?
+  printf("_top_border_callback: value %f _to_mm(ps,value) %f unit %d conv %f\n", value, _to_mm(ps, value), ps->unit, units[ps->unit]);
+  //g_object_set(ps->page_dsc, "margin-top", _to_mm(ps, value), NULL);
 
+  // FIXME: ideally don't need to set this anymore
   ps->prt.page.margin_top = _to_mm(ps, value);
 
-  if(ps->lock_activated == TRUE)
-  {
-    ps->prt.page.margin_bottom = _to_mm(ps, value);
-    ps->prt.page.margin_left = _to_mm(ps, value);
-    ps->prt.page.margin_right = _to_mm(ps, value);
-
-    gtk_spin_button_set_value(GTK_SPIN_BUTTON(ps->b_bottom), value);
-    gtk_spin_button_set_value(GTK_SPIN_BUTTON(ps->b_left), value);
-    gtk_spin_button_set_value(GTK_SPIN_BUTTON(ps->b_right), value);
-
-    dt_conf_set_float("plugins/print/print/bottom_margin", value);
-    dt_conf_set_float("plugins/print/print/left_margin", value);
-    dt_conf_set_float("plugins/print/print/right_margin", value);
-  }
-
+  printf("_top_border_callback to %f %f %f %f\n", ps->prt.page.margin_top, ps->prt.page.margin_bottom, ps->prt.page.margin_left, ps->prt.page.margin_right);
+  // FIXME: ideally can skip this
+  //dt_view_print_page_changed(darktable.view_manager, &ps->prt.page);
   _update_slider(ps);
 }
 
@@ -960,9 +1018,13 @@ _bottom_border_callback(GtkWidget *spin, gpointer user_data)
   dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
   const double value = gtk_spin_button_get_value(GTK_SPIN_BUTTON(spin));
 
-  dt_conf_set_float("plugins/print/print/bottom_margin", value);
+  //dt_conf_set_float("plugins/print/print/bottom_margin", value);
+  g_object_set(ps->page_dsc, "margin-bottom", _to_mm(ps, value), NULL);
 
+  // FIXME: ideally can skip all this
   ps->prt.page.margin_bottom = _to_mm(ps, value);
+  printf("_bottom_border_callback to %f\n", ps->prt.page.margin_bottom);
+  //dt_view_print_page_changed(darktable.view_manager, &ps->prt.page);
   _update_slider(ps);
 }
 
@@ -973,9 +1035,13 @@ _left_border_callback(GtkWidget *spin, gpointer user_data)
   dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
   const double value = gtk_spin_button_get_value(GTK_SPIN_BUTTON(spin));
 
-  dt_conf_set_float("plugins/print/print/left_margin", value);
+  //dt_conf_set_float("plugins/print/print/left_margin", value);
+  g_object_set(ps->page_dsc, "margin-left", _to_mm(ps, value), NULL);
 
+  // FIXME: ideally can skip all this
   ps->prt.page.margin_left = _to_mm(ps, value);
+  printf("_left_border_callback to %f\n", ps->prt.page.margin_left);
+  //dt_view_print_page_changed(darktable.view_manager, &ps->prt.page);
   _update_slider(ps);
 }
 
@@ -986,11 +1052,16 @@ _right_border_callback(GtkWidget *spin, gpointer user_data)
   dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
   const double value = gtk_spin_button_get_value(GTK_SPIN_BUTTON(spin));
 
-  dt_conf_set_float("plugins/print/print/right_margin", value);
+  //dt_conf_set_float("plugins/print/print/right_margin", value);
+  g_object_set(ps->page_dsc, "margin-right", _to_mm(ps, value), NULL);
 
+  // FIXME: ideally can skip all this
   ps->prt.page.margin_right = _to_mm(ps, value);
+  printf("_right_border_callback to %f\n", ps->prt.page.margin_right);
+  //dt_view_print_page_changed(darktable.view_manager, &ps->prt.page);
   _update_slider(ps);
 }
+#endif
 
 static void
 _lock_callback(GtkWidget *button, gpointer user_data)
@@ -999,8 +1070,10 @@ _lock_callback(GtkWidget *button, gpointer user_data)
   dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
 
   ps->lock_activated = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(button));
+  printf("_lock_callback activated %d\n", ps->lock_activated);
 
-  dt_conf_set_bool("plugins/print/print/lock_borders", ps->lock_activated);
+  //dt_conf_set_bool("plugins/print/print/lock_borders", ps->lock_activated);
+  g_object_set(ps->page_dsc, "margin-lock", ps->lock_activated, NULL);
 
   gtk_widget_set_sensitive(GTK_WIDGET(ps->b_bottom), !ps->lock_activated);
   gtk_widget_set_sensitive(GTK_WIDGET(ps->b_left), !ps->lock_activated);
@@ -1008,11 +1081,36 @@ _lock_callback(GtkWidget *button, gpointer user_data)
 
   //  get value of top and set it to all other borders
 
-  const double value = gtk_spin_button_get_value(GTK_SPIN_BUTTON(ps->b_top));
-  gtk_spin_button_set_value(GTK_SPIN_BUTTON(ps->b_bottom), value);
-  gtk_spin_button_set_value(GTK_SPIN_BUTTON(ps->b_left), value);
-  gtk_spin_button_set_value(GTK_SPIN_BUTTON(ps->b_right), value);
+  if(ps->lock_bottom)
+  {
+    g_binding_unbind(ps->lock_bottom);
+    ps->lock_bottom = NULL;
+  }
+  if(ps->lock_left)
+  {
+    g_binding_unbind(ps->lock_left);
+    ps->lock_left = NULL;
+  }
+  if(ps->lock_right)
+  {
+    g_binding_unbind(ps->lock_right);
+    ps->lock_right = NULL;
+  }
+  if(ps->lock_activated)
+  {
+    // FIXME: if we switch to GLib >= 2.72, we could use a BindingGroup and have more succinct code, setting it up on gui_init() and turning the source from NULL to ps->b_top when need to activate lock
+    ps->lock_bottom = g_object_bind_property(ps->b_top, "value",
+                                             ps->b_bottom, "value",
+                                             G_BINDING_SYNC_CREATE);
+    ps->lock_left = g_object_bind_property(ps->b_top, "value",
+                                           ps->b_left, "value",
+                                           G_BINDING_SYNC_CREATE);
+    ps->lock_right = g_object_bind_property(ps->b_top, "value",
+                                            ps->b_right, "value",
+                                            G_BINDING_SYNC_CREATE);
+  }
 
+  // FIXME: this call makes an invalid widget reference on shutdown
   _update_slider (ps);
 }
 
@@ -1055,7 +1153,12 @@ _orientation_changed(GtkWidget *combo, dt_lib_module_t *self)
 {
   dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
 
+  // FIXME: handle converting of int to enum
+  g_object_set(ps->page_dsc, "orientation", dt_bauhaus_combobox_get(combo), NULL);
+
+  // FIXME: these should become unnecessary
   ps->prt.page.landscape = dt_bauhaus_combobox_get(combo);
+  //dt_view_print_page_changed(darktable.view_manager, &ps->prt.page);
 
   _update_slider(ps);
 }
@@ -1087,6 +1190,7 @@ static void
 _unit_changed(GtkWidget *combo, dt_lib_module_t *self)
 {
   if(darktable.gui->reset) return;
+  // FIXME: don't allow setting margins such that there is no page body left -- and when change paper size should also enforce this
 
   dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
 
@@ -1095,12 +1199,12 @@ _unit_changed(GtkWidget *combo, dt_lib_module_t *self)
   const int unit = dt_bauhaus_combobox_get(combo);
   if(unit < 0) return; // shouldn't happen, but it could be -1 if nothing is selected
   ps->unit = unit;
-  dt_conf_set_string("plugins/print/print/unit", _unit_names[unit]);
+  g_object_set(ps->page_dsc, "units", unit, NULL);
+  //dt_conf_set_string("plugins/print/print/unit", _unit_names[unit]);
 
-  const double margin_top = ps->prt.page.margin_top;
-  const double margin_left = ps->prt.page.margin_left;
-  const double margin_right = ps->prt.page.margin_right;
-  const double margin_bottom = ps->prt.page.margin_bottom;
+  const double margin_top, margin_left, margin_right, margin_bottom;
+  g_object_get(ps->page_dsc, "margin-top", &margin_top, "margin-left", &margin_left,
+               "margin-right", &margin_right, "margin-bottom", &margin_bottom, NULL);
 
   int n_digits;
   float incr;
@@ -1268,6 +1372,7 @@ _intent_callback(GtkWidget *widget, dt_lib_module_t *self)
   ps->v_intent = pos - 1;
 }
 
+// update page orientation to match the image orientation, if known
 static void _set_orientation(dt_lib_print_settings_t *ps, dt_imgid_t imgid)
 {
   dt_mipmap_buffer_t buf;
@@ -1280,11 +1385,13 @@ static void _set_orientation(dt_lib_print_settings_t *ps, dt_imgid_t imgid)
   if(buf.size != DT_MIPMAP_NONE)
   {
     ps->prt.page.landscape = (buf.width > buf.height);
+    // FIXME: ideally this would update a widget in the main view via a specific callback e.g. dt_view_update_orientation()
     dt_view_print_settings(darktable.view_manager, &ps->prt, &ps->imgs);
     dt_bauhaus_combobox_set(ps->orientation, ps->prt.page.landscape == TRUE ? 1 : 0);
   }
 
   dt_mipmap_cache_release(darktable.mipmap_cache, &buf);
+  // FIXME: don't have to call this if orientation isn't changed, and if use widgets don't have to call this at all?
   dt_control_queue_redraw_center();
 }
 
@@ -1295,12 +1402,20 @@ static void _load_image_full_page(dt_lib_print_settings_t *ps, dt_imgid_t imgid)
   dt_printing_setup_box(&ps->imgs, 0,
                         ps->imgs.screen.page.x, ps->imgs.screen.page.y,
                         ps->imgs.screen.page.width, ps->imgs.screen.page.height);
+
+  // FXIXME: do we need to do this work here, or could it be done properly when page dimensions are changed, and keep image dimensions in screen pixels or relative percentages until choose to print?
   float width, height;
   _get_page_dimension(&ps->prt, &width, &height);
-
   dt_printing_setup_page(&ps->imgs, width, height, ps->prt.printer.resolution);
 
   dt_printing_setup_image(&ps->imgs, 0, imgid, 100, 100, ALIGNMENT_CENTER);
+  // FIXME: this doesn't load the current dimensions into page layout, but it should -- have to click on image for these to load
+  // FIXME: if create a widget for this image, should make sure that there is no other widget currently in this slot for
+
+  // FIXME: this passes in float values but will truncate them to int -- at the least round them?
+  // FIXME: should have a way to destroy this box widget as well!
+  // FIXME: we're going to do this entirely from print view now
+  //dt_view_print_new_layout_box(darktable.view_manager, &ps->imgs.box[0], imgid);
 
   dt_control_queue_redraw_center();
 }
@@ -1317,6 +1432,7 @@ static void _print_settings_update_callback(gpointer instance,
   // mipmap's orientation
   if(ps->imgs.count == 1 && ps->imgs.box[0].imgid == imgid && !ps->has_changed)
   {
+    // FIXME: do need to clear the box, or can just overwrite anything when load image?
     dt_printing_clear_box(&ps->imgs.box[0]);
     _load_image_full_page(ps, imgid);
   }
@@ -1384,14 +1500,16 @@ static GList* _get_profiles()
   return g_list_reverse(list);  // list was built in reverse order, so un-reverse it
 }
 
-static void _new_printer_callback(dt_printer_info_t *printer,
-                                  void *user_data)
+static gboolean _new_printer_callback(gpointer user_data)
 {
+  // FIXME: would "++darktable.gui->reset;" help with races
   static int count = 0;
-  const dt_lib_module_t *self = (dt_lib_module_t *)user_data;
-  const dt_lib_print_settings_t *d = (dt_lib_print_settings_t*)self->data;
+  dt_printer_discovered_t *printer = (dt_printer_discovered_t *)user_data;
+  const dt_lib_module_t *self = (dt_lib_module_t *)printer->user_data;
+  const dt_lib_print_settings_t *d = (dt_lib_print_settings_t *)self->data;
 
   char *default_printer = dt_conf_get_string("plugins/print/print/printer");
+  printf("count %d default print is '%s', discovered printer '%s'\n", count, default_printer, printer->name);
 
   g_signal_handlers_block_by_func(G_OBJECT(d->printers),
                                   G_CALLBACK(_printer_changed), NULL);
@@ -1400,7 +1518,9 @@ static void _new_printer_callback(dt_printer_info_t *printer,
 
   if(!g_strcmp0(default_printer, printer->name) || default_printer[0]=='\0')
   {
+    printf("setting combobox to %d for '%s'\n", count, printer->name);
     dt_bauhaus_combobox_set(d->printers, count);
+    // FIXME: this never calls _set_printer if default printer is set but isn't equal to any printer that is found
     _set_printer(self, printer->name);
   }
   count++;
@@ -1408,12 +1528,14 @@ static void _new_printer_callback(dt_printer_info_t *printer,
 
   g_signal_handlers_unblock_by_func(G_OBJECT(d->printers),
                                     G_CALLBACK(_printer_changed), NULL);
+  return G_SOURCE_REMOVE;
 }
 
 void view_enter(struct dt_lib_module_t *self,
                 struct dt_view_t *old_view,
                 struct dt_view_t *new_view)
 {
+  // FIXME: should these callbacks happen from the print view instead?
   // user activated a new image via the filmstrip or user entered view
   // mode which activates an image: get image_id and orientation
   DT_DEBUG_CONTROL_SIGNAL_CONNECT(darktable.signals,
@@ -1846,6 +1968,7 @@ void gui_post_expose(struct dt_lib_module_t *self,
     _set_orientation(ps, ps->imgs.imgid_to_load);
     g_timeout_add(250, _expose_again, ps);
   }
+  return;
 
   // display grid
 
@@ -1926,6 +2049,7 @@ void gui_post_expose(struct dt_lib_module_t *self,
       // screen coordinate default to current box if there is no image
       dt_image_pos screen;
 
+      // FIXME: shouldn't this have already been called before?
       dt_printing_setup_image(&ps->imgs, k, img->imgid, 100, 100, img->alignment);
 
       dt_printing_get_screen_pos(&ps->imgs, img, &screen);
@@ -2221,6 +2345,7 @@ void gui_post_expose(struct dt_lib_module_t *self,
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(ps->borderless), FALSE);
 }
 
+// FIXME: _width_changed, _height_changed, _x_changed, and _y_changed are very similar, combine these
 static void _width_changed(GtkWidget *widget, gpointer user_data)
 {
   if(darktable.gui->reset) return;
@@ -2318,7 +2443,11 @@ void gui_init(dt_lib_module_t *self)
   d->selected = -1;
   d->last_selected = -1;
   d->has_changed = FALSE;
+  d->lock_bottom = NULL;
+  d->lock_left = NULL;
+  d->lock_right = NULL;
 
+  d->page_dsc = g_object_ref(darktable.view_manager->proxy.print.page_dsc);
   dt_init_print_info(&d->prt);
   dt_view_print_settings(darktable.view_manager, &d->prt, &d->imgs);
 
@@ -2333,18 +2462,6 @@ void gui_init(dt_lib_module_t *self)
       d->unit = i;
 
   dt_printing_clear_boxes(&d->imgs);
-
-  // set all margins + unit from settings
-
-  const float top_b = dt_conf_get_float("plugins/print/print/top_margin");
-  const float bottom_b = dt_conf_get_float("plugins/print/print/bottom_margin");
-  const float left_b = dt_conf_get_float("plugins/print/print/left_margin");
-  const float right_b = dt_conf_get_float("plugins/print/print/right_margin");
-
-  d->prt.page.margin_top = _to_mm(d, top_b);
-  d->prt.page.margin_bottom = _to_mm(d, bottom_b);
-  d->prt.page.margin_left = _to_mm(d, left_b);
-  d->prt.page.margin_right = _to_mm(d, right_b);
 
   //  create the spin-button now as values could be set when the
   //  printer has no hardware margin
@@ -2514,10 +2631,12 @@ void gui_init(dt_lib_module_t *self)
 
   //// portrait / landscape
 
+  // FIXME: set initial orientation from page_dsc, not prt.page.landscape
   DT_BAUHAUS_COMBOBOX_NEW_FULL(d->orientation, self, NULL, N_("orientation"), NULL,
                                d->prt.page.landscape?1:0, _orientation_changed, self,
                                N_("portrait"), N_("landscape"));
   gtk_box_pack_start(GTK_BOX(self->widget), GTK_WIDGET(d->orientation), TRUE, TRUE, 0);
+  // FIXME: make a callback on page_dsc orientation to update combobox, if we catch image mipmap loading anywhere but here
 
   // NOTE: units has no label, which makes for cleaner UI but means
   // that no action can be assigned
@@ -2587,11 +2706,21 @@ void gui_init(dt_lib_module_t *self)
   gtk_widget_set_halign(GTK_WIDGET(bds), GTK_ALIGN_CENTER);
   gtk_box_pack_start(GTK_BOX(self->widget), GTK_WIDGET(bds), TRUE, TRUE, 0);
 
-  gtk_spin_button_set_value(GTK_SPIN_BUTTON(d->b_top), top_b);
-  gtk_spin_button_set_value(GTK_SPIN_BUTTON(d->b_bottom), bottom_b);
-  gtk_spin_button_set_value(GTK_SPIN_BUTTON(d->b_left), left_b);
-  gtk_spin_button_set_value(GTK_SPIN_BUTTON(d->b_right), right_b);
-
+  // FIXME: if we don't need to store margins locally at all, can we stop keeping track of ps->prt.page.margin_{top,left,right,bottom} and use gobject?
+  // FIXME: move this binding work later/earlier? -- sort of random it is here
+  g_object_bind_property_full(d->page_dsc, "margin-top", d->b_top, "value",
+                              G_BINDING_BIDIRECTIONAL|G_BINDING_SYNC_CREATE,
+                              _bind_from_mm, _bind_to_mm, d, NULL);
+  g_object_bind_property_full(d->page_dsc, "margin-bottom", d->b_bottom, "value",
+                              G_BINDING_BIDIRECTIONAL|G_BINDING_SYNC_CREATE,
+                              _bind_from_mm, _bind_to_mm, d, NULL);
+  g_object_bind_property_full(d->page_dsc, "margin-left", d->b_left, "value",
+                              G_BINDING_BIDIRECTIONAL|G_BINDING_SYNC_CREATE,
+                              _bind_from_mm, _bind_to_mm, d, NULL);
+  g_object_bind_property_full(d->page_dsc, "margin-right", d->b_right, "value",
+                              G_BINDING_BIDIRECTIONAL|G_BINDING_SYNC_CREATE,
+                              _bind_from_mm, _bind_to_mm, d, NULL);
+#if 0
   g_signal_connect(G_OBJECT (d->b_top), "value-changed",
                    G_CALLBACK (_top_border_callback), self);
   g_signal_connect(G_OBJECT (d->b_bottom), "value-changed",
@@ -2600,13 +2729,17 @@ void gui_init(dt_lib_module_t *self)
                    G_CALLBACK (_left_border_callback), self);
   g_signal_connect(G_OBJECT (d->b_right), "value-changed",
                    G_CALLBACK (_right_border_callback), self);
+#endif
   g_signal_connect(G_OBJECT(d->lock_button), "toggled",
                    G_CALLBACK(_lock_callback), self);
 
   gtk_widget_set_halign(GTK_WIDGET(hboxdim), GTK_ALIGN_CENTER);
   gtk_widget_set_halign(GTK_WIDGET(hboxinfo), GTK_ALIGN_CENTER);
 
-  const gboolean lock_active = dt_conf_get_bool("plugins/print/print/lock_borders");
+  //const gboolean lock_active = dt_conf_get_bool("plugins/print/print/lock_borders");
+  gboolean lock_active;
+  // FIXME: don't need to get if we just bind this?
+  g_object_get(d->page_dsc, "margin-lock", &lock_active, NULL);
   gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(d->lock_button), lock_active);
 
   // grid & snap grid
@@ -3377,6 +3510,10 @@ void gui_cleanup(dt_lib_module_t *self)
 {
   dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
 
+  // FIXME: without this we get a "gtk_widget_queue_draw: assertion 'GTK_IS_WIDGET (widget)' failed"
+  g_signal_handlers_disconnect_by_func(G_OBJECT(ps->lock_button),
+                                       G_CALLBACK(_lock_callback), self);
+#if 0
   // these can be called on shutdown, resulting in null-pointer
   // dereference and division by zero -- not sure what interaction
   // makes them called, but better to disconnect and not have segfault
@@ -3388,6 +3525,7 @@ void gui_cleanup(dt_lib_module_t *self)
                                        G_CALLBACK(_left_border_callback), self);
   g_signal_handlers_disconnect_by_func(G_OBJECT(ps->b_right),
                                        G_CALLBACK(_right_border_callback), self);
+#endif
 
   g_list_free_full(ps->profiles, g_free);
   g_list_free_full(ps->paper_list, free);
@@ -3396,6 +3534,12 @@ void gui_cleanup(dt_lib_module_t *self)
   g_free(ps->v_iccprofile);
   g_free(ps->v_piccprofile);
   g_free(ps->v_style);
+
+#if 0
+  darktable.lib->proxy.print_settings.w_papers = NULL;
+#endif
+
+  g_object_unref(ps->page_dsc);
 
   free(self->data);
   self->data = NULL;

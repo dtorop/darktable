@@ -1153,6 +1153,31 @@ void dt_view_map_drag_set_icon(const dt_view_manager_t *vm, GdkDragContext *cont
 #endif
 
 #ifdef HAVE_PRINT
+
+#if 0
+// FIXME: this probably should be in dtgtk/layout_box.c
+// FIXME: rather than returning dt_thumbnail_t, should return custom layout box widget that contains a thumbnail
+// FIXME: currently is passed in screen coordinates of the layout box -- do want this or relative position or mm?
+void dt_view_print_new_layout_box(const dt_view_manager_t *vm,
+                                  // FIXME: instead should pass in pointer to a dt_image_pos of a particular dimension?
+                                  const dt_image_box *const box,
+                                  const dt_imgid_t imgid)
+{
+  if(vm->proxy.print.view)
+    vm->proxy.print.new_layout_box(vm->proxy.print.view, box, imgid);
+}
+#endif
+
+#if 0
+// FIXME: this probably should be in dtgtk/layout_box.c
+void dt_view_print_destroy_layout_box(const dt_view_manager_t *vm,
+                                      dt_thumbnail_t *const box)
+{
+  if(vm->proxy.print.view)
+    vm->proxy.print.destroy_layout_box(vm->proxy.print.view, box);
+}
+#endif
+
 void dt_view_print_settings(const dt_view_manager_t *vm, dt_print_info_t *pinfo, dt_images_box *imgs)
 {
   if(vm->proxy.print.view)

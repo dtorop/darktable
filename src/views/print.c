@@ -27,11 +27,12 @@
 #include "control/conf.h"
 #include "control/control.h"
 #include "develop/develop.h"
+#include "dtgtk/layout_page.h"
 #include "dtgtk/thumbtable.h"
 #include "gui/accelerators.h"
-#include "gui/drag_and_drop.h"
 #include "gui/gtk.h"
 #include "gui/presets.h"
+#include "print/page_dsc.h"
 #include "views/view.h"
 #include "views/view_api.h"
 
@@ -42,11 +43,109 @@
 
 DT_MODULE(1)
 
+// planning for MVC
+//
+// we need a model, maybe here or in common/printing.c which contains
+//   printer name
+//   paper name and dimensions
+//   media type
+//   hardware margins (yes?)
+//   paper orientation
+//   profile/intent for conversion to intermediate colorspace, style, and style mode
+//   profile/intent for conversion to printe colorspace + black point compensation flag
+//   a list of image boxes
+//     each with origin, dimensions and alignment (horizontal/vertical start/middle/end)
+//   whether in borderless model
+//   whether to snap to grid, display grid, and grid intervals   (does this pertain to model?)
+//   display units for dimensions (could be in a separate model with grid info?)
+// all measurements can be in mm
+//
+// The catch is the print_settings.c needs to be able to save this
+// model as a preset.  So do we keep a canonical gobject model in
+// printing.c with signals, and print_settings.c updates itself or
+// updates the model as it changes?
+//
+// Print settings just needs to be apprised of all the current
+// settigngs to save them in get_params, it coule be bound to
+// them. And it just sets GUI in set_params, which will set model and
+// by bindings/signals can set print layout properly.
+//
+// we have two views
+//
+// 1.) print settings panel
+//     which views (from the model)
+//       printer, paper size, media type
+//       paper orientation
+//       profile/intent for conversion to intermediate colorspace
+//       profile/intent for conversion to printe colorspace + black point compensation flag
+//       current image box origin, dimensions and alignment (horizontal/vertical start/middle/end)
+//       current image box's image dimensions (this is updated in model by center view?)
+//       current image's scale factor and dpi (is this calculated here?)
+//       grid intervals
+//       whether in borderless mode
+//     which allows for controlling (which alters the model)
+//       printer, paper size, media type
+//       paper orientation
+//       profile/intent for conversion to intermediate colorspace, style, and style mode
+//       profile/intent for conversion to printe colorspace + black point compensation flag
+//       current image box origin, dimensions and alignment (horizontal/vertical start/middle/end)
+//       making a new image box (is this necessary, or just drag in center view?)
+//       deleting current image box
+//       deleting all image boxes
+//       grid intervals
+//       whether to snap to grid
+//       whether to display grid
+//
+// 2.) center view
+//     which views
+//        paper size (as a ratio)
+//        hardware margins
+//        paper orientation
+//        all image boxes origin/dimensions/alignment
+//        all images within boxes origin/dimensions
+//        knockouts for layout margins/dimensions when mouseover an image
+//        knockouts for image margins/dimensions would also be nice
+//        grid
+//      which controls
+//        paper orientation (when create a single image or drag image into a single layout box -- does this happen in views/print.c?)
+//        current image box origin/dimensions
+//        imgid in box (when drag-and-drop image onto a box)
+//
+// make gobjects to hold the model
+// TODO: can use g_value_register_transform_func() to convert between mm/cm/in units? or is that more for type casting?
+// TODO: actually looks like the right way is to use a binding https://docs.gtk.org/gobject/class.Binding.html
+// TODO: set up properties via g_param_spec_double() or g_param_spec_int() or g_param_spec_pointer()
+// TODO: use g_value_get_int() and ilk to work with gobject via
+// TODO: how do use GParamSpec to work on GObject properties? via g_object_interface_install_property() of derived class? via GTypeInfo? see https://developer-old.gnome.org/gobject/unstable/gobject-properties.html for how to set up a gobject subclass with properties
+// TODO: can use https://docs.gtk.org/gobject/method.Object.notify_by_pspec.html to notify within classes
+// TODO: use view's init() function to set up GObjects, then the gui_init() funcs set up callbacks/bindings
+// TODO: start with landscape as the first trial one
+// TODO: think about the different common files which handle printing, and perhaps make a src/pront directory to include s/cups_print/cups/, s/printprof/profile/, and printing.h (which may be obviated by layout_page) and any gobject clsses to encapsulate dt_print_info_t and dt_images_box
+// TODO: do we want to register a new class with properties for storage or a new type https://docs.gtk.org/gobject/func.type_register_static.html
+// TODO: can the instance init/constructor function do some helpful work setting up relationships? (see GObject concepts), maybe class_init/instance_init
+// TODO: "One of GObject’s nice features is its generic get/set mechanism for object properties. When an object is instantiated, the object’s class_init handler should be used to register the object’s properties with g_object_class_install_properties()." (from GObject concepts)
+// TODO: use signal detail parameter on notify to figure out which properties are changed
+// TODO: if there's only one instance of layout/print data, should attach an instance signal connection or connect it via the class?
+
 typedef struct dt_print_t
 {
+  // pinfo and imgs are pointers to the actual data in
+  // dt_lib_print_settings_t and are set by _view_print_settings()
+  // aka dt_view_print_settings()
+  //
+  // model: printer/page/paper/medium
+  // FIXME: this is used for now obsolete routines to draw the page here, and for sending its components to layout_page creation -- but maybe layout_page can just catch when its components are set, and otherwise be created empty/unsized? then don't have to store this here at all!
   dt_print_info_t *pinfo;
+  // model: image layout boxes and full page dimensions
+  // FIXME: this overlays a bit with pinfo
   dt_images_box *imgs;
   dt_imgid_t last_selected;
+
+  // view: page size/ratio, image boxes, images
+  // control: image box position/size
+  dt_layout_page_t *page;
+
+  DTPageDsc *page_dsc;
 }
 dt_print_t;
 
@@ -60,10 +159,12 @@ uint32_t view(const dt_view_t *self)
   return DT_VIEW_PRINT;
 }
 
+// FIXME: do not need to call this if thumbnail is handling mipmap updates?
 static void _print_mipmaps_updated_signal_callback(gpointer instance,
                                                    dt_imgid_t imgid,
                                                    gpointer user_data)
 {
+  printf("_print_mipmaps_updated_signal_callback()\n");
   dt_control_queue_redraw_center();
 }
 
@@ -125,6 +226,32 @@ static void _view_print_filmstrip_activate_callback(gpointer instance,
   if(dt_is_valid_imgid(imgid)) _film_strip_activated(imgid, user_data);
 }
 
+#if 0
+static void _view_new_layout_box(const dt_view_t *view,
+                                 const dt_image_box *const box,
+                                 const dt_imgid_t imgid)
+{
+  printf("_view_new_layout_box %fx%f + %fx%f imgid %d\n", box->screen.x, box->screen.y, box->screen.width, box->screen.height, imgid);
+  dt_print_t *prt = (dt_print_t *)view->data;
+  // FIXME: should this call into print_settings to update dt_images_box there? or should there be some sort of callback/binding
+  if(prt->print_layout)
+    dt_layout_box_new(box, imgid);
+  else
+    dt_print(DT_DEBUG_ALWAYS, "print.c: _view_new_layout_box called before layout created\n");    
+}
+#endif
+
+#if 0
+// FIXME: how to implement this? can the UI know when to destroy the active layout box and handle it directly
+void _view_destroy_layout_box(const dt_view_t *view, dt_thumbnail_t *const box)
+{
+  //dt_print_t *prt = (dt_print_t *)view->data;
+  dt_thumbnail_destroy(box);
+}
+#endif
+
+// FIXME: this is a catchall for any print settings updated by libs/print_settings.c, instead have specific callbacks for specific updates and store more state here, and respond to more events via widgets here
+// FIXME: at the least there could be one call for pinfo changed (e.g. orientation) and one for imgs changed (e.g. new image)
 static void _view_print_settings(const dt_view_t *view,
                                  dt_print_info_t *pinfo,
                                  dt_images_box *imgs)
@@ -136,6 +263,7 @@ static void _view_print_settings(const dt_view_t *view,
   dt_control_queue_redraw();
 }
 
+#if 0
 static void _drag_and_drop_received(GtkWidget *widget,
                                     GdkDragContext *context,
                                     gint x,
@@ -175,20 +303,41 @@ static gboolean _drag_motion_received(GtkWidget *widget,
 
   return TRUE;
 }
+#endif
 
 void
 init(dt_view_t *self)
 {
   self->data = calloc(1, sizeof(dt_print_t));
+  dt_print_t *prt = (dt_print_t *)self->data;
+
+  // FIXME: init this when enter view? it would make disconnecting signal handlers from this easier
+  prt->page_dsc = dt_page_dsc_new();
+  // FIXME: is this right way to "copy" a pinter?
+  darktable.view_manager->proxy.print.page_dsc = g_object_ref(prt->page_dsc);
 
   /* initialize CB to get the print settings from corresponding lib module */
   darktable.view_manager->proxy.print.view = self;
+  //darktable.view_manager->proxy.print.new_layout_box = _view_new_layout_box;
+  //darktable.view_manager->proxy.print.destroy_layout_box = _view_destroy_layout_box;
   darktable.view_manager->proxy.print.print_settings = _view_print_settings;
 }
 
 void cleanup(dt_view_t *self)
 {
   dt_print_t *prt = (dt_print_t *)self->data;
+
+  // FIXME: why doesn't this work?
+  //g_clear_object(darktable.view_manager->proxy.print.page_dsc);
+  //g_clear_object(prt->page_dsc);
+  g_object_unref(darktable.view_manager->proxy.print.page_dsc);
+  g_object_unref(prt->page_dsc);
+
+#if 0
+  g_clear_object(&prt->drag_gesture);
+  g_clear_object(&prt->multipress_gesture);
+#endif
+
   free(prt);
 }
 
@@ -241,20 +390,25 @@ static void _expose_print_page(dt_view_t *self,
   const float pright = px + pwidth;
   const float pbottom = py + pheight;
 
+#if 0
   // x page -> x display
   // (x / pg_width) * p_width + p_x
   cairo_set_source_rgb (cr, 0.9, 0.9, 0.9);
   cairo_rectangle (cr, px, py, pwidth, pheight);
   cairo_fill (cr);
+  //printf("print expose paper area %f x %f + %f x %f\n", px, py, pwidth, pheight);
+#endif
 
   // record the screen page dimension. this will be used to compute the actual
   // layout of the areas placed over the page.
-
+  // FIXME: This is a bit convoluted: in view expose we figure out page dimensions in pixels, then use that here to take relative layout box dimensions and calculate their screen dimensions, which then are used in print_settings gui_post_expose() to draw them. Is there a better way?
   dt_printing_setup_display(prt->imgs,
                             px, py, pwidth, pheight,
                             ax, ay, awidth, aheight,
+                            // FIXME: this is calculated then ignored
                             borderless);
 
+if(0) {
   // display non-printable area
   cairo_set_source_rgb (cr, 0.1, 0.1, 0.1);
 
@@ -286,13 +440,16 @@ static void _expose_print_page(dt_view_t *self,
 
   // clip to this area to ensure that the image won't be larger,
   // this is needed when using negative margin to enlarge the print
+  // FIXME: negative margins are no longer allowed by the print settings UI!
 
   cairo_rectangle (cr, np1x, np1y, np2x-np1x, np2y-np1y);
   cairo_clip(cr);
 
   cairo_set_source_rgb (cr, 0.77, 0.77, 0.77);
+  //printf("print expose printable area %f x %f + %f x %f\n", ax, ay, awidth, aheight);
   cairo_rectangle (cr, ax, ay, awidth, aheight);
   cairo_fill (cr);
+}
 }
 
 void expose(dt_view_t *self,
@@ -302,13 +459,16 @@ void expose(dt_view_t *self,
             int32_t pointerx,
             int32_t pointery)
 {
+#if 0
   // clear the current surface
   dt_gui_gtk_set_source_rgb(cri, DT_GUI_COLOR_PRINT_BG);
   cairo_paint(cri);
+#endif
 
   // print page & borders only. Images are displayed in
-  // gui_post_expose in print_settings module.
+  // in overlaid widgets
 
+  // FIXME: this should be a layout widget which draws with these dimensions
   _expose_print_page(self, cri, width_i, height_i, pointerx, pointery);
 }
 
@@ -400,14 +560,28 @@ void enter(dt_view_t *self)
   DT_DEBUG_CONTROL_SIGNAL_CONNECT(darktable.signals, DT_SIGNAL_VIEWMANAGER_THUMBTABLE_ACTIVATE,
                             G_CALLBACK(_view_print_filmstrip_activate_callback), self);
 
-  gtk_widget_grab_focus(dt_ui_center(darktable.gui->ui));
+  prt->page = dt_layout_page_new(prt->page_dsc);
+  gtk_overlay_add_overlay(GTK_OVERLAY(dt_ui_center_base(darktable.gui->ui)),
+                          dt_layout_page_get_widget(prt->page));
+  //gtk_overlay_reorder_overlay(GTK_OVERLAY(dt_ui_center_base(darktable.gui->ui)), prt->print_layout->w_main, -1);
 
+#if 0
+  // ensure the message widgets stay on top
+  // FIXME: this is probably necessary if go straight to develop view then print view -- test
+  gtk_overlay_reorder_overlay(ocda, gtk_widget_get_parent(dt_ui_log_msg(darktable.gui->ui)), -1);
+  gtk_overlay_reorder_overlay(ocda, gtk_widget_get_parent(dt_ui_toast_msg(darktable.gui->ui)), -1);
+#endif
+
+#if 0
   GtkWidget *widget = dt_ui_center(darktable.gui->ui);
+  gtk_widget_grab_focus(widget);
 
+  // FIXME: this should be done in layout_page for each image box created -- will then always be routed the right widget!
   gtk_drag_dest_set(widget, GTK_DEST_DEFAULT_ALL,
                     target_list_all, n_targets_all, GDK_ACTION_MOVE);
   g_signal_connect(widget, "drag-data-received", G_CALLBACK(_drag_and_drop_received), self);
   g_signal_connect(widget, "drag-motion", G_CALLBACK(_drag_motion_received), self);
+#endif
 
   dt_control_set_mouse_over_id(prt->imgs->imgid_to_load);
 }
@@ -425,6 +599,10 @@ void leave(dt_view_t *self)
   DT_DEBUG_CONTROL_SIGNAL_DISCONNECT(darktable.signals,
                                      G_CALLBACK(_view_print_filmstrip_activate_callback),
                                      (gpointer)self);
+
+  // FIXME: should hide prt->print_layout->w_main before destroying it?
+  // this should also remove the print layout widget from the center view overlay
+  dt_layout_page_destroy(prt->page);
 
   dt_printing_clear_boxes(prt->imgs);
 //  g_signal_disconnect(widget, "drag-data-received", G_CALLBACK(_drag_and_drop_received));

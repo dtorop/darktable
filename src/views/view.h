@@ -25,6 +25,7 @@
 #ifdef HAVE_PRINT
 #include "common/cups_print.h"
 #include "common/printing.h"
+#include "print/page_dsc.h"
 #endif
 #ifdef HAVE_MAP
 #include "common/geo.h"
@@ -360,6 +361,13 @@ typedef struct dt_view_manager_t
     struct
     {
       struct dt_view_t *view;
+      DTPageDsc *page_dsc;
+#if 0
+      // FIXME: should this return a dt_thumbnail_t or something more abstract?
+      void (*new_layout_box)(const dt_view_t *view, const dt_image_box *const box, const dt_imgid_t imgid);
+#endif
+      // FIXME: don't pass in view if it's not used! and what pointer do we pass in to destroy
+      //void (*destroy_layout_box)(const dt_view_t *view, dt_thumbnail_t *const box);
       void (*print_settings)(const dt_view_t *view, dt_print_info_t *pinfo, dt_images_box *imgs);
     } print;
 #endif
@@ -489,6 +497,12 @@ void dt_view_map_drag_set_icon(const dt_view_manager_t *vm, GdkDragContext *cont
  * Print View Proxy
  */
 #ifdef HAVE_PRINT
+#if 0
+void dt_view_print_new_layout_box(const dt_view_manager_t *vm,
+                                  const dt_image_box *const box,
+                                  const dt_imgid_t imgid);
+#endif
+//void dt_view_print_destroy_layout_box(const dt_view_manager_t *vm, dt_thumbnail_t *const box);
 void dt_view_print_settings(const dt_view_manager_t *vm, dt_print_info_t *pinfo, dt_images_box *imgs);
 #endif
 

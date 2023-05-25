@@ -179,7 +179,6 @@ Why that? Just because it's a developer choice and most classes use underscore i
 @define-color lighttable_bg_color @grey_40;
 @define-color lighttable_preview_bg_color @darkroom_bg_color;
 @define-color lighttable_bg_font_color @grey_75;
-@define-color print_bg_color @lighttable_bg_color;
 
 /* Lighttable and film-strip */
 @define-color thumbnail_font_color @grey_30;
@@ -229,6 +228,11 @@ Why that? Just because it's a developer choice and most classes use underscore i
 @define-color colorlabel_blue rgb(40,140,255);
 @define-color colorlabel_yellow rgb(255,180,0);
 @define-color colorlabel_purple rgb(230,0,230);
+
+/* Print view of page layout */
+@define-color print_paper @grey_80;
+@define-color print_margin @grey_90;
+@define-color print_hw_margin @grey_10;
 
 /* Reset GTK defaults - Otherwise dt inherits Adwaita default theme dark */
 *
@@ -2295,6 +2299,62 @@ Details :
 {
   color: @bauhaus_fg_hover;
   background-color: rgba(20, 20, 20, 0.5);
+}
+
+/*-------------------------------------------------
+  - print view layout (dt_printview class) -
+  -----------------------------------------------*/
+
+/* Set image borders */
+/* FIXME: should define this class dt_printlayout totally from scratch, not derived */
+.dt_fullview.dt_printlayout #thumb-main #thumb-image,
+.dt_fullview.dt_printlayout #thumb-main:selected #thumb-image
+{
+  border: 0;
+  margin: 0;
+}
+
+/* print view background */
+#print-view-bkgd
+{
+  background-color: @lighttable_bg_color;
+}
+
+/* page margins */
+#print-paper-margins
+{
+  background-color: @print_margin;
+  border: 0.07em solid @bg_color;
+}
+
+/* page body, area within margins */
+#print-paper-content
+{
+  background-color: @print_paper;
+}
+
+#print-hw-margins
+{
+  /* tick-marks representing hardware margins */
+  color: @print_hw_margin;
+}
+
+.print-layout-box
+{
+  background-color: red;
+  border: 0.14em dotted blue;
+}
+
+.print-drag-target .print-layout-box
+{
+  background-color: green;
+  border-color: purple;
+}
+
+#print-select-box
+{
+  background-color: alpha(@bg_color, 0.8);
+  border: 0.14em dashed alpha(@border_color, 0.8);
 }
 
 /* Lighttable toolbox */

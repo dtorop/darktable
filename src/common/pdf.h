@@ -31,6 +31,7 @@
 
 // clang-format off
 
+// FIXME: these should be functions not macros
 #define dt_pdf_inch_to_point(inch)      ((inch) * 72.0)
 #define dt_pdf_point_to_inch(pt)        ((pt) / 72.0)
 #define dt_pdf_mm_to_point(mm)          dt_pdf_inch_to_point((mm) / 25.4)

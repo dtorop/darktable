@@ -3265,35 +3265,42 @@
     </type>
     <default>mm</default>
     <shortdescription>measurement units</shortdescription>
-    <longdescription/>
+    <longdescription>user-specified measurement units for print view</longdescription>
   </dtconfig>
   <dtconfig>
     <name>plugins/print/print/top_margin</name>
-    <type min="-50" max="500">float</type>
+    <type min="0" max="1000">float</type>
     <default>17</default>
-    <shortdescription/>
-    <longdescription/>
+    <shortdescription>top margin of page</shortdescription>
+    <longdescription>user-specified top margin of page in current units of print settings panel, image layout boxes cannot extend into this area</longdescription>
   </dtconfig>
   <dtconfig>
     <name>plugins/print/print/bottom_margin</name>
-    <type min="-50" max="500">float</type>
+    <type min="0" max="1000">float</type>
     <default>17</default>
-    <shortdescription/>
-    <longdescription/>
+    <shortdescription>bottom margin of page</shortdescription>
+    <longdescription>user-specified bottom margin of page in current units of print settings panel, image layout boxes cannot extend into this area</longdescription>
   </dtconfig>
   <dtconfig>
     <name>plugins/print/print/left_margin</name>
-    <type min="-50" max="500">float</type>
+    <type min="0" max="1000">float</type>
     <default>17</default>
-    <shortdescription/>
-    <longdescription/>
+    <shortdescription>left margin of page</shortdescription>
+    <longdescription>user-specified left margin of page in current units of print settings panel, image layout boxes cannot extend into this area</longdescription>
   </dtconfig>
   <dtconfig>
     <name>plugins/print/print/right_margin</name>
-    <type min="-50" max="500">float</type>
+    <type min="0" max="1000">float</type>
     <default>17</default>
-    <shortdescription/>
-    <longdescription/>
+    <shortdescription>right margin of page</shortdescription>
+    <longdescription>user-specified right margin of page in current units of print settings panel, image layout boxes cannot extend into this area</longdescription>
+  </dtconfig>
+  <dtconfig>
+    <name>plugins/print/print/lock_borders</name>
+    <type>bool</type>
+    <default>true</default>
+    <shortdescription>lock margins</shortdescription>
+    <longdescription>lock all margins to be the same as the top margin</longdescription>
   </dtconfig>
   <dtconfig>
     <name>ui_last/theme</name>

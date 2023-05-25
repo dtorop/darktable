@@ -829,6 +829,14 @@ if(BUILD_PRINT)
       "common/printprof.c"
       "common/printing.h"
       "common/printing.c"
+      "dtgtk/layout_body.h"
+      "dtgtk/layout_body.c"
+      "dtgtk/layout_box.h"
+      "dtgtk/layout_box.c"
+      "dtgtk/layout_page.h"
+      "dtgtk/layout_page.c"
+      "print/page_dsc.h"
+      "print/page_dsc.c"
       )
     set(SOURCES ${SOURCES} ${SOURCE_FILES_PRINT})
     list(APPEND LIBS ${CUPS_LIBRARIES})

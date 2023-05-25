@@ -44,6 +44,7 @@ extern int cupsGetDestMediaByIndex() __attribute__((weak_import));
 extern void cupsFreeDestInfo() __attribute__((weak_import));
 #endif
 
+// FIXME: now that we are up to CUPS 2.4.2 (as of June 2023), should iron this out better
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 // some platforms are starting to provide CUPS 2.2.9 and there the
 // CUPS API deprecated routines ate now flagged as such and reported as
@@ -57,7 +58,7 @@ extern void cupsFreeDestInfo() __attribute__((weak_import));
 
 typedef struct dt_prtctl_t
 {
-  void (*cb)(dt_printer_info_t *, void *);
+  GSourceFunc cb;
   void *user_data;
 } dt_prtctl_t;
 
@@ -75,6 +76,7 @@ void dt_init_print_info(dt_print_info_t *pinfo)
 void dt_get_printer_info(const char *printer_name, dt_printer_info_t *pinfo)
 {
   cups_dest_t *dests;
+  // FIXME: cupsGetDests() is no longer a documented API, could combine these two calls into cupsGetNamedDest()
   const int num_dests = cupsGetDests(&dests);
   cups_dest_t *dest = cupsGetDest(printer_name, NULL, num_dests, dests);
 
@@ -153,10 +155,14 @@ static int _dest_cb(void *user_data, unsigned flags, cups_dest_t *dest)
   // check that the printer is ready
   if(psvalue!=NULL && strtol(psvalue, NULL, 10) < IPP_PRINTER_STOPPED)
   {
-    dt_printer_info_t pr;
-    memset(&pr, 0, sizeof(pr));
-    dt_get_printer_info(dest->name, &pr);
-    if(pctl->cb) pctl->cb(&pr, pctl->user_data);
+    if(pctl->cb)
+    {
+      dt_printer_discovered_t *pr = g_malloc0(sizeof(dt_printer_discovered_t));
+      g_strlcpy(pr->name, dest->name, MAX_NAME);
+      pr->user_data = pctl->user_data;
+      // we need to be in the GUI thread to update widgets
+      g_idle_add_full(G_PRIORITY_DEFAULT_IDLE, pctl->cb, pr, g_free);
+    }
     dt_print(DT_DEBUG_PRINT, "[print] new printer %s found\n", dest->name);
   }
   else
@@ -167,6 +173,7 @@ static int _dest_cb(void *user_data, unsigned flags, cups_dest_t *dest)
 
 static int _cancel = 0;
 
+// FIXME: if we can guarantee that we have CUPS >= 1.6 and MacOS >= 10.8 this could be much simpler
 static int _detect_printers_callback(dt_job_t *job)
 {
   dt_prtctl_t *pctl = dt_control_job_get_params(job);
@@ -200,7 +207,7 @@ void dt_printers_abort_discovery(void)
   _cancel = 1;
 }
 
-void dt_printers_discovery(void (*cb)(dt_printer_info_t *pr, void *user_data), void *user_data)
+void dt_printers_discovery(GSourceFunc cb, void *user_data)
 {
   // asynchronously checks for available printers
   dt_job_t *job = dt_control_job_create(&_detect_printers_callback, "detect connected printers");
@@ -592,6 +599,7 @@ void dt_get_print_layout(const dt_print_info_t *prt,
   /* here, width and height correspond to the area for the picture */
 
   // non-printable
+  // FIXME: these are only used to calculate borderless, but that then is ignored by the caller! it (_expose_print_page) independently uses this info to draw a non-printable border line
   float np_top = prt->printer.hw_margin_top;
   float np_left = prt->printer.hw_margin_left;
   float np_right = prt->printer.hw_margin_right;
