@@ -32,18 +32,7 @@
 #include "control/jobs/control_jobs.h"
 #include "cups_print.h"
 
-// enable weak linking in libcups on macOS
-#if defined(__APPLE__) && MAC_OS_X_VERSION_MIN_REQUIRED < MAC_OS_X_VERSION_10_8 && ((CUPS_VERSION_MAJOR == 1 && CUPS_VERSION_MINOR >= 6) || CUPS_VERSION_MAJOR > 1)
-extern int cupsEnumDests() __attribute__((weak_import));
-#endif
-#if defined(__APPLE__) && MAC_OS_X_VERSION_MIN_REQUIRED < MAC_OS_X_VERSION_10_9 && ((CUPS_VERSION_MAJOR == 1 && CUPS_VERSION_MINOR >= 7) || CUPS_VERSION_MAJOR > 1)
-extern http_t *cupsConnectDest() __attribute__((weak_import));
-extern cups_dinfo_t *cupsCopyDestInfo() __attribute__((weak_import));
-extern int cupsGetDestMediaCount() __attribute__((weak_import));
-extern int cupsGetDestMediaByIndex() __attribute__((weak_import));
-extern void cupsFreeDestInfo() __attribute__((weak_import));
-#endif
-
+// FIXME: do we want to require >= CUPS 2.2.9 and not use deprecated functions?
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 // some platforms are starting to provide CUPS 2.2.9 and there the
 // CUPS API deprecated routines ate now flagged as such and reported as
@@ -172,32 +161,12 @@ static int _dest_cb(void *user_data, unsigned flags, cups_dest_t *dest)
 
 static int _cancel = 0;
 
-// FIXME: if we can guarantee that we have CUPS >= 1.6 and MacOS >= 10.8 this could be much simpler
 static int _detect_printers_callback(dt_job_t *job)
 {
   dt_prtctl_t *pctl = dt_control_job_get_params(job);
-  int res;
-#if((CUPS_VERSION_MAJOR == 1) && (CUPS_VERSION_MINOR >= 6)) || CUPS_VERSION_MAJOR > 1
-#if defined(__APPLE__) && MAC_OS_X_VERSION_MIN_REQUIRED < MAC_OS_X_VERSION_10_8
-  if(&cupsEnumDests != NULL)
-#endif
-    res = cupsEnumDests(CUPS_MEDIA_FLAGS_DEFAULT, 30000, &_cancel, 0, 0, _dest_cb, pctl);
-#if defined(__APPLE__) && MAC_OS_X_VERSION_MIN_REQUIRED < MAC_OS_X_VERSION_10_8
-  else
-#endif
-#endif
-#if defined(__APPLE__) && MAC_OS_X_VERSION_MIN_REQUIRED < MAC_OS_X_VERSION_10_8 || !(((CUPS_VERSION_MAJOR == 1) && (CUPS_VERSION_MINOR >= 6)) || CUPS_VERSION_MAJOR > 1)
-  {
-    cups_dest_t *dests;
-    const int num_dests = cupsGetDests(&dests);
-    for(int k=0; k<num_dests; k++)
-    {
-      _dest_cb((void *)pctl, 0, &dests[k]);
-    }
-    cupsFreeDests(num_dests, dests);
-    res=1;
-  }
-#endif
+  // FIXME: so long as we're doing this in the background, why not use useCupGetDests2()?
+  int res =
+    cupsEnumDests(CUPS_MEDIA_FLAGS_DEFAULT, 30000, &_cancel, 0, 0, _dest_cb, pctl);
   return !res;
 }
 
@@ -267,67 +236,59 @@ GList *dt_get_papers(const dt_printer_info_t *printer)
   const char *printer_name = printer->name;
   GList *result = NULL;
 
-#if((CUPS_VERSION_MAJOR == 1) && (CUPS_VERSION_MINOR >= 7)) || CUPS_VERSION_MAJOR > 1
-#if defined(__APPLE__) && MAC_OS_X_VERSION_MIN_REQUIRED < MAC_OS_X_VERSION_10_9
-  if(&cupsConnectDest != NULL && &cupsCopyDestInfo != NULL && &cupsGetDestMediaCount != NULL &&
-      &cupsGetDestMediaByIndex != NULL && &cupsFreeDestInfo != NULL)
-#endif
+  cups_dest_t *dests;
+  const int num_dests = cupsGetDests(&dests);
+  cups_dest_t *dest = cupsGetDest(printer_name, NULL, num_dests, dests);
+
+  int cancel = 0; // important
+
+  char resource[1024];
+
+  if(dest)
   {
-    cups_dest_t *dests;
-    const int num_dests = cupsGetDests(&dests);
-    cups_dest_t *dest = cupsGetDest(printer_name, NULL, num_dests, dests);
+    http_t *hcon = cupsConnectDest(dest, 0, 2000, &cancel, resource, sizeof(resource), NULL, (void *)NULL);
 
-    int cancel = 0; // important
-
-    char resource[1024];
-
-    if(dest)
+    if(hcon)
     {
-      http_t *hcon = cupsConnectDest(dest, 0, 2000, &cancel, resource, sizeof(resource), NULL, (void *)NULL);
-
-      if(hcon)
+      cups_size_t size;
+      cups_dinfo_t *info = cupsCopyDestInfo (hcon, dest);
+      const int count = cupsGetDestMediaCount(hcon, dest, info, CUPS_MEDIA_FLAGS_DEFAULT);
+      for(int k=0; k<count; k++)
       {
-        cups_size_t size;
-        cups_dinfo_t *info = cupsCopyDestInfo (hcon, dest);
-        const int count = cupsGetDestMediaCount(hcon, dest, info, CUPS_MEDIA_FLAGS_DEFAULT);
-        for(int k=0; k<count; k++)
+        if(cupsGetDestMediaByIndex(hcon, dest, info, k, CUPS_MEDIA_FLAGS_DEFAULT, &size))
         {
-          if(cupsGetDestMediaByIndex(hcon, dest, info, k, CUPS_MEDIA_FLAGS_DEFAULT, &size))
+          if(size.width!=0 && size.length!=0 && !paper_exists(result, size.media))
           {
-            if(size.width!=0 && size.length!=0 && !paper_exists(result, size.media))
-            {
-              pwg_media_t *med = pwgMediaForPWG (size.media);
-              char common_name[MAX_NAME] = { 0 };
+            pwg_media_t *med = pwgMediaForPWG (size.media);
+            char common_name[MAX_NAME] = { 0 };
 
-              if(med->ppd)
-                g_strlcpy(common_name, med->ppd, sizeof(common_name));
-              else
-                g_strlcpy(common_name, size.media, sizeof(common_name));
+            if(med->ppd)
+              g_strlcpy(common_name, med->ppd, sizeof(common_name));
+            else
+              g_strlcpy(common_name, size.media, sizeof(common_name));
 
-              dt_paper_info_t *paper = (dt_paper_info_t*)malloc(sizeof(dt_paper_info_t));
-              g_strlcpy(paper->name, size.media, sizeof(paper->name));
-              g_strlcpy(paper->common_name, common_name, sizeof(paper->common_name));
-              paper->width = (double)size.width / 100.0;
-              paper->height = (double)size.length / 100.0;
-              result = g_list_append (result, paper);
+            dt_paper_info_t *paper = (dt_paper_info_t*)malloc(sizeof(dt_paper_info_t));
+            g_strlcpy(paper->name, size.media, sizeof(paper->name));
+            g_strlcpy(paper->common_name, common_name, sizeof(paper->common_name));
+            paper->width = (double)size.width / 100.0;
+            paper->height = (double)size.length / 100.0;
+            result = g_list_append (result, paper);
 
-              dt_print(DT_DEBUG_PRINT,
-                       "[print] new media paper %4d %6.2f x %6.2f (%s) (%s)\n",
-                       k, paper->width, paper->height, paper->name, paper->common_name);
-            }
+            dt_print(DT_DEBUG_PRINT,
+                     "[print] new media paper %4d %6.2f x %6.2f (%s) (%s)\n",
+                     k, paper->width, paper->height, paper->name, paper->common_name);
           }
         }
-
-        cupsFreeDestInfo(info);
-        httpClose(hcon);
       }
-      else
-        dt_print(DT_DEBUG_PRINT, "[print] cannot connect to printer %s (cancel=%d)\n", printer_name, cancel);
-    }
 
-    cupsFreeDests(num_dests, dests);
+      cupsFreeDestInfo(info);
+      httpClose(hcon);
+    }
+    else
+      dt_print(DT_DEBUG_PRINT, "[print] cannot connect to printer %s (cancel=%d)\n", printer_name, cancel);
   }
-#endif
+
+  cupsFreeDests(num_dests, dests);
 
   // check now PPD page sizes
 

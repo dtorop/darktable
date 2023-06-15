@@ -173,6 +173,7 @@ Optional dependencies (minimum version):
 * LLVM 3.9 *(for OpenCL checks at compilation time)*
 * OpenCL 1.2 *(for GPU-accelerated computing)*
 * Lua 5.4 *(for plugins and extension scripting)*
+* CUPS 1.7 *(for print mode support)*
 * libgphoto2 2.5 *(for camera tethering)*
 * Imath 3.1.0 *(for 16-bit "half" float TIFF export and faster import)*
 * libavif 0.8.2 *(for AVIF import & export)*
@@ -185,7 +186,6 @@ Optional dependencies (no version requirement):
 * G'MIC *(for .gmz compressed LUT support)*
 * PortMidi *(for MIDI input support)*
 * SDL2 *(for gamepad input support)*
-* CUPS *(for print mode support)*
 * OpenEXR *(for EXR import & export)*
 * OpenJPEG *(for JPEG 2000 import & export)*
 * GraphicsMagick or ImageMagick *(for misc image format import)*
