@@ -33,7 +33,7 @@
 #include "cups_print.h"
 
 // FIXME: do we want to require >= CUPS 2.2.9 and not use deprecated functions?
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+//#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 // some platforms are starting to provide CUPS 2.2.9 and there the
 // CUPS API deprecated routines ate now flagged as such and reported as
 // warning preventing the compilation.
@@ -70,6 +70,7 @@ void dt_get_printer_info(const char *printer_name, dt_printer_info_t *pinfo)
 
   if(dest)
   {
+    // FIXME: advice is to replace this with cupsCopyDestInfo() or friends
     const char *PPDFile = cupsGetPPD (printer_name);
     g_strlcpy(pinfo->name, dest->name, MAX_NAME);
     ppd_file_t *ppd = ppdOpenFile(PPDFile);
@@ -141,6 +142,7 @@ static int _dest_cb(void *user_data, unsigned flags, cups_dest_t *dest)
   const char *psvalue = cupsGetOption("printer-state", dest->num_options, dest->options);
 
   // check that the printer is ready
+  // FIXME: should check if printer was added/removed
   if(psvalue!=NULL && strtol(psvalue, NULL, 10) < IPP_PRINTER_STOPPED)
   {
     if(pctl->cb)
