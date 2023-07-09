@@ -1739,6 +1739,8 @@ static gboolean _button_pressed(GtkWidget *w, GdkEventButton *event,
   const double y = event->y;
   const int which = event->button;
 
+  // FIXME: should gtk_widget_grab_focus(w)? this is what the gtk.c _button_pressed handler does
+
   ps->click_pos_x = x;
   ps->click_pos_y = y;
   ps->last_selected = -1;
