@@ -37,7 +37,7 @@ typedef enum dt_alignment_t {
 typedef struct dt_paper_info_t
 {
   char name[MAX_NAME], common_name[MAX_NAME];
-  double width, height;
+  double width, height;            // in mm
 } dt_paper_info_t;
 
 typedef struct dt_medium_info_t
@@ -55,6 +55,7 @@ typedef struct dt_printer_info_t
 {
   char name[MAX_NAME];
   int resolution;
+  // non-printable margins in mm
   double hw_margin_top, hw_margin_bottom, hw_margin_left, hw_margin_right;
   dt_iop_color_intent_t intent;
   char profile[256];
@@ -97,12 +98,12 @@ void dt_print_file(const dt_imgid_t imgid, const char *filename, const char *job
 // given the page settings (media size and border) and the printer (hardware margins) returns the
 // page and printable area layout in the area_width and area_height (the area that dt allocate
 // for the central display).
-//  - the page area (px, py, pwidth, pheight)
+//  - the page area (0, 0, pwidth, pheight)
 //  - the printable area (ax, ay, awidth and aheight), the area without the borders
 // there is no unit, every returned values are based on the area size.
 void dt_get_print_layout(const dt_print_info_t *prt,
                          const int32_t area_width, const int32_t area_height,
-                         float *px, float *py, float *pwidth, float *pheight,
+                         float *pwidth, float *pheight,
                          float *ax, float *ay, float *awidth, float *aheight,
                          gboolean *borderless);
 

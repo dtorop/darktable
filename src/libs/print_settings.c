@@ -82,6 +82,8 @@ static const gchar *_unit_names[] = { N_("mm"), N_("cm"), N_("inch"), NULL };
 
 typedef struct dt_lib_print_settings_t
 {
+  GtkWidget *w_page;               // GtkDrawingArea -- center view page layout
+
   GtkWidget *profile, *intent, *style, *style_mode, *papers, *media;
   GtkWidget *printers, *orientation, *pprofile, *pintent;
   GtkWidget *width, *height, *black_point_compensation;
@@ -98,8 +100,11 @@ typedef struct dt_lib_print_settings_t
   GtkDarktableToggleButton *dtba[9];	             // Alignment buttons
   GList *paper_list, *media_list;
   gboolean lock_activated;
+
   dt_print_info_t prt;
   dt_images_box imgs;
+  dt_imgid_t filmstrip_select;
+
   _unit_t unit;
   int v_intent, v_pintent;
   int v_icctype, v_picctype;
@@ -115,7 +120,7 @@ typedef struct dt_lib_print_settings_t
   int last_selected;               // last selected area to edit
   dt_box_control_set sel_controls; // which border/corner is selected
   float click_pos_x, click_pos_y;
-  gboolean has_changed;
+  gboolean has_changed;            // layout box has changed for default full page
 } dt_lib_print_settings_t;
 
 typedef struct dt_lib_print_job_t
@@ -147,10 +152,6 @@ typedef struct _dialog_description
 } dialog_description_t;
 
 static void _update_slider(dt_lib_print_settings_t *ps);
-static void _width_changed(GtkWidget *widget, gpointer user_data);
-static void _height_changed(GtkWidget *widget, gpointer user_data);
-static void _x_changed(GtkWidget *widget, gpointer user_data);
-static void _y_changed(GtkWidget *widget, gpointer user_data);
 
 int position(const dt_lib_module_t *self)
 {
@@ -634,14 +635,11 @@ static void _page_clear_area_clicked(GtkWidget *widget, gpointer user_data)
   ps->has_changed = TRUE;
   dt_printing_clear_boxes(&ps->imgs);
   gtk_widget_set_sensitive(ps->del, FALSE);
-  dt_control_queue_redraw_center();
+  gtk_widget_queue_draw(ps->w_page);
 }
 
-static void _page_delete_area(const dt_lib_module_t *self,
-                              const int box_index)
+static void _page_delete_area(dt_lib_print_settings_t *ps, const int box_index)
 {
-  dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
-
   if(box_index == -1) return;
 
   for(int k=box_index; k<MAX_IMAGE_PER_PAGE-1; k++)
@@ -661,15 +659,12 @@ static void _page_delete_area(const dt_lib_module_t *self,
   _fill_box_values(ps);
 
   ps->has_changed = TRUE;
-  dt_control_queue_redraw_center();
+  gtk_widget_queue_draw(ps->w_page);
 }
 
-static void _page_delete_area_clicked(GtkWidget *widget, gpointer user_data)
+static void _page_delete_area_clicked(GtkWidget *widget, dt_lib_print_settings_t *ps)
 {
-  const dt_lib_module_t *self = (dt_lib_module_t *)user_data;
-  dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
-
-  _page_delete_area(self, ps->last_selected);
+  _page_delete_area(ps, ps->last_selected);
 }
 
 static void _print_job_cleanup(void *p)
@@ -877,7 +872,7 @@ _update_slider(dt_lib_print_settings_t *ps)
 
   // if widget are created, let's display the current image size
 
-  // FIXME: why doesn't this update when units are changed?
+  // FIXME: why doesn't this update when units are changed? or when orientation is changed?
   if(ps->selected != -1
      && dt_is_valid_imgid(ps->imgs.box[ps->selected].imgid)
      && ps->width && ps->height
@@ -1056,20 +1051,16 @@ _orientation_changed(GtkWidget *combo, dt_lib_module_t *self)
   dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
 
   ps->prt.page.landscape = dt_bauhaus_combobox_get(combo);
+  // FIXME: should this trigger redrawing of w_overlay?
 
   _update_slider(ps);
 }
 
 static void
-_snap_grid_callback(GtkWidget *widget, dt_lib_module_t *self)
-{
-  dt_control_queue_redraw_center();
-}
-
-static void
 _grid_callback(GtkWidget *widget, dt_lib_module_t *self)
 {
-  dt_control_queue_redraw_center();
+  dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
+  gtk_widget_queue_draw(ps->w_page);
 }
 
 static void _grid_size_changed(GtkWidget *widget, dt_lib_module_t *self)
@@ -1080,7 +1071,7 @@ static void _grid_size_changed(GtkWidget *widget, dt_lib_module_t *self)
   const float value = gtk_spin_button_get_value(GTK_SPIN_BUTTON(ps->grid_size));
   dt_conf_set_float("plugins/print/print/grid_size", _to_mm(ps, value));
 
-  dt_control_queue_redraw_center();
+  gtk_widget_queue_draw(ps->w_page);
 }
 
 static void
@@ -1268,6 +1259,42 @@ _intent_callback(GtkWidget *widget, dt_lib_module_t *self)
   ps->v_intent = pos - 1;
 }
 
+static void _drag_and_drop_received(GtkWidget *widget,
+                                    GdkDragContext *context,
+                                    gint x,
+                                    gint y,
+                                    GtkSelectionData *selection_data,
+                                    guint target_type,
+                                    guint time,
+                                    dt_lib_print_settings_t *ps)
+{
+  const int bidx = dt_printing_get_image_box(&ps->imgs, x, y);
+
+  if(bidx != -1)
+    // FIXME: can we get the image from drag-and-drop data?
+    dt_printing_setup_image(&ps->imgs, bidx, ps->filmstrip_select,
+                            100, 100, ALIGNMENT_CENTER);
+
+  ps->imgs.motion_over = -1;
+  gtk_widget_queue_draw(ps->w_page);
+}
+
+static gboolean _drag_motion_received(GtkWidget *widget,
+                                      GdkDragContext *dc,
+                                      const gint x,
+                                      const gint y,
+                                      const guint time,
+                                      dt_lib_print_settings_t *ps)
+{
+  const int bidx = dt_printing_get_image_box(&ps->imgs, x, y);
+  ps->imgs.motion_over = bidx;
+
+  if(bidx != -1)
+    gtk_widget_queue_draw(ps->w_page);
+
+  return TRUE;
+}
+
 static void _set_orientation(dt_lib_print_settings_t *ps, dt_imgid_t imgid)
 {
   dt_mipmap_buffer_t buf;
@@ -1280,16 +1307,19 @@ static void _set_orientation(dt_lib_print_settings_t *ps, dt_imgid_t imgid)
   if(buf.size != DT_MIPMAP_NONE)
   {
     ps->prt.page.landscape = (buf.width > buf.height);
+    // both these calls will trigger redraw of page, and the caller
+    // will always redraw the image
+    // FIXME: should redraw image here or in _orientation_changed() callback?
     dt_view_print_settings(darktable.view_manager, &ps->prt, &ps->imgs);
     dt_bauhaus_combobox_set(ps->orientation, ps->prt.page.landscape == TRUE ? 1 : 0);
   }
 
   dt_mipmap_cache_release(darktable.mipmap_cache, &buf);
-  dt_control_queue_redraw_center();
 }
 
 static void _load_image_full_page(dt_lib_print_settings_t *ps, dt_imgid_t imgid)
 {
+  // this will update page background with new aspect
   _set_orientation(ps, imgid);
 
   dt_printing_setup_box(&ps->imgs, 0,
@@ -1302,7 +1332,7 @@ static void _load_image_full_page(dt_lib_print_settings_t *ps, dt_imgid_t imgid)
 
   dt_printing_setup_image(&ps->imgs, 0, imgid, 100, 100, ALIGNMENT_CENTER);
 
-  dt_control_queue_redraw_center();
+  gtk_widget_queue_draw(ps->w_page);
 }
 
 static void _print_settings_update_callback(gpointer instance,
@@ -1323,11 +1353,15 @@ static void _print_settings_update_callback(gpointer instance,
 }
 
 static void _print_settings_activate_callback(gpointer instance,
-                                              const dt_imgid_t imgid,
-                                              gpointer user_data)
+                                              const dt_lib_module_t *self)
 {
-  const dt_lib_module_t *self = (dt_lib_module_t *)user_data;
   dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
+
+  dt_imgid_t imgid = ps->imgs.imgid_to_load;
+
+  // FIXME: this is a shortcut to get the image clicked for drag-and-drop, but should we really read this from the drag data?
+  if(dt_is_valid_imgid(imgid))
+    ps->filmstrip_select = imgid;
 
   // load an image with a simple click on the filmstrip only if a
   // single image is present
@@ -1336,6 +1370,7 @@ static void _print_settings_activate_callback(gpointer instance,
     if(ps->has_changed)
     {
       dt_printing_setup_image(&ps->imgs, 0, imgid, 100, 100, ps->imgs.box[0].alignment);
+      gtk_widget_queue_draw(ps->w_page);
     }
     else
     {
@@ -1414,10 +1449,11 @@ void view_enter(struct dt_lib_module_t *self,
                 struct dt_view_t *old_view,
                 struct dt_view_t *new_view)
 {
+  dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
+
   // user activated a new image via the filmstrip or user entered view
   // mode which activates an image: get image_id and orientation
-  DT_DEBUG_CONTROL_SIGNAL_CONNECT(darktable.signals,
-                                  DT_SIGNAL_VIEWMANAGER_THUMBTABLE_ACTIVATE,
+  DT_DEBUG_CONTROL_SIGNAL_CONNECT(darktable.signals, DT_SIGNAL_ACTIVE_IMAGES_CHANGE,
                                   G_CALLBACK(_print_settings_activate_callback),
                                   self);
 
@@ -1428,8 +1464,8 @@ void view_enter(struct dt_lib_module_t *self,
                                   G_CALLBACK(_print_settings_update_callback),
                                   self);
 
-  // NOTE: it would be proper to set image_id here to -1, but this
-  // seems to make no difference
+  if(dt_is_valid_imgid(ps->imgs.imgid_to_load))
+    _load_image_full_page(ps, ps->imgs.imgid_to_load);
 }
 
 void view_leave(struct dt_lib_module_t *self,
@@ -1444,17 +1480,10 @@ void view_leave(struct dt_lib_module_t *self,
                                      self);
 }
 
-static gboolean _expose_again(gpointer user_data)
+static gboolean _draw_again(gpointer user_data)
 {
   dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)user_data;
-
-  if(dt_is_valid_imgid(ps->imgs.imgid_to_load))
-  {
-    _load_image_full_page(ps, ps->imgs.imgid_to_load);
-    ps->imgs.imgid_to_load = NO_IMGID;
-  }
-
-  dt_control_queue_redraw_center();
+  gtk_widget_queue_draw(ps->w_page);
   return FALSE;
 }
 
@@ -1532,13 +1561,11 @@ static void _snap_to_grid(dt_lib_print_settings_t *ps,
   // FIXME: should clamp values to page size here?
 }
 
-int mouse_moved(struct dt_lib_module_t *self,
-                const double x,
-                const double y,
-                const double pressure,
-                const int which)
+static gboolean _mouse_moved(GtkWidget *w, GdkEventMotion *event,
+                             dt_lib_print_settings_t *ps)
 {
-  dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
+  const double x = event->x;
+  const double y = event->y;
 
   gboolean expose = FALSE;
 
@@ -1622,9 +1649,10 @@ int mouse_moved(struct dt_lib_module_t *self,
     }
   }
 
-  if(expose) dt_control_queue_redraw_center();
+  if(expose)
+    gtk_widget_queue_draw(ps->w_page);
 
-  return 0;
+  return FALSE;
 }
 
 static void _swap(float *a, float *b)
@@ -1634,14 +1662,9 @@ static void _swap(float *a, float *b)
   *b = tmp;
 }
 
-int button_released(struct dt_lib_module_t *self,
-                    const double x,
-                    const double y,
-                    const int which,
-                    const uint32_t state)
+static gboolean _button_released(GtkWidget *w, GdkEventButton *event,
+                                 dt_lib_print_settings_t *ps)
 {
-  dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
-
   if(ps->dragging)
   {
     int idx = -1;
@@ -1683,18 +1706,17 @@ int button_released(struct dt_lib_module_t *self,
 
   dt_control_change_cursor(GDK_LEFT_PTR);
 
-  return 0;
+  return FALSE;
 }
 
-int button_pressed(struct dt_lib_module_t *self,
-                   const double x,
-                   const double y,
-                   const double pressure,
-                   const int which,
-                   const int type,
-                   const uint32_t state)
+static gboolean _button_pressed(GtkWidget *w, GdkEventButton *event,
+                                dt_lib_print_settings_t *ps)
 {
-  dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
+  const double x = event->x;
+  const double y = event->y;
+  const int which = event->button;
+
+  // FIXME: should gtk_widget_grab_focus(w)? this is what the gtk.c _button_pressed handler does
 
   ps->click_pos_x = x;
   ps->click_pos_y = y;
@@ -1710,7 +1732,8 @@ int button_pressed(struct dt_lib_module_t *self,
     _snap_to_grid(ps, &ps->x1, &ps->y1);
   }
   else if(ps->selected > 0
-          && (which == 2 || (which == 1 && dt_modifier_is(state, GDK_CONTROL_MASK))))
+          && (which == 2 || (which == 1 &&
+                             dt_modifier_is(event->state, GDK_CONTROL_MASK))))
   {
     // middle click (or ctrl-click), move selected image down
     dt_image_box b;
@@ -1744,13 +1767,13 @@ int button_pressed(struct dt_lib_module_t *self,
     if(dt_is_valid_imgid(b->imgid))
       b->imgid = NO_IMGID;
     else
-      _page_delete_area(self, ps->selected);
+      _page_delete_area(ps, ps->selected);
 
     ps->last_selected = ps->selected;
     ps->has_changed = TRUE;
   }
 
-  return 0;
+  return FALSE;
 }
 
 void _cairo_rectangle(cairo_t *cr,
@@ -1830,23 +1853,8 @@ void _cairo_rectangle(cairo_t *cr,
   }
 }
 
-void gui_post_expose(struct dt_lib_module_t *self,
-                     cairo_t *cr,
-                     const int32_t width,
-                     const int32_t height,
-                     const int32_t pointerx,
-                     const int32_t pointery)
+static gboolean _draw_overlay(GtkWidget *self, cairo_t *cr, dt_lib_print_settings_t *ps)
 {
-  dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
-
-  if(dt_is_valid_imgid(ps->imgs.imgid_to_load))
-  {
-    // we set orientation and delay the reload to ensure the
-    // page is properly set before trying to display the image.
-    _set_orientation(ps, ps->imgs.imgid_to_load);
-    g_timeout_add(250, _expose_again, ps);
-  }
-
   // display grid
 
   // 1mm
@@ -1862,12 +1870,12 @@ void gui_post_expose(struct dt_lib_module_t *self,
     cairo_set_source_rgba(cr, 1, .2, .2, 0.6);
 
     // V lines
-    float grid_pos = (float)ps->imgs.screen.page.x;
+    double grid_pos = 0.0;
 
-    const float h_step = _mm_to_hscreen(ps, step, FALSE);
+    const double h_step = _mm_to_hscreen(ps, step, FALSE);
     int n = 0;
 
-    while(grid_pos < ps->imgs.screen.page.x + ps->imgs.screen.page.width)
+    while(grid_pos < ps->imgs.screen.page.width)
     {
       cairo_set_dash(cr,
                      dash, ((n % 5) == 0)
@@ -1877,20 +1885,20 @@ void gui_post_expose(struct dt_lib_module_t *self,
                            ((n % 5) == 0)
                            ? DT_PIXEL_APPLY_DPI(1.0)
                            : DT_PIXEL_APPLY_DPI(0.5));
-      cairo_move_to(cr, grid_pos, ps->imgs.screen.page.y);
-      cairo_line_to(cr, grid_pos, ps->imgs.screen.page.y + ps->imgs.screen.page.height);
+      cairo_move_to(cr, grid_pos, 0.0);
+      cairo_line_to(cr, grid_pos, ps->imgs.screen.page.height);
       cairo_stroke(cr);
       grid_pos += h_step;
       n++;
     }
 
     // H lines
-    grid_pos = (float)ps->imgs.screen.page.y;
+    grid_pos = 0.0;
 
     const float v_step = _mm_to_vscreen(ps, step, FALSE);
     n = 0;
 
-    while(grid_pos < ps->imgs.screen.page.y + ps->imgs.screen.page.height)
+    while(grid_pos < ps->imgs.screen.page.height)
     {
       cairo_set_dash(cr, dash,
                      ((n % 5) == 0)
@@ -1901,8 +1909,8 @@ void gui_post_expose(struct dt_lib_module_t *self,
                            ? DT_PIXEL_APPLY_DPI(1.0)
                            : DT_PIXEL_APPLY_DPI(0.5));
 
-      cairo_move_to(cr, ps->imgs.screen.page.x, grid_pos);
-      cairo_line_to(cr, ps->imgs.screen.page.x + ps->imgs.screen.page.width, grid_pos);
+      cairo_move_to(cr, 0.0, grid_pos);
+      cairo_line_to(cr, ps->imgs.screen.page.width, grid_pos);
       cairo_stroke(cr);
       grid_pos += v_step;
       n++;
@@ -1936,7 +1944,7 @@ void gui_post_expose(struct dt_lib_module_t *self,
       if(res != DT_VIEW_SURFACE_OK)
       {
         // if the image is missing, we reload it again
-        g_timeout_add(250, _expose_again, ps);
+        g_timeout_add(250, _draw_again, ps);
         if(!ps->busy) dt_control_log_busy_enter();
         ps->busy = TRUE;
       }
@@ -2219,6 +2227,8 @@ void gui_post_expose(struct dt_lib_module_t *self,
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(ps->borderless), TRUE);
   else
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(ps->borderless), FALSE);
+
+  return FALSE;
 }
 
 static void _width_changed(GtkWidget *widget, gpointer user_data)
@@ -2237,7 +2247,7 @@ static void _width_changed(GtkWidget *widget, gpointer user_data)
                         _mm_to_hscreen(ps, nv_mm, FALSE), box->screen.height);
 
   ps->has_changed = TRUE;
-  dt_control_queue_redraw_center();
+  gtk_widget_queue_draw(ps->w_page);
 }
 
 static void _height_changed(GtkWidget *widget, gpointer user_data)
@@ -2256,7 +2266,7 @@ static void _height_changed(GtkWidget *widget, gpointer user_data)
                         box->screen.width, _mm_to_vscreen(ps, nv_mm, FALSE));
 
   ps->has_changed = TRUE;
-  dt_control_queue_redraw_center();
+  gtk_widget_queue_draw(ps->w_page);
 }
 
 static void _x_changed(GtkWidget *widget, gpointer user_data)
@@ -2275,7 +2285,7 @@ static void _x_changed(GtkWidget *widget, gpointer user_data)
                         box->screen.width, box->screen.height);
 
   ps->has_changed = TRUE;
-  dt_control_queue_redraw_center();
+  gtk_widget_queue_draw(ps->w_page);
 }
 
 static void _y_changed(GtkWidget *widget, gpointer user_data)
@@ -2294,7 +2304,7 @@ static void _y_changed(GtkWidget *widget, gpointer user_data)
                         box->screen.width, box->screen.height);
 
   ps->has_changed = TRUE;
-  dt_control_queue_redraw_center();
+  gtk_widget_queue_draw(ps->w_page);
 }
 
 void gui_init(dt_lib_module_t *self)
@@ -2318,6 +2328,7 @@ void gui_init(dt_lib_module_t *self)
   d->selected = -1;
   d->last_selected = -1;
   d->has_changed = FALSE;
+  d->filmstrip_select = NO_IMGID;
 
   dt_init_print_info(&d->prt);
   dt_view_print_settings(darktable.view_manager, &d->prt, &d->imgs);
@@ -2345,6 +2356,33 @@ void gui_init(dt_lib_module_t *self)
   d->prt.page.margin_bottom = _to_mm(d, bottom_b);
   d->prt.page.margin_left = _to_mm(d, left_b);
   d->prt.page.margin_right = _to_mm(d, right_b);
+
+  // create overlay in center area which will show layout boxes,
+  // images, and measurements
+  d->w_page = gtk_drawing_area_new();
+  gtk_widget_set_name(d->w_page, "print-page");
+  gtk_widget_set_events(d->w_page,
+                        GDK_POINTER_MOTION_MASK | GDK_BUTTON_PRESS_MASK
+                        | GDK_BUTTON_RELEASE_MASK);
+  g_signal_connect(G_OBJECT(d->w_page), "draw",
+                   G_CALLBACK(_draw_overlay), d);
+  g_signal_connect(G_OBJECT(d->w_page), "motion-notify-event",
+                   G_CALLBACK(_mouse_moved), d);
+  g_signal_connect(G_OBJECT(d->w_page), "button-press-event",
+                   G_CALLBACK(_button_pressed), d);
+  g_signal_connect(G_OBJECT(d->w_page), "button-release-event",
+                   G_CALLBACK(_button_released), d);
+
+  gtk_drag_dest_set(d->w_page, GTK_DEST_DEFAULT_ALL,
+                    // FIXME: should be target_list_internal?
+                    target_list_all, n_targets_all, GDK_ACTION_MOVE);
+  g_signal_connect(d->w_page, "drag-data-received",
+                   G_CALLBACK(_drag_and_drop_received), d);
+  g_signal_connect(d->w_page, "drag-motion",
+                   G_CALLBACK(_drag_motion_received), d);
+
+  gtk_widget_show(d->w_page);
+  darktable.lib->proxy.print.w_settings_main = d->w_page;
 
   //  create the spin-button now as values could be set when the
   //  printer has no hardware margin
@@ -2634,8 +2672,6 @@ void gui_init(dt_lib_module_t *self)
                      G_CALLBACK(_grid_size_changed), self);
     g_signal_connect(G_OBJECT(d->grid), "toggled",
                      G_CALLBACK(_grid_callback), self);
-    g_signal_connect(d->snap_grid, "toggled",
-                     G_CALLBACK(_snap_grid_callback), (gpointer)self);
   }
 
   d->borderless = gtk_check_button_new_with_label(_("borderless mode required"));
@@ -2696,7 +2732,7 @@ void gui_init(dt_lib_module_t *self)
        "drag and drop image from film strip on it"), 0, 0);
 
   d->del = dt_action_button_new(self, N_("delete image area"),
-                                _page_delete_area_clicked, self,
+                                _page_delete_area_clicked, d,
                                 _("delete the currently selected image area"), 0, 0);
   gtk_widget_set_sensitive(d->del, FALSE);
 
@@ -3243,7 +3279,10 @@ int set_params(dt_lib_module_t *self,
   gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(ps->dtba[alignment]), TRUE);
   gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(ps->black_point_compensation), bpc);
 
-  dt_control_queue_redraw_center();
+  // changing orientation, margins, and alignment will all trigger
+  // redraw of page background, which in turn will trigger redraw of
+  // layout, but just in case make sure to redraw
+  gtk_widget_queue_draw(ps->w_page);
 
   return 0;
 }
@@ -3405,10 +3444,12 @@ void gui_reset(dt_lib_module_t *self)
 {
   dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
 
+  // changing margins will trigger redraw of page background
   gtk_spin_button_set_value(GTK_SPIN_BUTTON(ps->b_top), 17 * units[ps->unit]);
   gtk_spin_button_set_value(GTK_SPIN_BUTTON(ps->b_bottom), 17 * units[ps->unit]);
   gtk_spin_button_set_value(GTK_SPIN_BUTTON(ps->b_left), 17 * units[ps->unit]);
   gtk_spin_button_set_value(GTK_SPIN_BUTTON(ps->b_right), 17 * units[ps->unit]);
+  // changing grid size will trigger redraw of widget
   gtk_spin_button_set_value(GTK_SPIN_BUTTON(ps->grid_size), 10 * units[ps->unit]);
 
   gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(ps->dtba[ALIGNMENT_CENTER]), TRUE);
@@ -3424,17 +3465,16 @@ void gui_reset(dt_lib_module_t *self)
   gtk_widget_set_sensitive(GTK_WIDGET(ps->style_mode), FALSE);
 
   // reset page orientation to fit the picture if a single one is displayed
-
+  // FIXME: instead of using image last box, just use current image from filmstrip?
   const dt_imgid_t imgid = (ps->imgs.count > 0) ? ps->imgs.box[0].imgid : NO_IMGID;
   dt_printing_clear_boxes(&ps->imgs);
   ps->imgs.imgid_to_load = imgid;
+  _load_image_full_page(ps, ps->imgs.imgid_to_load);
 
   ps->creation = ps->dragging = FALSE;
   ps->selected = -1;
   ps->last_selected = -1;
   ps->has_changed = FALSE;
-
-  dt_control_queue_redraw_center();
 }
 
 // clang-format off

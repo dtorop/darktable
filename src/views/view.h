@@ -355,7 +355,7 @@ typedef struct dt_view_manager_t
     } map;
 #endif
 
-    /* map view proxy object */
+    /* print proxy object */
 #ifdef HAVE_PRINT
     struct
     {

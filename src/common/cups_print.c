@@ -578,20 +578,20 @@ void dt_print_file(const dt_imgid_t imgid, const char *filename, const char *job
 
 void dt_get_print_layout(const dt_print_info_t *prt,
                          const int32_t area_width, const int32_t area_height,
-                         float *px, float *py, float *pwidth, float *pheight,
+                         float *pwidth, float *pheight,
                          float *ax, float *ay, float *awidth, float *aheight,
                          gboolean *borderless)
 {
   /* this is where the layout is done for the display and for the print too. So this routine is one
      of the most critical for the print circuitry. */
 
-  // page w/h
+  // page w/h in mm
   float pg_width  = prt->paper.width;
   float pg_height = prt->paper.height;
 
   /* here, width and height correspond to the area for the picture */
 
-  // non-printable
+  // non-printable in mm
   float np_top = prt->printer.hw_margin_top;
   float np_left = prt->printer.hw_margin_left;
   float np_right = prt->printer.hw_margin_right;
@@ -622,23 +622,20 @@ void dt_get_print_layout(const dt_print_info_t *prt,
   // display page
   float p_bottom, p_right;
 
+  // FIXME: when everything is relative to aspect frame we won't need to do so much work or keep px/py
   if(a_aspect > pg_aspect)
   {
-    *px = (area_width - (area_height * pg_aspect)) / 2.0f;
-    *py = 0;
+    p_right = area_height * pg_aspect;
     p_bottom = area_height;
-    p_right = area_width - *px;
   }
   else
   {
-    *px = 0;
-    *py = (area_height - (area_width / pg_aspect)) / 2.0f;
     p_right = area_width;
-    p_bottom = area_height - *py;
+    p_bottom = area_width / pg_aspect;
   }
 
-  *pwidth = p_right - *px;
-  *pheight = p_bottom - *py;
+  *pwidth = p_right;
+  *pheight = p_bottom;
 
   // page margins, note that we do not want to change those values for the landscape mode.
   // these margins are those set by the user from the GUI, and the top margin is *always*
@@ -651,8 +648,8 @@ void dt_get_print_layout(const dt_print_info_t *prt,
 
   // display picture area, that is removing the non printable areas and user's margins
 
-  const float bx = *px + (border_left / pg_width) * (*pwidth);
-  const float by = *py + (border_top / pg_height) * (*pheight);
+  const float bx = (border_left / pg_width) * (*pwidth);
+  const float by = (border_top / pg_height) * (*pheight);
   const float bb = p_bottom - (border_bottom / pg_height) * (*pheight);
   const float br = p_right - (border_right / pg_width) * (*pwidth);
 

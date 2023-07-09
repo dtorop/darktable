@@ -78,7 +78,7 @@ void dt_printing_clear_boxes(dt_images_box *imgs);
 
 /* (x, y) -> (width, height) are in pixels (on screen position) */
 void dt_printing_setup_display(dt_images_box *imgs,
-                               const float px, const float py, const float pwidth, const float pheight,
+                               const float pwidth, const float pheight,
                                const float ax, const float ay, const float awidth, const float aheight, gboolean borderless);
 
 void dt_printing_setup_box(dt_images_box *imgs, const int idx,
