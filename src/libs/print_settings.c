@@ -3313,8 +3313,9 @@ int set_params(dt_lib_module_t *self,
   gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(ps->dtba[alignment]), TRUE);
   gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(ps->black_point_compensation), bpc);
 
-  // FIXME: needed?
-  dt_control_queue_redraw_center();
+  // changing orientation, margins, and alignment will all trigger
+  // redraw of page background, which in turn will trigger redraw of
+  // layout, but just in case make sure to redraw
   gtk_widget_queue_draw(ps->w_layout);
 
   return 0;
@@ -3479,10 +3480,12 @@ void gui_reset(dt_lib_module_t *self)
 {
   dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
 
+  // changing margins will trigger redraw of page background
   gtk_spin_button_set_value(GTK_SPIN_BUTTON(ps->b_top), 17 * units[ps->unit]);
   gtk_spin_button_set_value(GTK_SPIN_BUTTON(ps->b_bottom), 17 * units[ps->unit]);
   gtk_spin_button_set_value(GTK_SPIN_BUTTON(ps->b_left), 17 * units[ps->unit]);
   gtk_spin_button_set_value(GTK_SPIN_BUTTON(ps->b_right), 17 * units[ps->unit]);
+  // changing grid size will trigger redraw of widget
   gtk_spin_button_set_value(GTK_SPIN_BUTTON(ps->grid_size), 10 * units[ps->unit]);
 
   gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(ps->dtba[ALIGNMENT_CENTER]), TRUE);
@@ -3498,7 +3501,7 @@ void gui_reset(dt_lib_module_t *self)
   gtk_widget_set_sensitive(GTK_WIDGET(ps->style_mode), FALSE);
 
   // reset page orientation to fit the picture if a single one is displayed
-
+  // this will trigger redraw of page background if needed
   const dt_imgid_t imgid = (ps->imgs.count > 0) ? ps->imgs.box[0].imgid : NO_IMGID;
   dt_printing_clear_boxes(&ps->imgs);
   ps->imgs.imgid_to_load = imgid;
@@ -3507,10 +3510,6 @@ void gui_reset(dt_lib_module_t *self)
   ps->selected = -1;
   ps->last_selected = -1;
   ps->has_changed = FALSE;
-
-  // FIXME: needed?
-  dt_control_queue_redraw_center();
-  gtk_widget_queue_draw(ps->w_layout);
 }
 
 // clang-format off
