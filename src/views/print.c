@@ -62,6 +62,7 @@ static void _print_mipmaps_updated_signal_callback(gpointer instance,
                                                    dt_imgid_t imgid,
                                                    gpointer user_data)
 {
+  // FIXME: instead trigger this callback from print settings when a mipmap update causes image aspect to change?
   dt_control_queue_redraw_center();
 }
 

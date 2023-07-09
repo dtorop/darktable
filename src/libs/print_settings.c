@@ -872,7 +872,7 @@ _update_slider(dt_lib_print_settings_t *ps)
 
   // if widget are created, let's display the current image size
 
-  // FIXME: why doesn't this update when units are changed?
+  // FIXME: why doesn't this update when units are changed? or when orientation is changed?
   if(ps->selected != -1
      && dt_is_valid_imgid(ps->imgs.box[ps->selected].imgid)
      && ps->width && ps->height
@@ -1051,6 +1051,7 @@ _orientation_changed(GtkWidget *combo, dt_lib_module_t *self)
   dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
 
   ps->prt.page.landscape = dt_bauhaus_combobox_get(combo);
+  // FIXME: should this trigger redrawing of w_overlay?
 
   _update_slider(ps);
 }
@@ -1306,18 +1307,19 @@ static void _set_orientation(dt_lib_print_settings_t *ps, dt_imgid_t imgid)
   if(buf.size != DT_MIPMAP_NONE)
   {
     ps->prt.page.landscape = (buf.width > buf.height);
+    // both these calls will trigger redraw of page, and the caller
+    // will always redraw the image
+    // FIXME: should redraw image here or in _orientation_changed() callback?
     dt_view_print_settings(darktable.view_manager, &ps->prt, &ps->imgs);
     dt_bauhaus_combobox_set(ps->orientation, ps->prt.page.landscape == TRUE ? 1 : 0);
   }
 
   dt_mipmap_cache_release(darktable.mipmap_cache, &buf);
-  // FIXME: need both?
-  dt_control_queue_redraw_center();
-  gtk_widget_queue_draw(ps->w_layout);
 }
 
 static void _load_image_full_page(dt_lib_print_settings_t *ps, dt_imgid_t imgid)
 {
+  // this will update page background with new aspect
   _set_orientation(ps, imgid);
 
   dt_printing_setup_box(&ps->imgs, 0,
@@ -1330,7 +1332,6 @@ static void _load_image_full_page(dt_lib_print_settings_t *ps, dt_imgid_t imgid)
 
   dt_printing_setup_image(&ps->imgs, 0, imgid, 100, 100, ALIGNMENT_CENTER);
 
-  //dt_control_queue_redraw_center();
   gtk_widget_queue_draw(ps->w_layout);
 }
 
@@ -1348,6 +1349,7 @@ static void _print_settings_update_callback(gpointer instance,
   {
     dt_printing_clear_box(&ps->imgs.box[0]);
     _load_image_full_page(ps, imgid);
+    // FIXME: the print view also catches this signal and will take care of redrawing the center page, but do we want to trigger that here instead?
   }
 }
 
@@ -3312,6 +3314,7 @@ int set_params(dt_lib_module_t *self,
   gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(ps->dtba[alignment]), TRUE);
   gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(ps->black_point_compensation), bpc);
 
+  // FIXME: needed?
   dt_control_queue_redraw_center();
   gtk_widget_queue_draw(ps->w_layout);
 
@@ -3506,6 +3509,7 @@ void gui_reset(dt_lib_module_t *self)
   ps->last_selected = -1;
   ps->has_changed = FALSE;
 
+  // FIXME: needed?
   dt_control_queue_redraw_center();
   gtk_widget_queue_draw(ps->w_layout);
 }
