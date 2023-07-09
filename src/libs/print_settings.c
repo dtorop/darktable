@@ -1349,7 +1349,6 @@ static void _print_settings_update_callback(gpointer instance,
   {
     dt_printing_clear_box(&ps->imgs.box[0]);
     _load_image_full_page(ps, imgid);
-    // FIXME: the print view also catches this signal and will take care of redrawing the center page, but do we want to trigger that here instead?
   }
 }
 
