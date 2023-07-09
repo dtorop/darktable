@@ -2297,6 +2297,16 @@ Details :
   background-color: rgba(20, 20, 20, 0.5);
 }
 
+/*-------------------------------------------------
+  - print view layout -
+  -----------------------------------------------*/
+
+/* print view background */
+#print-settings-overlay
+{
+  background-color: red;
+}
+
 /* Lighttable toolbox */
 #lighttable_layouts_box,
 #footer-toolbar .toggle,

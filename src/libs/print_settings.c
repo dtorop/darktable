@@ -82,6 +82,8 @@ static const gchar *_unit_names[] = { N_("mm"), N_("cm"), N_("inch"), NULL };
 
 typedef struct dt_lib_print_settings_t
 {
+  GtkWidget *w_layout;             // GtkDrawingArea -- center view overlay
+
   GtkWidget *profile, *intent, *style, *style_mode, *papers, *media;
   GtkWidget *printers, *orientation, *pprofile, *pintent;
   GtkWidget *width, *height, *black_point_compensation;
@@ -1830,6 +1832,13 @@ void _cairo_rectangle(cairo_t *cr,
   }
 }
 
+void _draw_overlay(GtkWidget *self, cairo_t *cr, dt_lib_print_settings_t *ps)
+{
+  printf("in draw layout %p = %p\n", ps->w_layout, self);
+  GtkStyleContext *context = gtk_widget_get_style_context(self);
+  gtk_render_background(context, cr, 100, 200, 150, 250);
+}
+
 void gui_post_expose(struct dt_lib_module_t *self,
                      cairo_t *cr,
                      const int32_t width,
@@ -2345,6 +2354,15 @@ void gui_init(dt_lib_module_t *self)
   d->prt.page.margin_bottom = _to_mm(d, bottom_b);
   d->prt.page.margin_left = _to_mm(d, left_b);
   d->prt.page.margin_right = _to_mm(d, right_b);
+
+  // create overlay in center area which will show layout boxes,
+  // images, and measurements
+  d->w_layout = gtk_drawing_area_new();
+  gtk_widget_set_name(d->w_layout, "print-settings-overlay");
+  g_signal_connect(G_OBJECT(d->w_layout), "draw", G_CALLBACK(_draw_overlay), d);
+  gtk_widget_show(d->w_layout);
+  gtk_overlay_add_overlay(GTK_OVERLAY(dt_ui_center_base(darktable.gui->ui)),
+                          d->w_layout);
 
   //  create the spin-button now as values could be set when the
   //  printer has no hardware margin
