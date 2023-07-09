@@ -547,6 +547,7 @@ void dt_print_file(const dt_imgid_t imgid, const char *filename, const char *job
 
     // if the printer has no hardware margins activate the borderless mode
 
+    // FIXME: depend on borderless value calculated in dt_get_print_layout() instead
     if(pinfo->printer.hw_margin_top == 0 || pinfo->printer.hw_margin_bottom == 0
         || pinfo->printer.hw_margin_left == 0 || pinfo->printer.hw_margin_right == 0)
     {
@@ -577,68 +578,24 @@ void dt_print_file(const dt_imgid_t imgid, const char *filename, const char *job
 }
 
 void dt_get_print_layout(const dt_print_info_t *prt,
-                         const int32_t area_width, const int32_t area_height,
-                         float *px, float *py, float *pwidth, float *pheight,
+                         const float pg_px_w, const float pg_px_h,
                          float *ax, float *ay, float *awidth, float *aheight,
                          gboolean *borderless)
 {
   /* this is where the layout is done for the display and for the print too. So this routine is one
      of the most critical for the print circuitry. */
 
-  // page w/h
-  float pg_width  = prt->paper.width;
-  float pg_height = prt->paper.height;
+  const gboolean lndscp = prt->page.landscape;
+  const dt_printer_info_t *prntr = &prt->printer;
 
-  /* here, width and height correspond to the area for the picture */
+  const float pg_mm_w  = lndscp ? prt->paper.height : prt->paper.width;
+  const float pg_mm_h = lndscp ? prt->paper.width : prt->paper.height;
 
-  // non-printable
-  float np_top = prt->printer.hw_margin_top;
-  float np_left = prt->printer.hw_margin_left;
-  float np_right = prt->printer.hw_margin_right;
-  float np_bottom = prt->printer.hw_margin_bottom;
-
-  /* do some arrangements for the landscape mode. */
-
-  if(prt->page.landscape)
-  {
-    float tmp = pg_width;
-    pg_width = pg_height;
-    pg_height = tmp;
-
-    // rotate the non-printable margins
-    tmp       = np_top;
-    np_top    = np_right;
-    np_right  = np_bottom;
-    np_bottom = np_left;
-    np_left   = tmp;
-  }
-
-  // the image area aspect
-  const float a_aspect = (float)area_width / (float)area_height;
-
-  // page aspect
-  const float pg_aspect = pg_width / pg_height;
-
-  // display page
-  float p_bottom, p_right;
-
-  if(a_aspect > pg_aspect)
-  {
-    *px = (area_width - (area_height * pg_aspect)) / 2.0f;
-    *py = 0;
-    p_bottom = area_height;
-    p_right = area_width - *px;
-  }
-  else
-  {
-    *px = 0;
-    *py = (area_height - (area_width / pg_aspect)) / 2.0f;
-    p_right = area_width;
-    p_bottom = area_height - *py;
-  }
-
-  *pwidth = p_right - *px;
-  *pheight = p_bottom - *py;
+  // non-printable in mm
+  const float np_top = lndscp ? prntr->hw_margin_right : prntr->hw_margin_top;
+  const float np_left = lndscp ? prntr->hw_margin_top : prntr->hw_margin_left;
+  const float np_right = lndscp ? prntr->hw_margin_bottom : prntr->hw_margin_right;
+  const float np_bottom = lndscp ? prntr->hw_margin_left : prntr->hw_margin_bottom;
 
   // page margins, note that we do not want to change those values for the landscape mode.
   // these margins are those set by the user from the GUI, and the top margin is *always*
@@ -649,24 +606,19 @@ void dt_get_print_layout(const dt_print_info_t *prt,
   const float border_right = prt->page.margin_right;
   const float border_bottom = prt->page.margin_bottom;
 
-  // display picture area, that is removing the non printable areas and user's margins
+  // page body in pixels, inside of the user's margins
+  // FIXME: could make margins be pixel-accurate measures and page width/height a bit fuzzy in comparison, so there is an automatic snap-to-margin behavior
 
-  const float bx = *px + (border_left / pg_width) * (*pwidth);
-  const float by = *py + (border_top / pg_height) * (*pheight);
-  const float bb = p_bottom - (border_bottom / pg_height) * (*pheight);
-  const float br = p_right - (border_right / pg_width) * (*pwidth);
+  *ax = pg_px_w * (border_left / pg_mm_w);
+  *ay = pg_px_h * (border_top / pg_mm_h);
+  *awidth = pg_px_w * (1.0f - (border_left + border_right) / pg_mm_w);
+  *aheight = pg_px_h * (1.0f - (border_top + border_bottom) / pg_mm_h);
 
+  // FIXME: it would be nicer to base borderless on whether any images are outside of hardware margins
   *borderless = border_left   < np_left
              || border_right  < np_right
              || border_top    < np_top
              || border_bottom < np_bottom;
-
-  // now we have the printable area (ax, ay) -> (ax + awidth, ay + aheight)
-
-  *ax      = bx;
-  *ay      = by;
-  *awidth  = br - bx;
-  *aheight = bb - by;
 }
 
 // clang-format off

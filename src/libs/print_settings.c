@@ -77,11 +77,22 @@ typedef enum _unit_t
 } _unit_t;
 
 
-static const float units[UNIT_N] = { 1.0f, 0.1f, 1.0f/25.4f };
+static const double units[UNIT_N] = { 1.0f, 0.1f, 1.0f/25.4f };
 static const gchar *_unit_names[] = { N_("mm"), N_("cm"), N_("inch"), NULL };
 
 typedef struct dt_lib_print_settings_t
 {
+  // widgets for center area
+  GtkWidget *w_overlay;            // GtkOverlay -- holds page contents
+  GtkWidget *w_grid;               // GtkDrawingArea -- grid
+  GtkWidget *w_layout_boxes;       // GtkFixed -- contains layout boxes
+  GtkWidget *w_box_outline;        // GtkDrawingArea -- outline of current selected box
+  GtkWidget *w_new_box;            // GtkDrawingArea -- outline when drawing layout box
+  GtkWidget *w_callouts;           // GtkDrawingArea -- callouts of image box dimensions
+
+  GtkGesture *g_new_box;           // GtkGestureDrag -- creates a new layout box
+
+  // widgets in right panel
   GtkWidget *profile, *intent, *style, *style_mode, *papers, *media;
   GtkWidget *printers, *orientation, *pprofile, *pintent;
   GtkWidget *width, *height, *black_point_compensation;
@@ -90,16 +101,17 @@ typedef struct dt_lib_print_settings_t
   GtkWidget *b_width, *b_height;
   GtkWidget *del;
   GtkWidget *grid, *grid_size, *snap_grid;
-  GtkWidget *borderless;
   GList *profiles;
   GtkButton *print_button;
-  GtkToggleButton *lock_button;
   GtkWidget *b_top, *b_bottom, *b_left, *b_right;
   GtkDarktableToggleButton *dtba[9];	             // Alignment buttons
   GList *paper_list, *media_list;
-  gboolean lock_activated;
+  GBinding *lock_bottom, *lock_left, *lock_right;
+
   dt_print_info_t prt;
   dt_images_box imgs;
+  dt_imgid_t filmstrip_select;
+
   _unit_t unit;
   int v_intent, v_pintent;
   int v_icctype, v_picctype;
@@ -108,14 +120,13 @@ typedef struct dt_lib_print_settings_t
   gboolean busy;
 
   // for adding new area
-  gboolean creation;
   gboolean dragging;
-  float x1, y1, x2, y2;
+  gdouble x1, y1, x2, y2;
   int selected;                    // selected area in imgs.box
   int last_selected;               // last selected area to edit
   dt_box_control_set sel_controls; // which border/corner is selected
-  float click_pos_x, click_pos_y;
-  gboolean has_changed;
+  gdouble click_pos_x, click_pos_y;
+  gboolean has_changed;            // layout box has changed for default full page
 } dt_lib_print_settings_t;
 
 typedef struct dt_lib_print_job_t
@@ -147,10 +158,6 @@ typedef struct _dialog_description
 } dialog_description_t;
 
 static void _update_slider(dt_lib_print_settings_t *ps);
-static void _width_changed(GtkWidget *widget, gpointer user_data);
-static void _height_changed(GtkWidget *widget, gpointer user_data);
-static void _x_changed(GtkWidget *widget, gpointer user_data);
-static void _y_changed(GtkWidget *widget, gpointer user_data);
 
 int position(const dt_lib_module_t *self)
 {
@@ -158,20 +165,23 @@ int position(const dt_lib_module_t *self)
 }
 
 /* get paper dimension for the orientation (in mm) */
+
+static float _get_page_width_mm(dt_print_info_t *prt)
+{
+  return prt->page.landscape ? prt->paper.height : prt->paper.width;
+}
+
+static float _get_page_height_mm(dt_print_info_t *prt)
+{
+  return prt->page.landscape ? prt->paper.width : prt->paper.height;
+}
+
 static void _get_page_dimension(dt_print_info_t *prt,
                                 float *width,
                                 float *height)
 {
-  if(prt->page.landscape)
-  {
-    *width = prt->paper.height;
-    *height = prt->paper.width;
-  }
-  else
-  {
-    *width = prt->paper.width;
-    *height = prt->paper.height;
-  }
+  *width = _get_page_width_mm(prt);
+  *height = _get_page_height_mm(prt);
 }
 
 static void _precision_by_unit(const _unit_t unit,
@@ -201,58 +211,42 @@ static void _precision_by_unit(const _unit_t unit,
   }
 }
 
-// unit conversion
+// unit conversion between mm (used internally) and user selected
+// units
 
-static float _to_mm(dt_lib_print_settings_t *ps,
-                    const double value)
+static float _user_to_mm(dt_lib_print_settings_t *ps,
+                         const double value)
 {
   return value / units[ps->unit];
 }
 
-// horizontal mm to pixels
-static float _mm_to_hscreen(dt_lib_print_settings_t *ps,
-                            const float value,
-                            const gboolean offset)
+// FIXME: use this and _user_to_mm() to clarify and avoid conversion errors
+static float _mm_to_user(dt_lib_print_settings_t *ps,
+                         const double value)
 {
-  float width, height;
-  _get_page_dimension(&ps->prt, &width, &height);
+  return value * units[ps->unit];
+}
 
-  return (offset ? ps->imgs.screen.page.x : 0)
-    + (ps->imgs.screen.page.width * value / width);
+// horizontal mm to pixels
+static gdouble _mm_to_hscreen(dt_lib_print_settings_t *ps, const gdouble value)
+{
+  return ps->imgs.screen.page_width * value / _get_page_width_mm(&ps->prt);
 }
 
 // vertical mm to pixels
-static float _mm_to_vscreen(dt_lib_print_settings_t *ps,
-                            const float value,
-                            const gboolean offset)
+static gdouble _mm_to_vscreen(dt_lib_print_settings_t *ps, const float value)
 {
-  float width, height;
-  _get_page_dimension(&ps->prt, &width, &height);
-
-  return (offset ? ps->imgs.screen.page.y : 0)
-    + (ps->imgs.screen.page.height * value / height);
+  return ps->imgs.screen.page_height * value / _get_page_height_mm(&ps->prt);
 }
 
-static float _hscreen_to_mm(dt_lib_print_settings_t *ps,
-                            const float value,
-                            const gboolean offset)
+static float _hscreen_to_mm(dt_lib_print_settings_t *ps, const float value)
 {
-  float width, height;
-  _get_page_dimension(&ps->prt, &width, &height);
-
-  return width * (value - (offset ? ps->imgs.screen.page.x : 0.0f))
-    / ps->imgs.screen.page.width;
+  return _get_page_width_mm(&ps->prt) * value / ps->imgs.screen.page_width;
 }
 
-static float _vscreen_to_mm(dt_lib_print_settings_t *ps,
-                            const float value,
-                            const gboolean offset)
+static float _vscreen_to_mm(dt_lib_print_settings_t *ps, const float value)
 {
-  float width, height;
-  _get_page_dimension(&ps->prt, &width, &height);
-
-  return height * (value - (offset ? ps->imgs.screen.page.y : 0.0f))
-    / ps->imgs.screen.page.height;
+  return _get_page_height_mm(&ps->prt) * value / ps->imgs.screen.page_height;
 }
 
 
@@ -481,30 +475,50 @@ static void _create_pdf(dt_job_t *job,
   }
 }
 
+// update spinbuttons giving current box in right panel
 void _fill_box_values(dt_lib_print_settings_t *ps)
 {
   float x = 0.0f, y = 0.0f, swidth = 0.0f, sheight = 0.0f;
+  int align = -1;
 
-  if(ps->last_selected != -1)
+  // FIXME: this duplicates code with _draw_callouts, merge them
+  if(gtk_gesture_is_active(ps->g_new_box) || ps->last_selected != -1)
   {
-    dt_image_box *box = &ps->imgs.box[ps->last_selected];
+    // FIXME: will this work for dragging an existing box as well?
+    //if(ps->dragging || gtk_gesture_is_active(ps->g_new_box))
+    if(gtk_gesture_is_active(ps->g_new_box))
+    {
+      x       = _mm_to_user(ps, _hscreen_to_mm(ps, ps->x1));
+      y       = _mm_to_user(ps, _vscreen_to_mm(ps, ps->y1));
+      swidth  = _mm_to_user(ps, _hscreen_to_mm(ps, ps->x2)) - x;
+      sheight = _mm_to_user(ps, _hscreen_to_mm(ps, ps->y2)) - y;
 
-    float width, height;
-    _get_page_dimension(&ps->prt, &width, &height);
+      // FIXME: should align default to center?
+    }
+    else
+    {
+      dt_image_box *box = &ps->imgs.box[ps->last_selected];
 
-    x       = _percent_unit_of(ps, width, box->pos.x);
-    y       = _percent_unit_of(ps, height, box->pos.y);
-    swidth  = _percent_unit_of(ps, width, box->pos.width);
-    sheight = _percent_unit_of(ps, height, box->pos.height);
+      float width, height;
+      _get_page_dimension(&ps->prt, &width, &height);
 
+      x       = _percent_unit_of(ps, width, box->pos.x);
+      y       = _percent_unit_of(ps, height, box->pos.y);
+      swidth  = _percent_unit_of(ps, width, box->pos.width);
+      sheight = _percent_unit_of(ps, height, box->pos.height);
+
+      align = box->alignment;
+    }
+
+    ++darktable.gui->reset;
     for(int i=0; i<9; i++)
     {
-      ++darktable.gui->reset;
-      gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(ps->dtba[i]), (i == box->alignment));
-      --darktable.gui->reset;
+      gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(ps->dtba[i]), (i == align));
     }
+    --darktable.gui->reset;
   }
 
+  // FIXME: if last_selected is -1, shouldn't these spin buttons be made insensitive as well as zeroed out? this will also keep the changed handlers for adjusting zeroed out spin buttons from making an out of bounds memory reference
   ++darktable.gui->reset;
 
   gtk_spin_button_set_value(GTK_SPIN_BUTTON(ps->b_x), x);
@@ -610,11 +624,11 @@ static int _print_job_run(dt_job_t *job)
   return 0;
 }
 
-static void _page_new_area_clicked(GtkWidget *widget, gpointer user_data)
+static void _page_new_area_clicked(GtkWidget *widget, const dt_lib_module_t *self)
 {
-  const dt_lib_module_t *self = (dt_lib_module_t *)user_data;
   dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
 
+  // FIXME: if we make images a GSList this won't be a worry
   if(ps->imgs.count == MAX_IMAGE_PER_PAGE)
   {
     dt_control_log(_("maximum image per page reached"));
@@ -622,8 +636,11 @@ static void _page_new_area_clicked(GtkWidget *widget, gpointer user_data)
   }
 
   dt_control_change_cursor(GDK_PLUS);
-  ps->creation = TRUE;
+  // FIXME: once implement GtkFixed to hold layout boxes, there should be a widget in that fixed layout sized to the area the user has dragged over (with the click detected by w_new_box as a GtkEventBox overlay), so that updates to dragging the box don't have to redraw the entire center area
+  gtk_widget_show(ps->w_new_box);
   ps->has_changed = TRUE;
+  // FIXME: should highlight the button so long as new area is active
+  // FIXME: it would be nice if the box were created containing the image currently active on the filmstrip
 }
 
 static void _page_clear_area_clicked(GtkWidget *widget, gpointer user_data)
@@ -632,26 +649,40 @@ static void _page_clear_area_clicked(GtkWidget *widget, gpointer user_data)
   dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
 
   ps->has_changed = TRUE;
+
+  for(int k=0; k<ps->imgs.count; k++)
+  {
+    gtk_container_remove(GTK_CONTAINER(ps->w_layout_boxes), ps->imgs.box[k].w_box);
+    // FIXME: this is already cleared by dt_printing_clear_boxes()
+    ps->imgs.box[k].w_box = NULL;
+  }
+
   dt_printing_clear_boxes(&ps->imgs);
+  gtk_widget_hide(ps->w_callouts);
   gtk_widget_set_sensitive(ps->del, FALSE);
-  dt_control_queue_redraw_center();
 }
 
-static void _page_delete_area(const dt_lib_module_t *self,
-                              const int box_index)
+static void _page_delete_area(dt_lib_print_settings_t *ps, const int box_index)
 {
-  dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
-
   if(box_index == -1) return;
 
+  gtk_container_remove(GTK_CONTAINER(ps->w_layout_boxes), ps->imgs.box[box_index].w_box);
+  ps->imgs.box[box_index].w_box = NULL;
+
+  // FIXME: only have to iterate down from ps->imgs.count?
   for(int k=box_index; k<MAX_IMAGE_PER_PAGE-1; k++)
   {
     memcpy(&ps->imgs.box[k], &ps->imgs.box[k+1], sizeof(dt_image_box));
+    // FIXME: cleanup nasty casting
+    if(ps->imgs.box[k].w_box)
+      g_object_set_data(G_OBJECT(ps->imgs.box[k].w_box),
+                        "idx", (gpointer)(guintptr)k);
   }
   ps->last_selected = -1;
   ps->selected = -1;
   dt_printing_clear_box(&ps->imgs.box[MAX_IMAGE_PER_PAGE-1]);
   ps->imgs.count--;
+  //gtk_widget_hide(ps->w_callouts);
 
   if(ps->imgs.count > 0)
     ps->selected = 0;
@@ -661,15 +692,11 @@ static void _page_delete_area(const dt_lib_module_t *self,
   _fill_box_values(ps);
 
   ps->has_changed = TRUE;
-  dt_control_queue_redraw_center();
 }
 
-static void _page_delete_area_clicked(GtkWidget *widget, gpointer user_data)
+static void _page_delete_area_clicked(GtkWidget *widget, dt_lib_print_settings_t *ps)
 {
-  const dt_lib_module_t *self = (dt_lib_module_t *)user_data;
-  dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
-
-  _page_delete_area(self, ps->last_selected);
+  _page_delete_area(ps, ps->last_selected);
 }
 
 static void _print_job_cleanup(void *p)
@@ -877,7 +904,7 @@ _update_slider(dt_lib_print_settings_t *ps)
 
   // if widget are created, let's display the current image size
 
-  // FIXME: why doesn't this update when units are changed?
+  // FIXME: why doesn't this update when units are changed? or when orientation is changed?
   if(ps->selected != -1
      && dt_is_valid_imgid(ps->imgs.box[ps->selected].imgid)
      && ps->width && ps->height
@@ -924,96 +951,76 @@ _update_slider(dt_lib_print_settings_t *ps)
   }
 }
 
-static void
-_top_border_callback(GtkWidget *spin, gpointer user_data)
+static void _top_border_callback(GtkWidget *spin, dt_lib_module_t *self)
 {
-  const dt_lib_module_t *self = (dt_lib_module_t *)user_data;
   dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
   const double value = gtk_spin_button_get_value(GTK_SPIN_BUTTON(spin));
 
   dt_conf_set_float("plugins/print/print/top_margin", value);
 
-  ps->prt.page.margin_top = _to_mm(ps, value);
-
-  if(ps->lock_activated == TRUE)
-  {
-    ps->prt.page.margin_bottom = _to_mm(ps, value);
-    ps->prt.page.margin_left = _to_mm(ps, value);
-    ps->prt.page.margin_right = _to_mm(ps, value);
-
-    gtk_spin_button_set_value(GTK_SPIN_BUTTON(ps->b_bottom), value);
-    gtk_spin_button_set_value(GTK_SPIN_BUTTON(ps->b_left), value);
-    gtk_spin_button_set_value(GTK_SPIN_BUTTON(ps->b_right), value);
-
-    dt_conf_set_float("plugins/print/print/bottom_margin", value);
-    dt_conf_set_float("plugins/print/print/left_margin", value);
-    dt_conf_set_float("plugins/print/print/right_margin", value);
-  }
-
+  ps->prt.page.margin_top = _user_to_mm(ps, value);
   _update_slider(ps);
 }
 
-static void
-_bottom_border_callback(GtkWidget *spin, gpointer user_data)
+static void _bottom_border_callback(GtkWidget *spin, dt_lib_module_t *self)
 {
-  const dt_lib_module_t *self = (dt_lib_module_t *)user_data;
   dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
   const double value = gtk_spin_button_get_value(GTK_SPIN_BUTTON(spin));
 
   dt_conf_set_float("plugins/print/print/bottom_margin", value);
 
-  ps->prt.page.margin_bottom = _to_mm(ps, value);
+  ps->prt.page.margin_bottom = _user_to_mm(ps, value);
   _update_slider(ps);
 }
 
-static void
-_left_border_callback(GtkWidget *spin, gpointer user_data)
+static void _left_border_callback(GtkWidget *spin, dt_lib_module_t *self)
 {
-  const dt_lib_module_t *self = (dt_lib_module_t *)user_data;
   dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
   const double value = gtk_spin_button_get_value(GTK_SPIN_BUTTON(spin));
 
   dt_conf_set_float("plugins/print/print/left_margin", value);
 
-  ps->prt.page.margin_left = _to_mm(ps, value);
+  ps->prt.page.margin_left = _user_to_mm(ps, value);
   _update_slider(ps);
 }
 
-static void
-_right_border_callback(GtkWidget *spin, gpointer user_data)
+static void _right_border_callback(GtkWidget *spin, dt_lib_module_t *self)
 {
-  const dt_lib_module_t *self = (dt_lib_module_t *)user_data;
   dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
   const double value = gtk_spin_button_get_value(GTK_SPIN_BUTTON(spin));
 
   dt_conf_set_float("plugins/print/print/right_margin", value);
 
-  ps->prt.page.margin_right = _to_mm(ps, value);
+  ps->prt.page.margin_right = _user_to_mm(ps, value);
   _update_slider(ps);
 }
 
-static void
-_lock_callback(GtkWidget *button, gpointer user_data)
+static void _border_update_lock(GtkWidget *w_source, GtkWidget *w_dest,
+                                GBinding **lock, gboolean active)
 {
-  const dt_lib_module_t *self = (dt_lib_module_t *)user_data;
+  gtk_widget_set_sensitive(w_dest, !active);
+  if(*lock)
+  {
+    g_binding_unbind(*lock);
+    *lock = NULL;
+  }
+  if(active)
+  {
+    *lock = g_object_bind_property(w_source, "value", w_dest, "value",
+                                   G_BINDING_SYNC_CREATE);
+  }
+}
+
+static void _lock_callback(GtkWidget *button, dt_lib_module_t *self)
+{
   dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
 
-  ps->lock_activated = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(button));
+  gboolean active = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(button));
+  dt_conf_set_bool("plugins/print/print/lock_borders", active);
 
-  dt_conf_set_bool("plugins/print/print/lock_borders", ps->lock_activated);
-
-  gtk_widget_set_sensitive(GTK_WIDGET(ps->b_bottom), !ps->lock_activated);
-  gtk_widget_set_sensitive(GTK_WIDGET(ps->b_left), !ps->lock_activated);
-  gtk_widget_set_sensitive(GTK_WIDGET(ps->b_right), !ps->lock_activated);
-
-  //  get value of top and set it to all other borders
-
-  const double value = gtk_spin_button_get_value(GTK_SPIN_BUTTON(ps->b_top));
-  gtk_spin_button_set_value(GTK_SPIN_BUTTON(ps->b_bottom), value);
-  gtk_spin_button_set_value(GTK_SPIN_BUTTON(ps->b_left), value);
-  gtk_spin_button_set_value(GTK_SPIN_BUTTON(ps->b_right), value);
-
-  _update_slider (ps);
+  _border_update_lock(ps->b_top, ps->b_bottom, &ps->lock_bottom, active);
+  _border_update_lock(ps->b_top, ps->b_left, &ps->lock_left, active);
+  _border_update_lock(ps->b_top, ps->b_right, &ps->lock_right, active);
 }
 
 static void
@@ -1045,6 +1052,7 @@ _alignment_callback(GtkWidget *tb, gpointer user_data)
   {
     dt_printing_setup_image(&ps->imgs, ps->last_selected,
                             ps->imgs.box[ps->last_selected].imgid, 100, 100, index);
+    gtk_widget_queue_draw(ps->imgs.box[ps->last_selected].w_box);
   }
 
   _update_slider(ps);
@@ -1056,20 +1064,13 @@ _orientation_changed(GtkWidget *combo, dt_lib_module_t *self)
   dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
 
   ps->prt.page.landscape = dt_bauhaus_combobox_get(combo);
+  // FIXME: should this trigger redrawing of w_overlay?
+
+  // FIXME: changing orientation makes images look wonky, reposition them relative to the new aspect to be in margins by adjusting relative positions
+  // FIXME: keeping layout boxes in sensible positions on orientation and paer size change would be much easier if relative positions were relative to margins rather than page edge
+  // FIXME: should this work happen here _orientation_changed() and _paper_changed() or in _layout_boxes_size_allocate()?
 
   _update_slider(ps);
-}
-
-static void
-_snap_grid_callback(GtkWidget *widget, dt_lib_module_t *self)
-{
-  dt_control_queue_redraw_center();
-}
-
-static void
-_grid_callback(GtkWidget *widget, dt_lib_module_t *self)
-{
-  dt_control_queue_redraw_center();
 }
 
 static void _grid_size_changed(GtkWidget *widget, dt_lib_module_t *self)
@@ -1078,9 +1079,9 @@ static void _grid_size_changed(GtkWidget *widget, dt_lib_module_t *self)
 
   dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
   const float value = gtk_spin_button_get_value(GTK_SPIN_BUTTON(ps->grid_size));
-  dt_conf_set_float("plugins/print/print/grid_size", _to_mm(ps, value));
+  dt_conf_set_float("plugins/print/print/grid_size", _user_to_mm(ps, value));
 
-  dt_control_queue_redraw_center();
+  gtk_widget_queue_draw(ps->w_grid);
 }
 
 static void
@@ -1268,489 +1269,45 @@ _intent_callback(GtkWidget *widget, dt_lib_module_t *self)
   ps->v_intent = pos - 1;
 }
 
-static void _set_orientation(dt_lib_print_settings_t *ps, dt_imgid_t imgid)
+// FIXME: change drag/drop handlers to be installed per widget, then we don't have to call dt_printing_get_image_box()
+static void _drag_and_drop_received(GtkWidget *widget,
+                                    GdkDragContext *context,
+                                    gint x,
+                                    gint y,
+                                    GtkSelectionData *selection_data,
+                                    guint target_type,
+                                    guint time,
+                                    dt_lib_print_settings_t *ps)
 {
-  dt_mipmap_buffer_t buf;
-  dt_mipmap_cache_get(darktable.mipmap_cache, &buf,
-                      imgid, DT_MIPMAP_0, DT_MIPMAP_BEST_EFFORT, 'r');
+  const int bidx = dt_printing_get_image_box(&ps->imgs, x, y);
 
-  // If there's a mipmap available, figure out orientation based upon
-  // its dimensions. Otherwise, don't touch orientation until the
-  // mipmap arrives.
-  if(buf.size != DT_MIPMAP_NONE)
+  if(bidx != -1)
   {
-    ps->prt.page.landscape = (buf.width > buf.height);
-    dt_view_print_settings(darktable.view_manager, &ps->prt, &ps->imgs);
-    dt_bauhaus_combobox_set(ps->orientation, ps->prt.page.landscape == TRUE ? 1 : 0);
+    // FIXME: can we get the image from drag-and-drop data?
+    dt_printing_setup_image(&ps->imgs, bidx, ps->filmstrip_select,
+                            100, 100, ALIGNMENT_CENTER);
+    gtk_widget_queue_draw(ps->imgs.box[bidx].w_box);
   }
 
-  dt_mipmap_cache_release(darktable.mipmap_cache, &buf);
-  dt_control_queue_redraw_center();
+  ps->imgs.motion_over = -1;
 }
 
-static void _load_image_full_page(dt_lib_print_settings_t *ps, dt_imgid_t imgid)
+static gboolean _drag_motion_received(GtkWidget *widget,
+                                      GdkDragContext *dc,
+                                      const gint x,
+                                      const gint y,
+                                      const guint time,
+                                      dt_lib_print_settings_t *ps)
 {
-  _set_orientation(ps, imgid);
+  const int bidx = dt_printing_get_image_box(&ps->imgs, x, y);
+  ps->imgs.motion_over = bidx;
 
-  dt_printing_setup_box(&ps->imgs, 0,
-                        ps->imgs.screen.page.x, ps->imgs.screen.page.y,
-                        ps->imgs.screen.page.width, ps->imgs.screen.page.height);
-  float width, height;
-  _get_page_dimension(&ps->prt, &width, &height);
-
-  dt_printing_setup_page(&ps->imgs, width, height, ps->prt.printer.resolution);
-
-  dt_printing_setup_image(&ps->imgs, 0, imgid, 100, 100, ALIGNMENT_CENTER);
-
-  dt_control_queue_redraw_center();
-}
-
-static void _print_settings_update_callback(gpointer instance,
-                                            const dt_imgid_t imgid,
-                                            gpointer user_data)
-{
-  const dt_lib_module_t *self = (dt_lib_module_t *)user_data;
-  dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
-
-  // if a mipmap has arrived for an image just activated in fullpage
-  // mode, reorient the page (landscape or portrait) based on the
-  // mipmap's orientation
-  if(ps->imgs.count == 1 && ps->imgs.box[0].imgid == imgid && !ps->has_changed)
+  if(bidx != -1)
   {
-    dt_printing_clear_box(&ps->imgs.box[0]);
-    _load_image_full_page(ps, imgid);
-  }
-}
-
-static void _print_settings_activate_callback(gpointer instance,
-                                              const dt_imgid_t imgid,
-                                              gpointer user_data)
-{
-  const dt_lib_module_t *self = (dt_lib_module_t *)user_data;
-  dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
-
-  // load an image with a simple click on the filmstrip only if a
-  // single image is present
-  if(ps->imgs.count == 1)
-  {
-    if(ps->has_changed)
-    {
-      dt_printing_setup_image(&ps->imgs, 0, imgid, 100, 100, ps->imgs.box[0].alignment);
-    }
-    else
-    {
-      dt_printing_clear_box(&ps->imgs.box[0]);
-      _load_image_full_page(ps, imgid);
-    }
-  }
-}
-
-static GList* _get_profiles()
-{
-  //  Create list of profiles
-  GList *list = NULL;
-
-  dt_lib_export_profile_t *prof =
-    (dt_lib_export_profile_t *)g_malloc0(sizeof(dt_lib_export_profile_t));
-  prof->type = DT_COLORSPACE_SRGB;
-  dt_utf8_strlcpy(prof->name, _("sRGB"), sizeof(prof->name));
-  prof->pos = -2;
-  prof->ppos = -2;
-  list = g_list_prepend(list, prof);
-
-  prof = (dt_lib_export_profile_t *)g_malloc0(sizeof(dt_lib_export_profile_t));
-  prof->type = DT_COLORSPACE_ADOBERGB;
-  dt_utf8_strlcpy(prof->name, _("Adobe RGB (compatible)"), sizeof(prof->name));
-  prof->pos = -2;
-  prof->ppos = -2;
-  list = g_list_prepend(list, prof);
-
-  // add the profiles from datadir/color/out/*.icc
-  for(GList *iter = darktable.color_profiles->profiles; iter; iter = g_list_next(iter))
-  {
-    dt_colorspaces_color_profile_t *p = (dt_colorspaces_color_profile_t *)iter->data;
-    if(p->type == DT_COLORSPACE_FILE)
-    {
-      prof = (dt_lib_export_profile_t *)g_malloc0(sizeof(dt_lib_export_profile_t));
-      g_strlcpy(prof->name, p->name, sizeof(prof->name));
-      g_strlcpy(prof->filename, p->filename, sizeof(prof->filename));
-      prof->type = DT_COLORSPACE_FILE;
-      prof->pos = -2;
-      prof->ppos = -2;
-      list = g_list_prepend(list, prof);
-    }
+    gtk_widget_queue_draw(ps->imgs.box[bidx].w_box);
   }
 
-  return g_list_reverse(list);  // list was built in reverse order, so un-reverse it
-}
-
-static void _new_printer_callback(dt_printer_info_t *printer,
-                                  void *user_data)
-{
-  static int count = 0;
-  const dt_lib_module_t *self = (dt_lib_module_t *)user_data;
-  const dt_lib_print_settings_t *d = (dt_lib_print_settings_t*)self->data;
-
-  char *default_printer = dt_conf_get_string("plugins/print/print/printer");
-
-  g_signal_handlers_block_by_func(G_OBJECT(d->printers),
-                                  G_CALLBACK(_printer_changed), NULL);
-
-  dt_bauhaus_combobox_add(d->printers, printer->name);
-
-  if(!g_strcmp0(default_printer, printer->name) || default_printer[0]=='\0')
-  {
-    dt_bauhaus_combobox_set(d->printers, count);
-    _set_printer(self, printer->name);
-  }
-  count++;
-  g_free(default_printer);
-
-  g_signal_handlers_unblock_by_func(G_OBJECT(d->printers),
-                                    G_CALLBACK(_printer_changed), NULL);
-}
-
-void view_enter(struct dt_lib_module_t *self,
-                struct dt_view_t *old_view,
-                struct dt_view_t *new_view)
-{
-  // user activated a new image via the filmstrip or user entered view
-  // mode which activates an image: get image_id and orientation
-  DT_DEBUG_CONTROL_SIGNAL_CONNECT(darktable.signals,
-                                  DT_SIGNAL_VIEWMANAGER_THUMBTABLE_ACTIVATE,
-                                  G_CALLBACK(_print_settings_activate_callback),
-                                  self);
-
-  // when an updated mipmap, we may have new orientation information
-  // about the current image.
-  DT_DEBUG_CONTROL_SIGNAL_CONNECT(darktable.signals,
-                                  DT_SIGNAL_DEVELOP_MIPMAP_UPDATED,
-                                  G_CALLBACK(_print_settings_update_callback),
-                                  self);
-
-  // NOTE: it would be proper to set image_id here to -1, but this
-  // seems to make no difference
-}
-
-void view_leave(struct dt_lib_module_t *self,
-                struct dt_view_t *old_view,
-                struct dt_view_t *new_view)
-{
-  DT_DEBUG_CONTROL_SIGNAL_DISCONNECT(darktable.signals,
-                                     G_CALLBACK(_print_settings_activate_callback),
-                                     self);
-  DT_DEBUG_CONTROL_SIGNAL_DISCONNECT(darktable.signals,
-                                     G_CALLBACK(_print_settings_update_callback),
-                                     self);
-}
-
-static gboolean _expose_again(gpointer user_data)
-{
-  dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)user_data;
-
-  if(dt_is_valid_imgid(ps->imgs.imgid_to_load))
-  {
-    _load_image_full_page(ps, ps->imgs.imgid_to_load);
-    ps->imgs.imgid_to_load = NO_IMGID;
-  }
-
-  dt_control_queue_redraw_center();
-  return FALSE;
-}
-
-void _get_control(dt_lib_print_settings_t *ps,
-                  const float x,
-                  const float y)
-{
-  const float dist = 20.0;
-
-  const dt_image_box *b = &ps->imgs.box[ps->selected];
-
-  ps->sel_controls = 0;
-
-  if(fabsf(b->screen.x - x) < dist)
-    ps->sel_controls |= BOX_LEFT;
-
-  if(fabsf(b->screen.y - y) < dist)
-    ps->sel_controls |= BOX_TOP;
-
-  if(fabsf((b->screen.x + b->screen.width) - x) < dist)
-    ps->sel_controls |= BOX_RIGHT;
-
-  if(fabsf((b->screen.y + b->screen.height) - y) < dist)
-    ps->sel_controls |= BOX_BOTTOM;
-
-  if(ps->sel_controls == 0) ps->sel_controls = BOX_ALL;
-}
-
-int mouse_leave(struct dt_lib_module_t *self)
-{
-  dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
-
-  if(ps->last_selected != -1)
-  {
-    dt_control_set_mouse_over_id(ps->imgs.box[ps->last_selected].imgid);
-  }
-
-  return 0;
-}
-
-static void _snap_to_grid(dt_lib_print_settings_t *ps,
-                          float *x,
-                          float *y)
-{
-  if(gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(ps->snap_grid)))
-  {
-    // V lines
-    const float step =
-      gtk_spin_button_get_value(GTK_SPIN_BUTTON(ps->grid_size)) / units[ps->unit];
-
-    // only display the grid if a step of 5 pixels
-    const float diff = DT_PIXEL_APPLY_DPI(5);
-
-    float grid_pos = (float)ps->imgs.screen.page.x;
-
-    const float h_step = _mm_to_hscreen(ps, step, FALSE);
-
-    while(grid_pos < ps->imgs.screen.page.x + ps->imgs.screen.page.width)
-    {
-      if(fabsf(*x - grid_pos) < diff) *x = grid_pos;
-      grid_pos += h_step;
-    }
-
-    // H lines
-    grid_pos = (float)ps->imgs.screen.page.y;
-
-    const float v_step = _mm_to_vscreen(ps, step, FALSE);
-
-    while(grid_pos < ps->imgs.screen.page.y + ps->imgs.screen.page.height)
-    {
-      if(fabsf(*y - grid_pos) < diff) *y = grid_pos;
-      grid_pos += v_step;
-    }
-  }
-  // FIXME: should clamp values to page size here?
-}
-
-int mouse_moved(struct dt_lib_module_t *self,
-                const double x,
-                const double y,
-                const double pressure,
-                const int which)
-{
-  dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
-
-  gboolean expose = FALSE;
-
-  if(ps->creation)
-    dt_control_change_cursor(GDK_PLUS);
-
-  if(ps->creation && ps->dragging)
-  {
-    ps->x2 = x;
-    ps->y2 = y;
-    _snap_to_grid(ps, &ps->x2, &ps->y2);
-    expose = TRUE;
-  }
-  else if(ps->dragging)
-  {
-    dt_image_box *b = &ps->imgs.box[ps->selected];
-    const float dx = x - ps->click_pos_x;
-    const float dy = y - ps->click_pos_y;
-    const float coef = dx / b->screen.width;
-
-    switch(ps->sel_controls)
-    {
-       case BOX_ALL:
-         ps->x1 = b->screen.x + dx;
-         ps->y1 = b->screen.y + dy;
-         ps->x2 = b->screen.x + b->screen.width + dx;
-         ps->y2 = b->screen.y + b->screen.height + dy;
-         break;
-       case BOX_LEFT:
-         ps->x1 = b->screen.x + dx;
-         break;
-       case BOX_TOP:
-         ps->y1 = b->screen.y + dy;
-         break;
-       case BOX_RIGHT:
-         ps->x2 = b->screen.x + b->screen.width + dx;
-         break;
-       case BOX_BOTTOM:
-         ps->y2 = b->screen.y + b->screen.height + dy;
-         break;
-       case BOX_TOP_LEFT:
-         ps->x1 = b->screen.x + dx;
-         ps->y1 = b->screen.y + (coef * b->screen.height);
-         break;
-       case BOX_TOP_RIGHT:
-         ps->x2 = b->screen.x + b->screen.width + dx;
-         ps->y1 = b->screen.y - (coef * b->screen.height);
-         break;
-       case BOX_BOTTOM_LEFT:
-         ps->x1 = b->screen.x + dx;
-         ps->y2 = b->screen.y + b->screen.height - (coef * b->screen.height);
-         break;
-       case BOX_BOTTOM_RIGHT:
-         ps->x2 = b->screen.x + b->screen.width + dx;
-         ps->y2 = b->screen.y + b->screen.height + (coef * b->screen.height);
-         break;
-       default:
-         break;
-    }
-    expose = TRUE;
-
-    _snap_to_grid(ps, &ps->x1, &ps->y1);
-    _snap_to_grid(ps, &ps->x2, &ps->y2);
-  }
-  else if(!ps->creation)
-  {
-    const int bidx = dt_printing_get_image_box(&ps->imgs, x, y);
-    ps->sel_controls = 0;
-
-    if(bidx == -1)
-    {
-      if(ps->selected != -1) expose = TRUE;
-      ps->selected = -1;
-    }
-    else
-    {
-      expose = TRUE;
-      ps->selected = bidx;
-      _fill_box_values(ps);
-      _get_control(ps, x, y);
-    }
-  }
-
-  if(expose) dt_control_queue_redraw_center();
-
-  return 0;
-}
-
-static void _swap(float *a, float *b)
-{
-  const float tmp = *a;
-  *a = *b;
-  *b = tmp;
-}
-
-int button_released(struct dt_lib_module_t *self,
-                    const double x,
-                    const double y,
-                    const int which,
-                    const uint32_t state)
-{
-  dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
-
-  if(ps->dragging)
-  {
-    int idx = -1;
-
-    gtk_widget_set_sensitive(ps->del, TRUE);
-
-    // handle new area
-    if(ps->creation)
-    {
-      idx = ps->imgs.count++;
-    }
-    else if(ps->selected != -1)
-    {
-      idx = ps->selected;
-    }
-
-    if(idx != -1)
-    {
-      // make sure the area is in the the printable area taking into account the margins
-
-      // don't allow a too small area
-      if(ps->x2 < ps->x1) _swap(&ps->x1, &ps->x2);
-      if(ps->y2 < ps->y1) _swap(&ps->y1, &ps->y2);
-
-      const float dx = ps->x2 - ps->x1;
-      const float dy = ps->y2 - ps->y1;
-
-      dt_printing_setup_box(&ps->imgs, idx, ps->x1, ps->y1, dx, dy);
-      // make the new created box the last edited one
-      ps->last_selected = idx;
-      _fill_box_values(ps);
-    }
-  }
-
-  _update_slider(ps);
-
-  ps->creation = FALSE;
-  ps->dragging = FALSE;
-
-  dt_control_change_cursor(GDK_LEFT_PTR);
-
-  return 0;
-}
-
-int button_pressed(struct dt_lib_module_t *self,
-                   const double x,
-                   const double y,
-                   const double pressure,
-                   const int which,
-                   const int type,
-                   const uint32_t state)
-{
-  dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
-
-  ps->click_pos_x = x;
-  ps->click_pos_y = y;
-  ps->last_selected = -1;
-
-  if(ps->creation)
-  {
-    ps->dragging = TRUE;
-    ps->selected = -1;
-    ps->x1 = ps->x2 = x;
-    ps->y1 = ps->y2 = y;
-
-    _snap_to_grid(ps, &ps->x1, &ps->y1);
-  }
-  else if(ps->selected > 0
-          && (which == 2 || (which == 1 && dt_modifier_is(state, GDK_CONTROL_MASK))))
-  {
-    // middle click (or ctrl-click), move selected image down
-    dt_image_box b;
-    memcpy(&b, &ps->imgs.box[ps->selected], sizeof(dt_image_box));
-    memcpy(&ps->imgs.box[ps->selected], &ps->imgs.box[ps->selected-1],
-           sizeof(dt_image_box));
-    memcpy(&ps->imgs.box[ps->selected-1], &b, sizeof(dt_image_box));
-  }
-  else if(ps->selected != -1 && which == 1)
-  {
-    dt_image_box *b = &ps->imgs.box[ps->selected];
-
-    ps->dragging = TRUE;
-    ps->x1 = b->screen.x;
-    ps->y1 = b->screen.y;
-    ps->x2 = b->screen.x + b->screen.width;
-    ps->y2 = b->screen.y + b->screen.height;
-
-    ps->last_selected = ps->selected;
-    ps->has_changed = TRUE;
-
-    _get_control(ps, x, y);
-
-    dt_control_change_cursor(GDK_HAND1);
-  }
-  else if(ps->selected != -1 && which == 3)
-  {
-    dt_image_box *b = &ps->imgs.box[ps->selected];
-
-    // if image present remove it, otherwise remove the box
-    if(dt_is_valid_imgid(b->imgid))
-      b->imgid = NO_IMGID;
-    else
-      _page_delete_area(self, ps->selected);
-
-    ps->last_selected = ps->selected;
-    ps->has_changed = TRUE;
-  }
-
-  return 0;
+  return TRUE;
 }
 
 void _cairo_rectangle(cairo_t *cr,
@@ -1830,163 +1387,840 @@ void _cairo_rectangle(cairo_t *cr,
   }
 }
 
-void gui_post_expose(struct dt_lib_module_t *self,
-                     cairo_t *cr,
-                     const int32_t width,
-                     const int32_t height,
-                     const int32_t pointerx,
-                     const int32_t pointery)
+static gboolean _layout_boxes_size_allocate(GtkWidget *w_fixed,
+                                            GtkAllocation *alloc,
+                                            dt_lib_print_settings_t *ps)
+{
+  // FIXME: doc of GtkWindow says that the event allocation may include client decorations, gtk_window_get_size() is more reliable, but unfortunately fixed or event box don't seem to have widgets, and configure-event doesn't seem to be called on any of these widgets
+  // FIXME: create a GtkDrawingArea which does produce configure events, so even if it is empty this could be more reliable than size-allocate?
+  for(int k=0; k<ps->imgs.count; k++)
+  {
+    dt_image_box *box = &ps->imgs.box[k];
+    // FIXME: does this do anything? doesn't dt_printing_setup_display() set box->screen?
+    dt_printing_setup_image(&ps->imgs, k, box->imgid, 100, 100, box->alignment);
+    gtk_widget_set_size_request(box->w_box,
+                                roundf(box->screen.width), roundf(box->screen.height));
+    gtk_fixed_move(GTK_FIXED(ps->w_layout_boxes), box->w_box,
+                   roundf(box->screen.x), roundf(box->screen.y));
+    // FIXME: will probably need to resize thumbnail as well eventually -- in which case this should be a helper function to resize it
+    #if 0
+    if(box->thumb)
+      dt_thumbnail_resize(box->thumb, width, height, FALSE, IMG_TO_FIT);
+    #endif
+    //gtk_widget_queue_draw(box->w_box);
+  }
+
+  return FALSE;
+}
+
+// FIXME: if we switch to thumbnails we won't need this
+static gboolean _draw_again(gpointer user_data)
+{
+  gtk_widget_queue_draw((GtkWidget*)user_data);
+  return G_SOURCE_REMOVE;
+}
+
+static gboolean _draw_layout_box(GtkWidget *self, cairo_t *cr, dt_lib_print_settings_t *ps)
+{
+  // FIXME: busy doesn't need to be in data structure! it is only used locally here, and should eventually be replaced by thumbnail implementation
+  ps->busy = FALSE;
+
+  //dt_image_box *img = g_object_get_data(G_OBJECT(widget), "box");
+  // FIXME: this is fishy pointer work, try GPOINTER_TO_INT()
+  int k = (guintptr)g_object_get_data(G_OBJECT(self), "idx");
+  dt_image_box *img = &ps->imgs.box[k];
+  if(dt_is_valid_imgid(img->imgid))
+  {
+    // FIXME: when layout box is selected, with a valid image, give a subtle cue as to the box dimensions, to aid in figuring out alignment etc.
+    cairo_surface_t *surf = NULL;
+
+    // screen coordinate default to current box if there is no image
+    dt_image_pos screen;
+
+    // FIXME: this is called by _load_image_full_page(), is it used other places?
+    dt_printing_setup_image(&ps->imgs, k, img->imgid, 100, 100, img->alignment);
+
+    // FIXME: instead of calculating this, once have thumbnail widget inside this, just align that widget
+    dt_printing_get_screen_pos(&ps->imgs, img, &screen);
+    // FIXME: hacky, just make dt_printing_get_screen_pos not offset this
+    screen.x -= img->screen.x;
+    screen.y -= img->screen.y;
+
+    const dt_view_surface_value_t res =
+      dt_view_image_get_surface(img->imgid, screen.width, screen.height, &surf, TRUE);
+
+    if(res != DT_VIEW_SURFACE_OK)
+    {
+      // if the image is missing, we reload it again
+      // FIXME: we should save the timeout source ID and cancel it if the image is changed before it fires -- but as thumbnail already does this, we can just use that code
+      g_timeout_add(250, _draw_again, self);
+      ps->busy = TRUE;
+    }
+    else
+    {
+      const float scaler = 1.0f / darktable.gui->ppd_thb;
+
+      cairo_save(cr);
+      cairo_translate(cr, screen.x, screen.y);
+      cairo_scale(cr, scaler, scaler);
+      cairo_set_source_surface(cr, surf, 0, 0);
+      // FIXME: even if we keep this, we can figure this out via gtk_gesture_is_active()
+      const double alpha =
+        (ps->dragging
+         || (ps->selected != -1 && ps->selected != k))
+        ? 0.25
+        : 1.0;
+
+      cairo_paint_with_alpha(cr, alpha);
+      cairo_surface_destroy(surf);
+      cairo_restore(cr);
+    }
+  }
+
+  if(k == ps->selected || !dt_is_valid_imgid(img->imgid))
+  {
+    cairo_set_source_rgba(cr, .4, .4, .4, 1.0);
+    _cairo_rectangle(cr, (k == ps->selected) ? ps->sel_controls : 0,
+                     0.0, 0.0, roundf(img->screen.width), roundf(img->screen.height));
+    cairo_stroke(cr);
+  }
+
+  if(k == ps->imgs.motion_over)
+  {
+    cairo_set_source_rgba(cr, .2, .2, .2, 1.0);
+    cairo_rectangle(cr, 0.0, 0.0, roundf(img->screen.width), roundf(img->screen.height));
+    cairo_fill(cr);
+  }
+
+  // FIXME: if switch to thumbnail, that should handle this per image
+  if(ps->busy)
+  {
+    GtkAllocation alloc;
+    gtk_widget_get_allocation(self, &alloc);
+    dt_control_draw_busy_msg(cr, alloc.width, alloc.height);
+  }
+
+  return FALSE;
+}
+
+static gboolean _set_orientation(dt_lib_print_settings_t *ps,
+                             dt_imgid_t imgid)
+{
+  gboolean changed = FALSE;
+  dt_mipmap_buffer_t buf;
+  dt_mipmap_cache_get(darktable.mipmap_cache, &buf,
+                      imgid, DT_MIPMAP_0, DT_MIPMAP_BEST_EFFORT, 'r');
+
+  // If there's a mipmap available, figure out orientation based upon
+  // its dimensions. Otherwise, don't touch orientation until the
+  // mipmap arrives.
+  if(buf.size != DT_MIPMAP_NONE)
+  {
+    gboolean is_landscape = (buf.width > buf.height);
+    if(ps->prt.page.landscape != is_landscape)
+    {
+      dt_bauhaus_combobox_set(ps->orientation, is_landscape);
+      ps->prt.page.landscape = is_landscape;
+      // update page background with any new aspect
+      dt_view_print_settings(darktable.view_manager, &ps->prt, &ps->imgs);
+      changed = TRUE;
+    }
+  }
+
+  dt_mipmap_cache_release(darktable.mipmap_cache, &buf);
+  return changed;
+}
+
+static void _new_layout_box_widget(dt_lib_print_settings_t *ps,
+                                   const int idx
+                                   // FIXME: pass this in instead of idx if don't depend on index
+                                   /* dt_image_box *box */)
+{
+  dt_image_box *box = &ps->imgs.box[idx];
+
+  // FIXME: just in case remove existing box, but we should make sure not to overwrite it -- or remove other clearing code?
+  if(box->w_box)
+  {
+    gtk_container_remove(GTK_CONTAINER(ps->w_layout_boxes), box->w_box);
+    box->w_box = NULL;
+  }
+
+  box->w_box = gtk_drawing_area_new();
+  dt_gui_add_class(box->w_box, "print-layout-box");
+  gtk_widget_set_size_request(box->w_box,
+                              roundf(box->screen.width), roundf(box->screen.height));
+
+  // FIXME: when don't depend on index we can point directly to data structure
+  //g_object_set_data(G_OBJECT(ps->w_box), "box", box);
+  // FIXME: this pointer work is fishy, try GINT_TO_POINTER()
+  g_object_set_data(G_OBJECT(box->w_box), "idx", (gpointer)(guintptr)idx);
+
+  g_signal_connect(G_OBJECT(box->w_box), "draw", G_CALLBACK(_draw_layout_box), ps);
+
+  gtk_widget_show(box->w_box);
+  gtk_fixed_put(GTK_FIXED(ps->w_layout_boxes), box->w_box,
+                roundf(box->screen.x), roundf(box->screen.y));
+}
+
+static void _load_image_full_page(dt_lib_print_settings_t *ps, dt_imgid_t imgid)
+{
+  if(_set_orientation(ps, imgid))
+  {
+    // wait for margins to adjust which will retrigger loading of
+    // image
+    ps->imgs.imgid_to_load = imgid;
+    return;
+  }
+
+  // FIXME: we can just pass in page body so doesn't have to be clipped
+  dt_printing_setup_box(&ps->imgs, 0, 0.0f, 0.0f,
+                        ps->imgs.screen.page_width, ps->imgs.screen.page_height);
+  float width, height;
+  _get_page_dimension(&ps->prt, &width, &height);
+
+  dt_printing_setup_page(&ps->imgs, width, height, ps->prt.printer.resolution);
+
+  // FIXME: do need to do this here if it does when image is drawn?
+  dt_printing_setup_image(&ps->imgs, 0, imgid, 100, 100, ALIGNMENT_CENTER);
+  _new_layout_box_widget(ps, 0);
+
+  gtk_widget_queue_draw(ps->imgs.box[0].w_box);
+}
+
+static void _print_settings_mipmap_updated_cb(gpointer instance,
+                                              const dt_imgid_t imgid,
+                                              gpointer user_data)
+{
+  const dt_lib_module_t *self = (dt_lib_module_t *)user_data;
+  dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
+
+  // if a mipmap has arrived for an image just activated in fullpage
+  // mode, reorient the page (landscape or portrait) based on the
+  // mipmap's orientation
+  if(ps->imgs.count == 1 && ps->imgs.box[0].imgid == imgid && !ps->has_changed)
+  {
+    // FIXME: it would be nice if there was one function to do GUI and internal data work
+    gtk_container_remove(GTK_CONTAINER(ps->w_layout_boxes), ps->imgs.box[0].w_box);
+    ps->imgs.box[0].w_box = NULL;
+    dt_printing_clear_box(&ps->imgs.box[0]);
+    _load_image_full_page(ps, imgid);
+  }
+}
+
+static void _print_settings_active_img_change_cb(gpointer instance,
+                                                 const dt_lib_module_t *self)
 {
   dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
 
-  if(dt_is_valid_imgid(ps->imgs.imgid_to_load))
+  dt_imgid_t imgid = ps->imgs.imgid_to_load;
+  ps->imgs.imgid_to_load = NO_IMGID;
+
+  // FIXME: this is a shortcut to get the image clicked for drag-and-drop, but should we really read this from the drag data?
+  if(dt_is_valid_imgid(imgid))
+    ps->filmstrip_select = imgid;
+
+  // load an image with a simple click on the filmstrip only if a
+  // single image is present or if have newly entered the print view
+  if(ps->imgs.count == 1 && ps->has_changed)
   {
-    // we set orientation and delay the reload to ensure the
-    // page is properly set before trying to display the image.
-    _set_orientation(ps, ps->imgs.imgid_to_load);
-    g_timeout_add(250, _expose_again, ps);
+    dt_printing_setup_image(&ps->imgs, 0, imgid, 100, 100, ps->imgs.box[0].alignment);
+    gtk_widget_queue_draw(ps->imgs.box[0].w_box);
+  }
+  else if(ps->imgs.count <= 1 && !ps->has_changed)
+  {
+    if(ps->imgs.count == 1)
+      gtk_container_remove(GTK_CONTAINER(ps->w_layout_boxes),
+                           ps->imgs.box[0].w_box);
+    ps->imgs.box[0].w_box = NULL;
+    dt_printing_clear_box(&ps->imgs.box[0]);
+    _load_image_full_page(ps, imgid);
+  }
+}
+
+static GList* _get_profiles()
+{
+  //  Create list of profiles
+  GList *list = NULL;
+
+  dt_lib_export_profile_t *prof =
+    (dt_lib_export_profile_t *)g_malloc0(sizeof(dt_lib_export_profile_t));
+  prof->type = DT_COLORSPACE_SRGB;
+  dt_utf8_strlcpy(prof->name, _("sRGB"), sizeof(prof->name));
+  prof->pos = -2;
+  prof->ppos = -2;
+  list = g_list_prepend(list, prof);
+
+  prof = (dt_lib_export_profile_t *)g_malloc0(sizeof(dt_lib_export_profile_t));
+  prof->type = DT_COLORSPACE_ADOBERGB;
+  dt_utf8_strlcpy(prof->name, _("Adobe RGB (compatible)"), sizeof(prof->name));
+  prof->pos = -2;
+  prof->ppos = -2;
+  list = g_list_prepend(list, prof);
+
+  // add the profiles from datadir/color/out/*.icc
+  for(GList *iter = darktable.color_profiles->profiles; iter; iter = g_list_next(iter))
+  {
+    dt_colorspaces_color_profile_t *p = (dt_colorspaces_color_profile_t *)iter->data;
+    if(p->type == DT_COLORSPACE_FILE)
+    {
+      prof = (dt_lib_export_profile_t *)g_malloc0(sizeof(dt_lib_export_profile_t));
+      g_strlcpy(prof->name, p->name, sizeof(prof->name));
+      g_strlcpy(prof->filename, p->filename, sizeof(prof->filename));
+      prof->type = DT_COLORSPACE_FILE;
+      prof->pos = -2;
+      prof->ppos = -2;
+      list = g_list_prepend(list, prof);
+    }
   }
 
-  // display grid
+  return g_list_reverse(list);  // list was built in reverse order, so un-reverse it
+}
 
-  // 1mm
+static void _new_printer_callback(dt_printer_info_t *printer,
+                                  void *user_data)
+{
+  static int count = 0;
+  const dt_lib_module_t *self = (dt_lib_module_t *)user_data;
+  const dt_lib_print_settings_t *d = (dt_lib_print_settings_t*)self->data;
+
+  char *default_printer = dt_conf_get_string("plugins/print/print/printer");
+
+  g_signal_handlers_block_by_func(G_OBJECT(d->printers),
+                                  G_CALLBACK(_printer_changed), NULL);
+
+  dt_bauhaus_combobox_add(d->printers, printer->name);
+
+  if(!g_strcmp0(default_printer, printer->name) || default_printer[0]=='\0')
+  {
+    dt_bauhaus_combobox_set(d->printers, count);
+    _set_printer(self, printer->name);
+  }
+  count++;
+  g_free(default_printer);
+
+  g_signal_handlers_unblock_by_func(G_OBJECT(d->printers),
+                                    G_CALLBACK(_printer_changed), NULL);
+}
+
+void view_enter(struct dt_lib_module_t *self,
+                struct dt_view_t *old_view,
+                struct dt_view_t *new_view)
+{
+  // user activated a new image via the filmstrip or user entered view
+  // mode which activates an image: get image_id and orientation
+  DT_DEBUG_CONTROL_SIGNAL_CONNECT(darktable.signals, DT_SIGNAL_ACTIVE_IMAGES_CHANGE,
+                                  G_CALLBACK(_print_settings_active_img_change_cb),
+                                  self);
+
+  // when an updated mipmap, we may have new orientation information
+  // about the current image.
+  DT_DEBUG_CONTROL_SIGNAL_CONNECT(darktable.signals,
+                                  DT_SIGNAL_DEVELOP_MIPMAP_UPDATED,
+                                  G_CALLBACK(_print_settings_mipmap_updated_cb),
+                                  self);
+}
+
+void view_leave(struct dt_lib_module_t *self,
+                struct dt_view_t *old_view,
+                struct dt_view_t *new_view)
+{
+  dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
+
+  // cancel any "new image area" drag
+  gtk_event_controller_reset(GTK_EVENT_CONTROLLER(ps->g_new_box));
+
+  DT_DEBUG_CONTROL_SIGNAL_DISCONNECT(darktable.signals,
+                                     G_CALLBACK(_print_settings_active_img_change_cb),
+                                     self);
+  DT_DEBUG_CONTROL_SIGNAL_DISCONNECT(darktable.signals,
+                                     G_CALLBACK(_print_settings_mipmap_updated_cb),
+                                     self);
+}
+
+void _get_control(dt_lib_print_settings_t *ps,
+                  const float x,
+                  const float y)
+{
+  const float dist = 20.0;
+
+  const dt_image_box *b = &ps->imgs.box[ps->selected];
+
+  ps->sel_controls = 0;
+
+  if(fabsf(b->screen.x - x) < dist)
+    ps->sel_controls |= BOX_LEFT;
+
+  if(fabsf(b->screen.y - y) < dist)
+    ps->sel_controls |= BOX_TOP;
+
+  if(fabsf((b->screen.x + b->screen.width) - x) < dist)
+    ps->sel_controls |= BOX_RIGHT;
+
+  if(fabsf((b->screen.y + b->screen.height) - y) < dist)
+    ps->sel_controls |= BOX_BOTTOM;
+
+  if(ps->sel_controls == 0) ps->sel_controls = BOX_ALL;
+}
+
+int mouse_leave(struct dt_lib_module_t *self)
+{
+  dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
+
+  if(ps->last_selected != -1)
+  {
+    dt_control_set_mouse_over_id(ps->imgs.box[ps->last_selected].imgid);
+  }
+
+  return 0;
+}
+
+static void _snap_to_grid(dt_lib_print_settings_t *ps,
+                          gdouble *x, gdouble *y)
+{
+  // FIXME: there should also be a snap-to-margin, perhaps always on, as if snap to margin in screen pixels it should really snap to margin in mm, might may be different -- unless we make all measurements relative in terms of margin, or deliberately make margins pixel accurate and the page edges be a bit sloppy
+  if(gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(ps->snap_grid)))
+  {
+    // only snap to the grid if within 5 pixels
+    const gdouble diff = DT_PIXEL_APPLY_DPI(5);
+    const gdouble step =
+      gtk_spin_button_get_value(GTK_SPIN_BUTTON(ps->grid_size)) / units[ps->unit];
+
+    const gdouble h_step = _mm_to_hscreen(ps, step);
+    const float h_dist = fmod(*x, h_step);
+    if((h_dist < diff) || (h_dist > h_step - diff))
+      *x = h_step * round(*x / h_step);
+
+    const float v_step = _mm_to_vscreen(ps, step);
+    const float v_dist = fmod(*y, v_step);
+    if((v_dist < diff) || (v_dist > v_step - diff))
+      *y = v_step * round(*y / v_step);
+  }
+}
+
+static gboolean _layout_box_mouse_moved(GtkWidget *w, GdkEventMotion *event,
+                                        dt_lib_print_settings_t *ps)
+{
+  const double x = event->x;
+  const double y = event->y;
+
+  gboolean expose = FALSE;
+
+  if(ps->dragging)
+  {
+    dt_image_box *b = &ps->imgs.box[ps->selected];
+    const float dx = x - ps->click_pos_x;
+    const float dy = y - ps->click_pos_y;
+    const float coef = dx / b->screen.width;
+
+    switch(ps->sel_controls)
+    {
+       case BOX_ALL:
+         ps->x1 = b->screen.x + dx;
+         ps->y1 = b->screen.y + dy;
+         ps->x2 = b->screen.x + b->screen.width + dx;
+         ps->y2 = b->screen.y + b->screen.height + dy;
+         break;
+       case BOX_LEFT:
+         ps->x1 = b->screen.x + dx;
+         break;
+       case BOX_TOP:
+         ps->y1 = b->screen.y + dy;
+         break;
+       case BOX_RIGHT:
+         ps->x2 = b->screen.x + b->screen.width + dx;
+         break;
+       case BOX_BOTTOM:
+         ps->y2 = b->screen.y + b->screen.height + dy;
+         break;
+       case BOX_TOP_LEFT:
+         ps->x1 = b->screen.x + dx;
+         ps->y1 = b->screen.y + (coef * b->screen.height);
+         break;
+       case BOX_TOP_RIGHT:
+         ps->x2 = b->screen.x + b->screen.width + dx;
+         ps->y1 = b->screen.y - (coef * b->screen.height);
+         break;
+       case BOX_BOTTOM_LEFT:
+         ps->x1 = b->screen.x + dx;
+         ps->y2 = b->screen.y + b->screen.height - (coef * b->screen.height);
+         break;
+       case BOX_BOTTOM_RIGHT:
+         ps->x2 = b->screen.x + b->screen.width + dx;
+         ps->y2 = b->screen.y + b->screen.height + (coef * b->screen.height);
+         break;
+       default:
+         break;
+    }
+    // FIXME: this should reposition the active box
+    expose = TRUE;
+
+    _snap_to_grid(ps, &ps->x1, &ps->y1);
+    _snap_to_grid(ps, &ps->x2, &ps->y2);
+  }
+  else
+  {
+    const int bidx = dt_printing_get_image_box(&ps->imgs, x, y);
+    ps->sel_controls = 0;
+
+    if(bidx == -1)
+    {
+      if(ps->selected != -1) expose = TRUE;
+      ps->selected = -1;
+      // FIXME: make position boxes inactive in right panel
+    }
+    else
+    {
+      // FIXME: layout box should have mouseover action to show callouts when mouseover box, hide them when mouse
+      expose = TRUE;
+      ps->selected = bidx;
+      _fill_box_values(ps);
+      _get_control(ps, x, y);
+    }
+  }
+
+  if(expose)
+  {
+    gtk_widget_queue_draw(ps->w_box_outline);
+    gtk_widget_queue_draw(ps->w_callouts);
+  }
+
+  return FALSE;
+}
+
+static void _swap(gdouble *a, gdouble *b)
+{
+  const float tmp = *a;
+  *a = *b;
+  *b = tmp;
+}
+
+static gboolean _layout_box_button_released(GtkWidget *w, GdkEventButton *event,
+                                            dt_lib_print_settings_t *ps)
+{
+  if(ps->dragging)
+  {
+    int idx = -1;
+
+    gtk_widget_set_sensitive(ps->del, TRUE);
+
+    // handle new area
+    if(ps->selected != -1)
+    {
+      idx = ps->selected;
+    }
+
+    if(idx != -1)
+    {
+      // make sure the area is in the the printable area taking into account the margins
+
+      // don't allow a too small area
+      if(ps->x2 < ps->x1) _swap(&ps->x1, &ps->x2);
+      if(ps->y2 < ps->y1) _swap(&ps->y1, &ps->y2);
+
+      const float dx = ps->x2 - ps->x1;
+      const float dy = ps->y2 - ps->y1;
+
+      dt_printing_setup_box(&ps->imgs, idx, ps->x1, ps->y1, dx, dy);
+      // make the new created box the last edited one
+      ps->last_selected = idx;
+      _fill_box_values(ps);
+
+      dt_image_box *box = &ps->imgs.box[idx];
+      gtk_widget_set_size_request(box->w_box,
+                                  roundf(box->screen.width),
+                                  roundf(box->screen.height));
+      gtk_fixed_move(GTK_FIXED(ps->w_layout_boxes), box->w_box,
+                     roundf(box->screen.x), roundf(box->screen.y));
+      gtk_widget_queue_draw(ps->w_callouts);
+    }
+  }
+
+  _update_slider(ps);
+
+  ps->dragging = FALSE;
+
+  dt_control_change_cursor(GDK_LEFT_PTR);
+
+  return FALSE;
+}
+
+static gboolean _layout_box_button_pressed(GtkWidget *w, GdkEventButton *event,
+                                           dt_lib_print_settings_t *ps)
+{
+  const double x = event->x;
+  const double y = event->y;
+  const int which = event->button;
+
+  // FIXME: should gtk_widget_grab_focus(w)? this is what the gtk.c _button_pressed handler does
+
+  ps->click_pos_x = x;
+  ps->click_pos_y = y;
+  ps->last_selected = -1;
+
+  // FIXME: clicks should happen in their own widget boxes, so don't have to mind selection
+  if(ps->selected > 0
+     && (which == 2 || (which == 1 &&
+                        dt_modifier_is(event->state, GDK_CONTROL_MASK))))
+  {
+    // middle click (or ctrl-click), move selected image down
+    // FIXME: moving image down is buggy! think this through better
+    dt_image_box b;
+    memcpy(&b, &ps->imgs.box[ps->selected], sizeof(dt_image_box));
+    memcpy(&ps->imgs.box[ps->selected], &ps->imgs.box[ps->selected-1],
+           sizeof(dt_image_box));
+    memcpy(&ps->imgs.box[ps->selected-1], &b, sizeof(dt_image_box));
+
+#if 0
+    // FIXME: this pointer work is fishy, try GINT_TO_POINTER()
+    if(ps->imgs.box[ps->selected-1].w_box)
+      g_object_set_data(G_OBJECT(&ps->imgs.box[ps->selected-1].w_box), "idx", (gpointer)(guintptr)(ps->selected-1));
+    if(ps->imgs.box[ps->selected].w_box)
+      g_object_set_data(G_OBJECT(&ps->imgs.box[ps->selected].w_box), "idx", (gpointer)(guintptr)(ps->selected));
+#elif 1
+    // we've swapped the underlying data, but kept the z-order of the
+    // widgets, so now we move the widgets to where their data shows
+    // them to be
+    for(int k=ps->selected-1; k <= ps->selected; k++)
+    {
+      dt_image_box *box = &ps->imgs.box[k];
+      // FIXME: does this do anything? doesn't dt_printing_setup_display() set box->screen?
+      dt_printing_setup_image(&ps->imgs, k, box->imgid, 100, 100, box->alignment);
+      gtk_widget_set_size_request(box->w_box,
+                                  roundf(box->screen.width), roundf(box->screen.height));
+      gtk_fixed_move(GTK_FIXED(ps->w_layout_boxes), box->w_box,
+                     roundf(box->screen.x), roundf(box->screen.y));
+    }
+#elif 0
+    // FIXME: this is hacky as the window may stil need to be z-ordered below others -- we other need to remove and reattach all the windows to the fixed or switch to GtkOverlay and position via margins
+    gdk_window_raise(gtk_widget_get_window(ps->imgs.box[ps->selected].w_box));
+#else
+    // another alternative, ctrl-click could raise the selected widget
+    // move widget to top
+    GtkWidget *w = dt_layout_box_widget(body->drag_box->data);
+    gtk_container_remove(GTK_CONTAINER(body->w_fixed), g_object_ref(w));
+    gtk_fixed_put(GTK_FIXED(body->w_fixed), w,
+                  body->box_initial_x, body->box_initial_y);
+    g_object_unref(w);
+#endif
+    // FIXME: necessary?
+    //gtk_widget_queue_draw(ps->imgs.box[ps->selected].w_box);
+    //gtk_widget_queue_draw(ps->imgs.box[ps->selected-1].w_box);
+  }
+  else if(ps->selected != -1 && which == 1)
+  {
+    dt_image_box *b = &ps->imgs.box[ps->selected];
+
+    ps->dragging = TRUE;
+    ps->x1 = b->screen.x;
+    ps->y1 = b->screen.y;
+    ps->x2 = b->screen.x + b->screen.width;
+    ps->y2 = b->screen.y + b->screen.height;
+
+    ps->last_selected = ps->selected;
+    ps->has_changed = TRUE;
+
+    _get_control(ps, x, y);
+
+    dt_control_change_cursor(GDK_HAND1);
+  }
+  else if(ps->selected != -1 && which == 3)
+  {
+    dt_image_box *b = &ps->imgs.box[ps->selected];
+
+    // if image present remove it, otherwise remove the box
+    if(dt_is_valid_imgid(b->imgid))
+    {
+      b->imgid = NO_IMGID;
+      gtk_widget_queue_draw(ps->imgs.box[ps->selected].w_box);
+    }
+    else
+    {
+      _page_delete_area(ps, ps->selected);
+    }
+
+    ps->last_selected = ps->selected;
+    ps->has_changed = TRUE;
+  }
+
+  return FALSE;
+}
+
+static gboolean _new_box_enter(GtkWidget *w, GdkEventCrossing event,
+                               gpointer user_data)
+{
+  // until we modernize by connecting cursor to a window, this is necessary
+  dt_control_change_cursor(GDK_PLUS);
+  return FALSE;
+}
+
+// FIXME: does this duplicate another function?
+static gboolean _in_area(gdouble x, gdouble y, dt_image_pos *area)
+{
+  return(x >= area->x && x <= area->x + area->width &&
+         y >= area->y && y <= area->y + area->height);
+}
+
+// FIXME: does this duplicate another function?
+static void _clamp_to_area(gdouble *x, gdouble *y, dt_image_pos *area)
+{
+  *x = CLAMP(*x, area->x, area->x + area->width);
+  *y = CLAMP(*y, area->y, area->y + area->height);
+}
+
+static void _new_box_drag_begin(GtkGestureDrag *gesture,
+                                gdouble start_x, gdouble start_y,
+                                dt_lib_print_settings_t *ps)
+{
+  // FIXME: should gtk_widget_grab_focus(w)? this is what the gtk.c _button_pressed handler does
+
+  ps->last_selected = -1;
+  ps->selected = -1;
+
+  gint page_x, page_y;
+  if(!gtk_widget_translate_coordinates(ps->w_new_box, ps->w_overlay,
+                                       round(start_x), round(start_y), &page_x, &page_y))
+  {
+    gtk_event_controller_reset(GTK_EVENT_CONTROLLER(gesture));
+    return;
+  }
+
+  ps->x1 = page_x;
+  ps->y1 = page_y;
+  _snap_to_grid(ps, &ps->x1, &ps->y1);
+
+  ps->click_pos_x = ps->x2 = ps->x1;
+  ps->click_pos_y = ps->y2 = ps->y1;
+
+  gtk_widget_set_visible(ps->w_callouts,
+                         _in_area(ps->click_pos_x, ps->click_pos_y,
+                                  &ps->imgs.screen.print_area));
+  gtk_widget_queue_draw(ps->w_new_box);
+}
+
+static void _new_box_drag_update(GtkGestureDrag *gesture,
+                                 gdouble offset_x, gdouble offset_y,
+                                 dt_lib_print_settings_t *ps)
+{
+  ps->x2 = ps->click_pos_x + offset_x;
+  ps->y2 = ps->click_pos_y + offset_y;
+
+  if(gtk_widget_get_visible(ps->w_callouts))
+  {
+    // if we're drawing a box within the page body, make sure it
+    // remains within margins
+    if(!_in_area(ps->x2, ps->y2, &ps->imgs.screen.print_area))
+      _clamp_to_area(&ps->x2, &ps->y2, &ps->imgs.screen.print_area);
+  }
+  else
+  {
+    // if we started dragging outside of the page body area but are in
+    // it now, drag origin jumps into page body
+    if(_in_area(ps->x2, ps->y2, &ps->imgs.screen.print_area))
+    {
+      _clamp_to_area(&ps->x1, &ps->y1, &ps->imgs.screen.print_area);
+      gtk_widget_show(ps->w_callouts);
+    }
+  }
+
+  _snap_to_grid(ps, &ps->x2, &ps->y2);
+  gtk_widget_queue_draw(ps->w_box_outline);
+  gtk_widget_queue_draw(ps->w_new_box);
+}
+
+static void _new_box_drag_end(GtkGestureDrag *gesture,
+                              gdouble offset_x, gdouble offset_y,
+                              dt_lib_print_settings_t *ps)
+{
+  // only create box if it is within margins
+  if(gtk_widget_get_visible(ps->w_callouts))
+  {
+    // new area
+    const int idx = ps->imgs.count++;
+
+    // FIXME: this is shared code with box drag, make it a helper function
+    // make sure the area is in the the printable area taking into account the margins
+    // FIXME: we don't need to check for margins as the GUI code has already done this
+
+    // don't allow a too small area
+    if(ps->x2 < ps->x1) _swap(&ps->x1, &ps->x2);
+    if(ps->y2 < ps->y1) _swap(&ps->y1, &ps->y2);
+
+    // FIXME: if right against margins by pixels, should set box to exactly margins rather than pixel translation to margins
+
+    const float dx = ps->x2 - ps->x1;
+    const float dy = ps->y2 - ps->y1;
+
+    dt_printing_setup_box(&ps->imgs, idx, ps->x1, ps->y1, dx, dy);
+    _new_layout_box_widget(ps, idx);
+    // make the new created box the last edited one
+    ps->last_selected = idx;
+    _fill_box_values(ps);
+
+    gtk_widget_queue_draw(ps->w_layout_boxes);
+    gtk_widget_queue_draw(ps->w_callouts);
+    gtk_widget_set_sensitive(ps->del, TRUE);
+
+    _update_slider(ps);
+  }
+
+  dt_control_change_cursor(GDK_LEFT_PTR);
+  gtk_widget_hide(ps->w_new_box);
+}
+
+static gboolean _draw_grid(GtkWidget *self, cairo_t *cr, dt_lib_print_settings_t *ps)
+{
+  GtkStyleContext *context = gtk_widget_get_style_context(self);
+  GdkRGBA color;
+  gtk_style_context_get_color(context, gtk_style_context_get_state(context), &color);
+  gdk_cairo_set_source_rgba(cr, &color);
 
   const float step =
     gtk_spin_button_get_value(GTK_SPIN_BUTTON(ps->grid_size)) / units[ps->unit];
 
   // only display grid if spacing more than 5 pixels
-  if(gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(ps->grid))
-     && (int)_mm_to_hscreen(ps, step, FALSE) > DT_PIXEL_APPLY_DPI(5))
+  // FIXME: if grid isn't displayed we should provide some other feedback, e.g. make the "display grid" button not be sensitive and a helpful tooltip, or just halve the grid density until it can be visible
+  if((int)_mm_to_hscreen(ps, step) > DT_PIXEL_APPLY_DPI(5))
   {
     const double dash[] = { DT_PIXEL_APPLY_DPI(5.0), DT_PIXEL_APPLY_DPI(5.0) };
-    cairo_set_source_rgba(cr, 1, .2, .2, 0.6);
 
+    // FIXME: these lines are drawn with subpixel accuracy, but it means they're not as bright as they could be, and that they don't match components that are or will be drawn with pixel accuracy because they are GTK widgets: margin/page edges, layout boxes, images, selection -- make these rounded to nearest pixel as well?
     // V lines
-    float grid_pos = (float)ps->imgs.screen.page.x;
-
-    const float h_step = _mm_to_hscreen(ps, step, FALSE);
-    int n = 0;
-
-    while(grid_pos < ps->imgs.screen.page.x + ps->imgs.screen.page.width)
+    double grid_pos = 0.0;
+    const double h_step = _mm_to_hscreen(ps, step);
+    for(int n=0; grid_pos < ps->imgs.screen.page_width; grid_pos += h_step, n++)
     {
-      cairo_set_dash(cr,
-                     dash, ((n % 5) == 0)
-                     ? 0
-                     : 2, DT_PIXEL_APPLY_DPI(5));
-      cairo_set_line_width(cr,
-                           ((n % 5) == 0)
-                           ? DT_PIXEL_APPLY_DPI(1.0)
-                           : DT_PIXEL_APPLY_DPI(0.5));
-      cairo_move_to(cr, grid_pos, ps->imgs.screen.page.y);
-      cairo_line_to(cr, grid_pos, ps->imgs.screen.page.y + ps->imgs.screen.page.height);
+      cairo_set_dash(cr, dash, ((n % 5) == 0) ? 0 : 2, dash[0]);
+      cairo_set_line_width(cr, DT_PIXEL_APPLY_DPI(n % 5 ? 0.5 : 1.0));
+      cairo_move_to(cr, grid_pos, 0.0);
+      cairo_line_to(cr, grid_pos, ps->imgs.screen.page_height);
       cairo_stroke(cr);
-      grid_pos += h_step;
-      n++;
     }
 
     // H lines
-    grid_pos = (float)ps->imgs.screen.page.y;
-
-    const float v_step = _mm_to_vscreen(ps, step, FALSE);
-    n = 0;
-
-    while(grid_pos < ps->imgs.screen.page.y + ps->imgs.screen.page.height)
+    grid_pos = 0.0;
+    const float v_step = _mm_to_vscreen(ps, step);
+    for(int n=0; grid_pos < ps->imgs.screen.page_height; grid_pos += v_step, n++)
     {
-      cairo_set_dash(cr, dash,
-                     ((n % 5) == 0)
-                     ? 0
-                     : 2, DT_PIXEL_APPLY_DPI(5));
-      cairo_set_line_width(cr,
-                           ((n % 5) == 0)
-                           ? DT_PIXEL_APPLY_DPI(1.0)
-                           : DT_PIXEL_APPLY_DPI(0.5));
-
-      cairo_move_to(cr, ps->imgs.screen.page.x, grid_pos);
-      cairo_line_to(cr, ps->imgs.screen.page.x + ps->imgs.screen.page.width, grid_pos);
+      cairo_set_dash(cr, dash, ((n % 5) == 0) ? 0 : 2, dash[0]);
+      cairo_set_line_width(cr, DT_PIXEL_APPLY_DPI(n % 5 ? 0.5 : 1.0));
+      cairo_move_to(cr, 0.0, grid_pos);
+      cairo_line_to(cr, ps->imgs.screen.page_width, grid_pos);
       cairo_stroke(cr);
-      grid_pos += v_step;
-      n++;
     }
   }
 
-  // disable dash
-  cairo_set_source_rgba(cr, 1, .2, .2, 0.6);
-  cairo_set_dash(cr, NULL, 0, 0);
+  return FALSE;
+}
 
-  const float scaler = 1.0f / darktable.gui->ppd_thb;
-
-  for(int k=0; k<ps->imgs.count; k++)
-  {
-    dt_image_box *img = &ps->imgs.box[k];
-
-    if(dt_is_valid_imgid(img->imgid))
-    {
-      cairo_surface_t *surf = NULL;
-
-      // screen coordinate default to current box if there is no image
-      dt_image_pos screen;
-
-      dt_printing_setup_image(&ps->imgs, k, img->imgid, 100, 100, img->alignment);
-
-      dt_printing_get_screen_pos(&ps->imgs, img, &screen);
-
-      const dt_view_surface_value_t res =
-        dt_view_image_get_surface(img->imgid, screen.width, screen.height, &surf, TRUE);
-
-      if(res != DT_VIEW_SURFACE_OK)
-      {
-        // if the image is missing, we reload it again
-        g_timeout_add(250, _expose_again, ps);
-        if(!ps->busy) dt_control_log_busy_enter();
-        ps->busy = TRUE;
-      }
-      else
-      {
-        cairo_save(cr);
-        cairo_translate(cr, screen.x, screen.y);
-        cairo_scale(cr, scaler, scaler);
-        cairo_set_source_surface(cr, surf, 0, 0);
-        const double alpha =
-          (ps->dragging
-           || (ps->selected != -1 && ps->selected != k))
-          ? 0.25
-          : 1.0;
-
-        cairo_paint_with_alpha(cr, alpha);
-        cairo_surface_destroy(surf);
-        cairo_restore(cr);
-        if(ps->busy) dt_control_log_busy_leave();
-        ps->busy = FALSE;
-      }
-    }
-
-    if(k == ps->selected || !dt_is_valid_imgid(img->imgid))
-    {
-      cairo_set_source_rgba(cr, .4, .4, .4, 1.0);
-      _cairo_rectangle(cr, (k == ps->selected) ? ps->sel_controls : 0,
-                       img->screen.x, img->screen.y,
-                       img->screen.x + img->screen.width,
-                       img->screen.y + img->screen.height);
-      cairo_stroke(cr);
-    }
-
-    if(k == ps->imgs.motion_over)
-    {
-      cairo_set_source_rgba(cr, .2, .2, .2, 1.0);
-      cairo_rectangle(cr, img->screen.x, img->screen.y,
-                      img->screen.width, img->screen.height);
-      cairo_fill(cr);
-    }
-  }
-
-  // now display new area if any
+// draw outline of current layout box
+static gboolean _draw_box_outline(GtkWidget *self, cairo_t *cr,
+                                  dt_lib_print_settings_t *ps)
+{
+  // FIXME: even if keep this, can figure it out via gtk_gesture_is_active()
   if(ps->dragging || ps->selected != -1)
   {
-    float dx1, dy1, dx2, dy2, dwidth, dheight; // displayed values
+    // FIXME: this duplicates code below, and we should be able to just outline the layout box in the case of not dragging
     float x1, y1, x2, y2;                      // box screen coordinates
-
-    float pwidth, pheight;
-    _get_page_dimension(&ps->prt, &pwidth, &pheight);
 
     if(ps->dragging)
     {
@@ -1994,11 +2228,100 @@ void gui_post_expose(struct dt_lib_module_t *self,
       y1      = ps->y1;
       x2      = ps->x2;
       y2      = ps->y2;
+    }
+    else
+    {
+      const dt_image_box *box = &ps->imgs.box[ps->selected];
+      x1 = box->screen.x;
+      y1 = box->screen.y;
+      x2 = box->screen.x + box->screen.width;
+      y2 = box->screen.y + box->screen.height;
+    }
 
-      dx1     = _hscreen_to_mm(ps, ps->x1, TRUE) * units[ps->unit];
-      dy1     = _vscreen_to_mm(ps, ps->y1, TRUE) * units[ps->unit];
-      dx2     = _hscreen_to_mm(ps, ps->x2, TRUE) * units[ps->unit];
-      dy2     = _vscreen_to_mm(ps, ps->y2, TRUE) * units[ps->unit];
+    cairo_set_source_rgba(cr, .4, .4, .4, 1.0);
+    _cairo_rectangle(cr, ps->sel_controls, x1, y1, x2, y2);
+  }
+
+  return FALSE;
+}
+
+static gboolean _draw_new_box(GtkWidget *self, cairo_t *cr,
+                              dt_lib_print_settings_t *ps)
+{
+  // FIXME: if the new box widget is only shown when dragging to create a new box, won't need this or any of the math below
+  if(!gtk_gesture_is_active(ps->g_new_box)) return FALSE;
+
+  gint view_x, view_y;
+  if(!gtk_widget_translate_coordinates(ps->w_overlay, ps->w_new_box,
+                                       round(ps->x1), round(ps->y1),
+                                       &view_x, &view_y))
+    return FALSE;
+
+  double x = view_x;
+  double y = view_y;
+  double width = ps->x2 - ps->x1;
+  double height = ps->y2 - ps->y1;
+
+  // unlike cairo GTK render functions don't handle negative dimensions
+  if(width < 0)
+  {
+    x = x + width;
+    width = -width;
+  }
+  if(height < 0)
+  {
+    y = y + height;
+    height = -height;
+  }
+
+  // FIXME: this should draw below the callouts -- or be drawn as part of the callout code
+  GtkStyleContext *const context = gtk_widget_get_style_context(self);
+  gtk_render_background(context, cr, x, y, width, height);
+  gtk_render_frame(context, cr, x, y, width, height);
+
+  const double dash[] = { DT_PIXEL_APPLY_DPI(3.0), DT_PIXEL_APPLY_DPI(3.0) };
+  cairo_set_dash(cr, dash, 2, 0);
+
+  // represent no image inside but only if within margins
+  if(gtk_widget_get_visible(ps->w_callouts))
+  {
+    // FIXME: make these direct-to-Cairo drawing calls where control line width via DT_PIXEL_APPLY_DPI() or else the 1 pixel lines will be too thin on hidpi and not match the outline
+    gtk_render_line(context, cr, x, y, x + width, y + height);
+    gtk_render_line(context, cr, x, y + height, x + width, y);
+  }
+
+  // FIXME: callouts are in wrong position if drag in box from edge of screen beyond margins
+
+  _fill_box_values(ps);
+
+  return FALSE;
+}
+
+static gboolean _draw_callouts(GtkWidget *self, cairo_t *cr,
+                               dt_lib_print_settings_t *ps)
+{
+  // FIXME: GTK-ify this code, so there isn't so much customized ad hoc posiitioning code
+  // FIXME: only show this widget if drawing a new layout box or one is selected
+  if(ps->dragging || gtk_gesture_is_active(ps->g_new_box) || ps->selected != -1)
+  {
+    // FIXME: this duplicates box outline code above -- we should just size the box outline or layout box and then read these from there, excepting ones that need to be displayed mm-accurate
+    float dx1, dy1, dx2, dy2, dwidth, dheight; // displayed values
+    float x1, y1, x2, y2;                      // box screen coordinates
+
+    float pwidth, pheight;
+    _get_page_dimension(&ps->prt, &pwidth, &pheight);
+
+    if(ps->dragging || gtk_gesture_is_active(ps->g_new_box))
+    {
+      x1      = ps->x1;
+      y1      = ps->y1;
+      x2      = ps->x2;
+      y2      = ps->y2;
+
+      dx1     = _mm_to_user(ps, _hscreen_to_mm(ps, ps->x1));
+      dy1     = _mm_to_user(ps, _vscreen_to_mm(ps, ps->y1));
+      dx2     = _mm_to_user(ps, _hscreen_to_mm(ps, ps->x2));
+      dy2     = _mm_to_user(ps, _vscreen_to_mm(ps, ps->y2));
       dwidth  = fabsf(dx2 - dx1);
       dheight = fabsf(dy2 - dy1);
     }
@@ -2023,9 +2346,6 @@ void gui_post_expose(struct dt_lib_module_t *self,
       y2 = box->screen.y + box->screen.height;
     }
 
-    cairo_set_source_rgba(cr, .4, .4, .4, 1.0);
-    _cairo_rectangle(cr, ps->sel_controls, x1, y1, x2, y2);
-
     // display corner coordinates
     // FIXME: here and elsewhere eliminate hardcoded RGB values -- use CSS
     char dimensions[16];
@@ -2047,15 +2367,14 @@ void gui_post_expose(struct dt_lib_module_t *self,
 
     yp = y1 + (y2 - y1 - text_h) * 0.5;
 
-    if(x1 >= ps->imgs.screen.page.x
-       && x1 <= (ps->imgs.screen.page.x + ps->imgs.screen.page.width))
+    // FIXME: rather than snprintf() x,y,width,height can use gtk_entry_get_layout() to draw same as in right panel, or at the least gtk_entry_get_text()
+    if(x1 >= 0 && x1 <= ps->imgs.screen.page_width)
     {
       snprintf(dimensions, sizeof(dimensions), precision, dx1);
       pango_layout_set_text(layout, dimensions, -1);
       pango_layout_get_pixel_extents(layout, NULL, &ext);
-      xp = ps->imgs.screen.page.x
-        + (x1 - text_h - ps->imgs.screen.page.x - ext.width) * 0.5;
-      if(xp < ps->imgs.screen.page.x + 3 * margin)
+      xp = (x1 - text_h - ext.width) * 0.5;
+      if(xp < 3 * margin)
       {
         xp = x1 + 2 * margin;
         // somewhat hacky, assumes that all numeric labels are about
@@ -2063,7 +2382,7 @@ void gui_post_expose(struct dt_lib_module_t *self,
         yp = MIN(y2 - text_h, yp + ext.width + 0.5 * text_h + margin * 3);
       }
       cairo_set_source_rgba(cr, .7, .7, .7, .9);
-      cairo_move_to(cr, ps->imgs.screen.page.x, yp + text_h * 0.5);
+      cairo_move_to(cr, 0.0, yp + text_h * 0.5);
       cairo_line_to(cr, x1, yp + text_h * 0.5);
       cairo_stroke_preserve(cr);
       cairo_set_source_rgba(cr, .5, .5, .5, .9);
@@ -2080,21 +2399,17 @@ void gui_post_expose(struct dt_lib_module_t *self,
       pango_cairo_show_layout(cr, layout);
     }
 
-    if(x2 >= ps->imgs.screen.page.x
-       && x2 <= (ps->imgs.screen.page.x + ps->imgs.screen.page.width))
+    if(x2 >= 0.0 && x2 <= ps->imgs.screen.page_width)
     {
       snprintf(dimensions, sizeof(dimensions), precision, pwidth * units[ps->unit] - dx2);
       pango_layout_set_text(layout, dimensions, -1);
       pango_layout_get_pixel_extents(layout, NULL, &ext);
-      xp = x2 + (ps->imgs.screen.page.x
-                 + ps->imgs.screen.page.width - x2 - ext.width) * 0.5;
-      if(xp + ext.width + margin > ps->imgs.screen.page.x + ps->imgs.screen.page.width)
+      xp = x2 + (ps->imgs.screen.page_width - x2 - ext.width) * 0.5;
+      if(xp + ext.width + margin > ps->imgs.screen.page_width)
         xp = x2 - ext.width - 2 * margin;
       cairo_set_source_rgba(cr, .7, .7, .7, .9);
       cairo_move_to(cr, x2, yp + text_h * 0.5);
-      cairo_line_to(cr,
-                    ps->imgs.screen.page.x + ps->imgs.screen.page.width,
-                    yp + text_h * 0.5);
+      cairo_line_to(cr, ps->imgs.screen.page_width, yp + text_h * 0.5);
       cairo_stroke_preserve(cr);
       cairo_set_source_rgba(cr, .5, .5, .5, .9);
       cairo_set_dash(cr, &dash, 1, dash);
@@ -2109,21 +2424,19 @@ void gui_post_expose(struct dt_lib_module_t *self,
 
     xp = x1 + (x2 - x1 - text_h) * 0.5;
 
-    if(y1 >= ps->imgs.screen.page.y
-       && y1 <= (ps->imgs.screen.page.y + ps->imgs.screen.page.height))
+    if(y1 >= 0.0 && y1 <= ps->imgs.screen.page_height)
     {
       snprintf(dimensions, sizeof(dimensions), precision, dy1);
       pango_layout_set_text(layout, dimensions, -1);
       pango_layout_get_pixel_extents(layout, NULL, &ext);
-      yp = ps->imgs.screen.page.y
-        + (y1 - text_h - ps->imgs.screen.page.y - ext.width) * 0.5;
-      if(yp < ps->imgs.screen.page.y + 3 * margin)
+      yp = (y1 - text_h - ext.width) * 0.5;
+      if(yp < 3 * margin)
       {
         xp = MIN(x2 - text_h, xp + ext.width + 0.5 * text_h + margin * 3);
         yp = y1 + 2 * margin;
       }
       cairo_set_source_rgba(cr, .7, .7, .7, .9);
-      cairo_move_to(cr, xp + text_h * 0.5, ps->imgs.screen.page.y);
+      cairo_move_to(cr, xp + text_h * 0.5, 0.0);
       cairo_line_to(cr, xp + text_h * 0.5, y1);
       cairo_stroke_preserve(cr);
       cairo_set_source_rgba(cr, .5, .5, .5, .9);
@@ -2142,21 +2455,17 @@ void gui_post_expose(struct dt_lib_module_t *self,
       cairo_restore(cr);
     }
 
-    if(y2 >= ps->imgs.screen.page.y
-       && y2 <= (ps->imgs.screen.page.y + ps->imgs.screen.page.height))
+    if(y2 >= 0.0 && y2 <= ps->imgs.screen.page_height)
     {
       snprintf(dimensions, sizeof(dimensions), precision, pheight * units[ps->unit] - dy2);
       pango_layout_set_text(layout, dimensions, -1);
       pango_layout_get_pixel_extents(layout, NULL, &ext);
-      yp = y2 + (ps->imgs.screen.page.y
-                 + ps->imgs.screen.page.height - y2 - ext.width) * 0.5;
-      if(yp + ext.width + margin > ps->imgs.screen.page.y + ps->imgs.screen.page.height)
+      yp = y2 + (ps->imgs.screen.page_height - y2 - ext.width) * 0.5;
+      if(yp + ext.width + margin > ps->imgs.screen.page_height)
         yp = y2 - ext.width - 2 * margin;
       cairo_set_source_rgba(cr, .7, .7, .7, .9);
       cairo_move_to(cr, xp + text_h * 0.5, y2);
-      cairo_line_to(cr,
-                    xp + text_h * 0.5,
-                    ps->imgs.screen.page.y + ps->imgs.screen.page.height);
+      cairo_line_to(cr, xp + text_h * 0.5, ps->imgs.screen.page_height);
       cairo_stroke_preserve(cr);
       cairo_set_source_rgba(cr, .5, .5, .5, .9);
       cairo_set_dash(cr, &dash, 1, dash);
@@ -2215,86 +2524,29 @@ void gui_post_expose(struct dt_lib_module_t *self,
     g_free(precision);
   }
 
-  if(ps->imgs.screen.borderless)
-    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(ps->borderless), TRUE);
-  else
-    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(ps->borderless), FALSE);
+  return FALSE;
 }
 
-static void _width_changed(GtkWidget *widget, gpointer user_data)
+static void _pos_changed(GtkWidget *widget, dt_lib_print_settings_t *ps)
 {
   if(darktable.gui->reset) return;
 
-  dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)user_data;
-
   const float nv = gtk_spin_button_get_value(GTK_SPIN_BUTTON(widget));
-  const float nv_mm = nv / units[ps->unit];
+  const float nv_px = _mm_to_hscreen(ps, nv / units[ps->unit]);
 
-  dt_image_box *box = &ps->imgs.box[ps->last_selected];
+  // FIXME: do need to test that last_selected != -1? or make sure that the position buttons are only sensitive when they correspond to a selected image?
+  const dt_image_box *box = &ps->imgs.box[ps->last_selected];
+  float pos[4] = { box->screen.x, box->screen.y, box->screen.width, box->screen.height };
+  pos[(gsize)g_object_get_data(G_OBJECT(widget), "idx")] = nv_px;
 
-  dt_printing_setup_box(&ps->imgs, ps->last_selected,
-                        box->screen.x, box->screen.y,
-                        _mm_to_hscreen(ps, nv_mm, FALSE), box->screen.height);
+  // FIXME: should clamp dimensions so that they are within the margins
+
+  dt_printing_setup_box(&ps->imgs, ps->last_selected, pos[0], pos[1], pos[2], pos[3]);
+  gtk_widget_set_size_request(box->w_box, roundf(pos[2]), roundf(pos[3]));
+  gtk_fixed_move(GTK_FIXED(ps->w_layout_boxes), box->w_box, roundf(pos[0]), roundf(pos[1]));
 
   ps->has_changed = TRUE;
-  dt_control_queue_redraw_center();
-}
-
-static void _height_changed(GtkWidget *widget, gpointer user_data)
-{
-  if(darktable.gui->reset) return;
-
-  dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)user_data;
-
-  const float nv = gtk_spin_button_get_value(GTK_SPIN_BUTTON(widget));
-  const float nv_mm = nv / units[ps->unit];
-
-  dt_image_box *box = &ps->imgs.box[ps->last_selected];
-
-  dt_printing_setup_box(&ps->imgs, ps->last_selected,
-                        box->screen.x, box->screen.y,
-                        box->screen.width, _mm_to_vscreen(ps, nv_mm, FALSE));
-
-  ps->has_changed = TRUE;
-  dt_control_queue_redraw_center();
-}
-
-static void _x_changed(GtkWidget *widget, gpointer user_data)
-{
-  if(darktable.gui->reset) return;
-
-  dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)user_data;
-
-  const float nv = gtk_spin_button_get_value(GTK_SPIN_BUTTON(widget));
-  const float nv_mm = nv / units[ps->unit];
-
-  dt_image_box *box = &ps->imgs.box[ps->last_selected];
-
-  dt_printing_setup_box(&ps->imgs, ps->last_selected,
-                        _mm_to_hscreen(ps, nv_mm, TRUE), box->screen.y,
-                        box->screen.width, box->screen.height);
-
-  ps->has_changed = TRUE;
-  dt_control_queue_redraw_center();
-}
-
-static void _y_changed(GtkWidget *widget, gpointer user_data)
-{
-  if(darktable.gui->reset) return;
-
-  dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)user_data;
-
-  const float nv = gtk_spin_button_get_value(GTK_SPIN_BUTTON(widget));
-  const float nv_mm = nv / units[ps->unit];
-
-  dt_image_box *box = &ps->imgs.box[ps->last_selected];
-
-  dt_printing_setup_box(&ps->imgs, ps->last_selected,
-                        box->screen.x, _mm_to_vscreen(ps, nv_mm, TRUE),
-                        box->screen.width, box->screen.height);
-
-  ps->has_changed = TRUE;
-  dt_control_queue_redraw_center();
+  gtk_widget_queue_draw(box->w_box);
 }
 
 void gui_init(dt_lib_module_t *self)
@@ -2314,10 +2566,13 @@ void gui_init(dt_lib_module_t *self)
   d->v_piccprofile = NULL;
   d->v_iccprofile = NULL;
   d->v_style = NULL;
-  d->creation = d->dragging = FALSE;
+  d->dragging = FALSE;
   d->selected = -1;
   d->last_selected = -1;
   d->has_changed = FALSE;
+  d->filmstrip_select = NO_IMGID;
+  d->lock_bottom = d->lock_left = d->lock_right = NULL;
+  d->imgs.screen.page_width = d->imgs.screen.page_height = 0.0f;
 
   dt_init_print_info(&d->prt);
   dt_view_print_settings(darktable.view_manager, &d->prt, &d->imgs);
@@ -2336,15 +2591,109 @@ void gui_init(dt_lib_module_t *self)
 
   // set all margins + unit from settings
 
+  // FIXME: these are not in darktableconfig.xml.in, bring over code from v1 branch to add them in
   const float top_b = dt_conf_get_float("plugins/print/print/top_margin");
   const float bottom_b = dt_conf_get_float("plugins/print/print/bottom_margin");
   const float left_b = dt_conf_get_float("plugins/print/print/left_margin");
   const float right_b = dt_conf_get_float("plugins/print/print/right_margin");
 
-  d->prt.page.margin_top = _to_mm(d, top_b);
-  d->prt.page.margin_bottom = _to_mm(d, bottom_b);
-  d->prt.page.margin_left = _to_mm(d, left_b);
-  d->prt.page.margin_right = _to_mm(d, right_b);
+  d->prt.page.margin_top = _user_to_mm(d, top_b);
+  d->prt.page.margin_bottom = _user_to_mm(d, bottom_b);
+  d->prt.page.margin_left = _user_to_mm(d, left_b);
+  d->prt.page.margin_right = _user_to_mm(d, right_b);
+
+  // overlay in center area to show layout boxes, images, and
+  // measurements
+  d->w_grid = gtk_drawing_area_new();
+  gtk_widget_set_name(d->w_grid, "print-page-grid");
+
+  // FIXME: make this a GtkOverlay with margins for each widget giving offsets -- that way we can control z-order of widgets -- so long as gestures register only on area of widget within margins 
+  d->w_layout_boxes = gtk_fixed_new();
+  gtk_widget_set_name(d->w_layout_boxes, "print-layout-boxes");
+
+  // FIXME: make this a pass-through widget, then we can move w_new_box under this one, and then the layout boxes can be sensitive to drag events -- or merge this into w_callouts if it only shows for active window or dragged window
+  d->w_box_outline = gtk_drawing_area_new();
+  gtk_widget_set_name(d->w_box_outline, "print-box-outline");
+
+  // FIXME: make this a pass-through widget, then we can move w_new_box under this one, and then the layout boxes can be sensitive to drag events
+  d->w_callouts = gtk_drawing_area_new();
+  gtk_widget_set_name(d->w_callouts, "print-callouts");
+
+  d->w_overlay = gtk_overlay_new();
+  gtk_container_add(GTK_CONTAINER(d->w_overlay), d->w_grid);
+  gtk_overlay_add_overlay(GTK_OVERLAY(d->w_overlay), d->w_layout_boxes);
+  gtk_overlay_add_overlay(GTK_OVERLAY(d->w_overlay), d->w_box_outline);
+  gtk_overlay_add_overlay(GTK_OVERLAY(d->w_overlay), d->w_callouts);
+  gtk_widget_set_name(d->w_overlay, "print-page-overlay");
+
+  // FIXME: these will start being connected to event boxes
+  gtk_widget_set_events(d->w_callouts,
+                        GDK_POINTER_MOTION_MASK | GDK_BUTTON_PRESS_MASK
+                        | GDK_BUTTON_RELEASE_MASK);
+
+  g_signal_connect(G_OBJECT(d->w_grid), "draw",
+                   G_CALLBACK(_draw_grid), d);
+
+  g_signal_connect(G_OBJECT(d->w_layout_boxes), "size-allocate",
+                   G_CALLBACK(_layout_boxes_size_allocate), d);
+
+  g_signal_connect(G_OBJECT(d->w_box_outline), "draw",
+                   G_CALLBACK(_draw_box_outline), d);
+
+  g_signal_connect(G_OBJECT(d->w_callouts), "draw",
+                   G_CALLBACK(_draw_callouts), d);
+  // FIXME: mouse and drag/drop events probably need to be handled via an event box overlaid on top
+  g_signal_connect(G_OBJECT(d->w_callouts), "motion-notify-event",
+                   G_CALLBACK(_layout_box_mouse_moved), d);
+  g_signal_connect(G_OBJECT(d->w_callouts), "button-press-event",
+                   G_CALLBACK(_layout_box_button_pressed), d);
+  g_signal_connect(G_OBJECT(d->w_callouts), "button-release-event",
+                   G_CALLBACK(_layout_box_button_released), d);
+
+  // FIXME: check out _register_modules_drag_n_drop() from darkroom.c and its callbacks for ideas
+  gtk_drag_dest_set(d->w_callouts, GTK_DEST_DEFAULT_ALL,
+                    // FIXME: should be target_list_internal?
+                    target_list_all, n_targets_all, GDK_ACTION_MOVE);
+  g_signal_connect(d->w_callouts, "drag-data-received",
+                   G_CALLBACK(_drag_and_drop_received), d);
+  g_signal_connect(d->w_callouts, "drag-motion",
+                   G_CALLBACK(_drag_motion_received), d);
+
+  gtk_widget_show(d->w_callouts);
+  // FIXME: don't show this initially, only when box is selected or when dragging
+  gtk_widget_show(d->w_box_outline);
+  gtk_widget_show(d->w_layout_boxes);
+  gtk_widget_show(d->w_overlay);
+
+  // an overlay for creating new layout boxes, separate so it can full
+  // full center area (unlike w_overlay which only fills a frame with
+  // aspect ratio of the page)
+
+  // FIXME: it would be nice if new boxes could be made by click/dragging anywhere in the page body -- this would get red of the the "new image area" button -- tradeoffs is that it might be harder to maek fullpage boxes or boxes on top of other boxes
+
+  d->w_new_box = gtk_drawing_area_new();
+  gtk_widget_set_name(d->w_new_box, "print-box-new");
+
+  gtk_widget_set_events(d->w_new_box, GDK_ENTER_NOTIFY_MASK);
+
+  g_signal_connect(G_OBJECT(d->w_new_box), "draw",
+                   G_CALLBACK(_draw_new_box), d);
+  g_signal_connect(G_OBJECT(d->w_new_box), "enter-notify-event",
+                   G_CALLBACK(_new_box_enter), NULL);
+
+  d->g_new_box = gtk_gesture_drag_new(d->w_new_box);
+  g_signal_connect(d->g_new_box, "drag-begin",
+                   G_CALLBACK(_new_box_drag_begin), d);
+  g_signal_connect(d->g_new_box, "drag-update",
+                   G_CALLBACK(_new_box_drag_update), d);
+  g_signal_connect(d->g_new_box, "drag-end",
+                   G_CALLBACK(_new_box_drag_end), d);
+
+  // the print view needs access as it will put these in the center
+  // area when in print view
+  // FIXME: can we just do that work here?
+  darktable.lib->proxy.print.w_settings_main = d->w_overlay;
+  darktable.lib->proxy.print.w_new_box = d->w_new_box;
 
   //  create the spin-button now as values could be set when the
   //  printer has no hardware margin
@@ -2363,6 +2712,7 @@ void gui_init(dt_lib_module_t *self)
   gtk_spin_button_set_digits(GTK_SPIN_BUTTON(d->b_left),   n_digits);
   gtk_spin_button_set_digits(GTK_SPIN_BUTTON(d->b_right),  n_digits);
 
+  // FIXME: these ranges should be larger as there can be pages > 1000mm
   d->b_x      = gtk_spin_button_new_with_range(0, 1000, incr);
   d->b_y      = gtk_spin_button_new_with_range(0, 1000, incr);
   d->b_width  = gtk_spin_button_new_with_range(0, 1000, incr);
@@ -2371,6 +2721,10 @@ void gui_init(dt_lib_module_t *self)
   gtk_spin_button_set_digits(GTK_SPIN_BUTTON(d->b_y), n_digits);
   gtk_spin_button_set_digits(GTK_SPIN_BUTTON(d->b_width), n_digits);
   gtk_spin_button_set_digits(GTK_SPIN_BUTTON(d->b_height), n_digits);
+  g_object_set_data(G_OBJECT(d->b_x), "idx", (gpointer)0);
+  g_object_set_data(G_OBJECT(d->b_y), "idx", (gpointer)1);
+  g_object_set_data(G_OBJECT(d->b_width), "idx", (gpointer)2);
+  g_object_set_data(G_OBJECT(d->b_height), "idx", (gpointer)3);
 
   d->grid_size = gtk_spin_button_new_with_range(0, 100, incr);
   gtk_spin_button_set_digits(GTK_SPIN_BUTTON(d->grid_size),  n_digits);
@@ -2561,8 +2915,6 @@ void gui_init(dt_lib_module_t *self)
   gtk_grid_set_row_spacing(bds, DT_PIXEL_APPLY_DPI(3));
   gtk_grid_set_column_spacing(bds, DT_PIXEL_APPLY_DPI(3));
 
-  d->lock_activated = FALSE;
-
   //d->b_top  = gtk_spin_button_new_with_range(0, 10000, 1);
   gtk_widget_set_tooltip_text(GTK_WIDGET(d->b_top), _("top margin"));
   gtk_grid_attach(bds, GTK_WIDGET(d->b_top), 1, 0, 1, 1);
@@ -2571,10 +2923,13 @@ void gui_init(dt_lib_module_t *self)
   gtk_widget_set_tooltip_text(GTK_WIDGET(d->b_left), _("left margin"));
   gtk_grid_attach(bds, GTK_WIDGET(d->b_left), 0, 1, 1, 1);
 
-  d->lock_button = GTK_TOGGLE_BUTTON(gtk_toggle_button_new_with_label(_("lock")));
-  gtk_widget_set_tooltip_text(GTK_WIDGET(d->lock_button),
-                              _("change all margins uniformly"));
-  gtk_grid_attach(bds, GTK_WIDGET(d->lock_button), 1, 1, 1, 1);
+  // FIXME: make it so that the tabbing through margins doesn't stop at lock widget, because the next tab will then hide all the panels
+  // FIXME: swap in an unlocked icon when lock is not active
+  // FIXME: pack this row more tightly, so lock doesn't take up some width as top/bottom margins
+  // FIXME: identify this section as margins -- currently only tooltip or visual display odes this
+  GtkWidget *lock_button = dtgtk_togglebutton_new(dtgtk_cairo_paint_lock, 0, NULL);
+  gtk_widget_set_tooltip_text(lock_button, _("change all margins uniformly"));
+  gtk_grid_attach(bds, GTK_WIDGET(lock_button), 1, 1, 1, 1);
 
   //d->b_right  = gtk_spin_button_new_with_range(0, 10000, 1);
   gtk_widget_set_tooltip_text(GTK_WIDGET(d->b_right), _("right margin"));
@@ -2600,14 +2955,14 @@ void gui_init(dt_lib_module_t *self)
                    G_CALLBACK (_left_border_callback), self);
   g_signal_connect(G_OBJECT (d->b_right), "value-changed",
                    G_CALLBACK (_right_border_callback), self);
-  g_signal_connect(G_OBJECT(d->lock_button), "toggled",
+  g_signal_connect(G_OBJECT(lock_button), "toggled",
                    G_CALLBACK(_lock_callback), self);
 
   gtk_widget_set_halign(GTK_WIDGET(hboxdim), GTK_ALIGN_CENTER);
   gtk_widget_set_halign(GTK_WIDGET(hboxinfo), GTK_ALIGN_CENTER);
 
   const gboolean lock_active = dt_conf_get_bool("plugins/print/print/lock_borders");
-  gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(d->lock_button), lock_active);
+  gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(lock_button), lock_active);
 
   // grid & snap grid
   {
@@ -2632,19 +2987,10 @@ void gui_init(dt_lib_module_t *self)
 
     g_signal_connect(G_OBJECT(d->grid_size), "value-changed",
                      G_CALLBACK(_grid_size_changed), self);
-    g_signal_connect(G_OBJECT(d->grid), "toggled",
-                     G_CALLBACK(_grid_callback), self);
-    g_signal_connect(d->snap_grid, "toggled",
-                     G_CALLBACK(_snap_grid_callback), (gpointer)self);
+    g_object_bind_property(G_OBJECT(d->grid), "active",
+                           G_OBJECT(d->w_grid), "visible",
+                           G_BINDING_DEFAULT);
   }
-
-  d->borderless = gtk_check_button_new_with_label(_("borderless mode required"));
-  gtk_box_pack_start(GTK_BOX(self->widget), GTK_WIDGET(d->borderless), TRUE, TRUE, 0);
-  gtk_widget_set_tooltip_text(d->borderless,
-                              _("indicates that the borderless mode should be activated\n"
-                                "in the printer driver because the selected margins are\n"
-                                "below the printer hardware margins"));
-  gtk_widget_set_sensitive(d->borderless, FALSE);
 
   // pack image dimension hbox here
 
@@ -2696,7 +3042,7 @@ void gui_init(dt_lib_module_t *self)
        "drag and drop image from film strip on it"), 0, 0);
 
   d->del = dt_action_button_new(self, N_("delete image area"),
-                                _page_delete_area_clicked, self,
+                                _page_delete_area_clicked, d,
                                 _("delete the currently selected image area"), 0, 0);
   gtk_widget_set_sensitive(d->del, FALSE);
 
@@ -2714,8 +3060,7 @@ void gui_init(dt_lib_module_t *self)
 
   // X x Y
   GtkWidget *box;
-  // FIXME: add labels to x/y/width/height as otherwise are obscure --
-  // and there is the horizontal space to do this
+  // FIXME: add labels to x/y/width/height as otherwise are obscure without reading tooltip, or move these into center view by making callouts editable
 
   box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL,0);
   // d->b_x = gtk_spin_button_new_with_range(0, 1000, 1);
@@ -2754,13 +3099,13 @@ void gui_init(dt_lib_module_t *self)
   gtk_widget_add_events(d->b_height, GDK_BUTTON_PRESS_MASK);
 
   g_signal_connect(G_OBJECT(d->b_x), "value-changed",
-                   G_CALLBACK(_x_changed), (gpointer)d);
+                   G_CALLBACK(_pos_changed), (gpointer)d);
   g_signal_connect(G_OBJECT(d->b_y), "value-changed",
-                   G_CALLBACK(_y_changed), (gpointer)d);
+                   G_CALLBACK(_pos_changed), (gpointer)d);
   g_signal_connect(G_OBJECT(d->b_width), "value-changed",
-                   G_CALLBACK(_width_changed), (gpointer)d);
+                   G_CALLBACK(_pos_changed), (gpointer)d);
   g_signal_connect(G_OBJECT(d->b_height), "value-changed",
-                   G_CALLBACK(_height_changed), (gpointer)d);
+                   G_CALLBACK(_pos_changed), (gpointer)d);
 
   ////////////////////////// PRINT SETTINGS
 
@@ -3166,6 +3511,12 @@ int set_params(dt_lib_module_t *self,
   const int32_t media_len = strlen(media) + 1;
   buf += media_len;
 
+  for(int k=0; k<ps->imgs.count; k++)
+  {
+    gtk_container_remove(GTK_CONTAINER(ps->w_layout_boxes), ps->imgs.box[k].w_box);
+    ps->imgs.box[k].w_box = NULL;
+  }
+
   ps->imgs.count = *(int32_t *)buf;
   buf += sizeof(int32_t);
 
@@ -3179,6 +3530,10 @@ int set_params(dt_lib_module_t *self,
     buf += sizeof(float);
     ps->imgs.box[k].pos.height = *(float *)buf;
     buf += sizeof(float);
+
+    // FIXME: why does the first layout box load a recent image? is this a feature? what controls it?
+    // FIXME: why does second layout box (which is empty) not get marked as empty via GUI, only visible on mouseover?
+    _new_layout_box_widget(ps, k);
   }
 
   // ensure that the size is correct
@@ -3243,7 +3598,20 @@ int set_params(dt_lib_module_t *self,
   gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(ps->dtba[alignment]), TRUE);
   gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(ps->black_point_compensation), bpc);
 
-  dt_control_queue_redraw_center();
+  // FIXME: are these neede?
+  gtk_widget_hide(ps->w_new_box);
+  ps->dragging = FALSE;
+  ps->selected = -1;
+  ps->last_selected = -1;
+  ps->has_changed = TRUE;
+
+  dt_view_print_settings(darktable.view_manager, &ps->prt, &ps->imgs);
+
+  // changing orientation, margins, and alignment will all trigger
+  // redraw of page background, which in turn will trigger redraw of
+  // layout, but just in case make sure to redraw
+  // FIXME: is this needed now?
+  gtk_widget_queue_draw(ps->w_layout_boxes);
 
   return 0;
 }
@@ -3377,6 +3745,8 @@ void gui_cleanup(dt_lib_module_t *self)
 {
   dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
 
+  // FIXME: remove center view widgets from containers
+
   // these can be called on shutdown, resulting in null-pointer
   // dereference and division by zero -- not sure what interaction
   // makes them called, but better to disconnect and not have segfault
@@ -3405,10 +3775,12 @@ void gui_reset(dt_lib_module_t *self)
 {
   dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
 
+  // changing margins will trigger redraw of page background
   gtk_spin_button_set_value(GTK_SPIN_BUTTON(ps->b_top), 17 * units[ps->unit]);
   gtk_spin_button_set_value(GTK_SPIN_BUTTON(ps->b_bottom), 17 * units[ps->unit]);
   gtk_spin_button_set_value(GTK_SPIN_BUTTON(ps->b_left), 17 * units[ps->unit]);
   gtk_spin_button_set_value(GTK_SPIN_BUTTON(ps->b_right), 17 * units[ps->unit]);
+  // changing grid size will trigger redraw of widget
   gtk_spin_button_set_value(GTK_SPIN_BUTTON(ps->grid_size), 10 * units[ps->unit]);
 
   gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(ps->dtba[ALIGNMENT_CENTER]), TRUE);
@@ -3423,18 +3795,28 @@ void gui_reset(dt_lib_module_t *self)
   gtk_widget_set_sensitive(GTK_WIDGET(ps->black_point_compensation), FALSE);
   gtk_widget_set_sensitive(GTK_WIDGET(ps->style_mode), FALSE);
 
-  // reset page orientation to fit the picture if a single one is displayed
-
+  // reset page orientation to fit the picture if a single one is
+  // displayed
+  // FIXME: instead of using image last box, just use current image from filmstrip?
   const dt_imgid_t imgid = (ps->imgs.count > 0) ? ps->imgs.box[0].imgid : NO_IMGID;
-  dt_printing_clear_boxes(&ps->imgs);
-  ps->imgs.imgid_to_load = imgid;
 
-  ps->creation = ps->dragging = FALSE;
+  // FIXME: make wrapper function to clear widgets and dt_printing_clear_boxes()
+  for(int k=0; k<ps->imgs.count; k++)
+  {
+    gtk_container_remove(GTK_CONTAINER(ps->w_layout_boxes), ps->imgs.box[k].w_box);
+    ps->imgs.box[k].w_box = NULL;
+  }
+  dt_printing_clear_boxes(&ps->imgs);
+
+  gtk_widget_hide(ps->w_new_box);
+  ps->dragging = FALSE;
   ps->selected = -1;
   ps->last_selected = -1;
   ps->has_changed = FALSE;
 
-  dt_control_queue_redraw_center();
+  ps->imgs.imgid_to_load = imgid;
+  if(dt_is_valid_imgid(imgid))
+    DT_DEBUG_CONTROL_SIGNAL_RAISE(darktable.signals, DT_SIGNAL_ACTIVE_IMAGES_CHANGE);
 }
 
 // clang-format off

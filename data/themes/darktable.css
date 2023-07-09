@@ -230,6 +230,12 @@ Why that? Just because it's a developer choice and most classes use underscore i
 @define-color colorlabel_yellow rgb(255,180,0);
 @define-color colorlabel_purple rgb(230,0,230);
 
+/* Print view of page layout */
+@define-color print_paper @grey_80;
+@define-color print_margin @grey_90;
+@define-color print_hw_margin @grey_10;
+@define-color print_dashed_line @grey_50;
+
 /* Reset GTK defaults - Otherwise dt inherits Adwaita default theme dark */
 *
 {
@@ -2304,4 +2310,46 @@ Details :
 #footer-toolbar scale
 {
   margin: 0.07em 0.28em;
+}
+
+/*-------------------------------------------------
+  - print view layout -
+  -----------------------------------------------*/
+
+/* page margins */
+#print-paper-margins
+{
+  background-color: @print_margin;
+  border: 0.07em solid @bg_color;
+}
+
+/* page body, area within margins */
+#print-paper-content
+{
+  background-color: @print_paper;
+}
+
+#print-hw-margins
+{
+  /* ticks representing hardware margins */
+  color: @print_hw_margin;
+}
+
+/* FIXME: define these custom colors at start */
+#print-hw-margins.borderless
+{
+  /* user set margins outside of hardware margins */
+  color: rgb(66%, 21%, 1%);
+}
+
+#print-page-grid
+{
+  color: rgba(100%, 20%, 20%, 0.6);
+}
+
+#print-box-new
+{
+  background-color: transparent;
+  border: 0.14em dashed alpha(@print_dashed_line, 0.9);
+  color: alpha(@print_dashed_line, 0.9);
 }

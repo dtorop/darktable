@@ -29,6 +29,7 @@
 
 typedef struct _image_pos
 {
+  // FIXME: should these be double?
   float x, y, width, height;
 } dt_image_pos;
 
@@ -43,14 +44,16 @@ typedef struct _image_box
   dt_image_pos pos;              // relative pos from screen.page
   dt_image_pos screen;           // current screen pos (in pixels)
   dt_image_pos print;            // current print pos (in pixels) depending on paper size + DPI
-  uint16_t *buf;
+  GtkWidget *w_box;              // on screen representation
+  uint16_t *buf;                 // holds image data during export
 } dt_image_box;
 
 typedef struct dt_screen_pos
 {
-  dt_image_pos page;       // this is for reference and is the box of the
-                           // white page (in pixels) in print module.
-                           // it is the full page.
+  // FIXME: these are stored as float but are really going to be integer (whole pixel) -- do we want to store these as int32 or such instead or does it help to have them implicitly converted to float for math later on?
+  float page_width, page_height;  // this is for reference and is the dimensions
+                                  // of the white page (in pixels) in print module.
+                                  // it is the full page.
 
   dt_image_pos print_area; // this is for reference and is the box of the
                            // grey area in the white page (in pixels) in print
@@ -76,14 +79,13 @@ int32_t dt_printing_get_image_box(const dt_images_box *imgs, const int x, const 
 void dt_printing_clear_box(dt_image_box *img);
 void dt_printing_clear_boxes(dt_images_box *imgs);
 
-/* (x, y) -> (width, height) are in pixels (on screen position) */
+/* (ax, ay) -> (awidth, aheight) are in pixels (on screen position) */
 void dt_printing_setup_display(dt_images_box *imgs,
-                               const float px, const float py, const float pwidth, const float pheight,
                                const float ax, const float ay, const float awidth, const float aheight, gboolean borderless);
 
 void dt_printing_setup_box(dt_images_box *imgs, const int idx,
-                           const float x, const float y,
-                           const float width, const float height);
+                           const float screen_x, const float screen_y,
+                           const float screen_width, const float screen_height);
 
 /* page_width page_height in mm, compute the max_width and max_height in
    pixels for the image */

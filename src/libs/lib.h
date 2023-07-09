@@ -87,6 +87,15 @@ typedef struct dt_lib_t
     {
       struct dt_lib_module_t *module;
     } navigation;
+
+    /** Print settings */
+#ifdef HAVE_PRINT
+    struct
+    {
+      GtkWidget *w_settings_main;
+      GtkWidget *w_new_box;
+    } print;
+#endif
   } proxy;
 } dt_lib_t;
 
