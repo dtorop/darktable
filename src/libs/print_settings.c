@@ -1056,13 +1056,6 @@ _orientation_changed(GtkWidget *combo, dt_lib_module_t *self)
 }
 
 static void
-_snap_grid_callback(GtkWidget *widget, dt_lib_module_t *self)
-{
-  // FIXME: if this isn't needed lose callback
-  //dt_control_queue_redraw_center();
-}
-
-static void
 _grid_callback(GtkWidget *widget, dt_lib_module_t *self)
 {
   dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
@@ -2710,8 +2703,6 @@ void gui_init(dt_lib_module_t *self)
                      G_CALLBACK(_grid_size_changed), self);
     g_signal_connect(G_OBJECT(d->grid), "toggled",
                      G_CALLBACK(_grid_callback), self);
-    g_signal_connect(d->snap_grid, "toggled",
-                     G_CALLBACK(_snap_grid_callback), (gpointer)self);
   }
 
   d->borderless = gtk_check_button_new_with_label(_("borderless mode required"));
