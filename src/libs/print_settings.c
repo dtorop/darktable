@@ -149,11 +149,6 @@ typedef struct _dialog_description
 } dialog_description_t;
 
 static void _update_slider(dt_lib_print_settings_t *ps);
-// FIXME: are these declarations necessary?
-static void _width_changed(GtkWidget *widget, gpointer user_data);
-static void _height_changed(GtkWidget *widget, gpointer user_data);
-static void _x_changed(GtkWidget *widget, gpointer user_data);
-static void _y_changed(GtkWidget *widget, gpointer user_data);
 
 int position(const dt_lib_module_t *self)
 {
