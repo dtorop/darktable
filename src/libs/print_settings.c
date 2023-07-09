@@ -1482,15 +1482,6 @@ void view_enter(struct dt_lib_module_t *self,
                                   G_CALLBACK(_print_settings_update_callback),
                                   self);
 
-  // FIXME: should set this up in gui_init() now that they are tied to a view-specific widget?
-  gtk_drag_dest_set(ps->w_layout, GTK_DEST_DEFAULT_ALL,
-                    // FIXME: should be target_list_internal?
-                    target_list_all, n_targets_all, GDK_ACTION_MOVE);
-  g_signal_connect(ps->w_layout, "drag-data-received",
-                   G_CALLBACK(_drag_and_drop_received), ps);
-  g_signal_connect(ps->w_layout, "drag-motion",
-                   G_CALLBACK(_drag_motion_received), ps);
-
   // NOTE: it would be proper to set image_id here to -1, but this
   // seems to make no difference
 }
@@ -1500,10 +1491,6 @@ void view_leave(struct dt_lib_module_t *self,
                 struct dt_view_t *new_view)
 {
   dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
-
-  // FIXME: these were commented out when they wre in print.c -- as long as the widget is hidden, does this not matter?
-//  g_signal_disconnect(widget, "drag-data-received", G_CALLBACK(_drag_and_drop_received));
-//  g_signal_disconnect(widget, "drag-motion", G_CALLBACK(_drag_motion_received));
 
   DT_DEBUG_CONTROL_SIGNAL_DISCONNECT(darktable.signals,
                                      G_CALLBACK(_print_settings_activate_callback),
@@ -2421,6 +2408,15 @@ void gui_init(dt_lib_module_t *self)
                    G_CALLBACK(_button_pressed), d);
   g_signal_connect(G_OBJECT(d->w_layout), "button-release-event",
                    G_CALLBACK(_button_released), d);
+
+  gtk_drag_dest_set(d->w_layout, GTK_DEST_DEFAULT_ALL,
+                    // FIXME: should be target_list_internal?
+                    target_list_all, n_targets_all, GDK_ACTION_MOVE);
+  g_signal_connect(d->w_layout, "drag-data-received",
+                   G_CALLBACK(_drag_and_drop_received), d);
+  g_signal_connect(d->w_layout, "drag-motion",
+                   G_CALLBACK(_drag_motion_received), d);
+
   gtk_widget_show(d->w_layout);
   // so that can remove it from ui center overlay when leave print
   // view, and but add it back in when re-enter print view
