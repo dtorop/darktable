@@ -1639,7 +1639,7 @@ static gboolean _mouse_moved(GtkWidget *w, GdkEventMotion *event,
   if(expose)
     gtk_widget_queue_draw(ps->w_layout);
 
-  return 0;
+  return FALSE;
 }
 
 static void _swap(float *a, float *b)
@@ -1693,7 +1693,7 @@ static gboolean _button_released(GtkWidget *w, GdkEventButton *event,
 
   dt_control_change_cursor(GDK_LEFT_PTR);
 
-  return 0;
+  return FALSE;
 }
 
 static gboolean _button_pressed(GtkWidget *w, GdkEventButton *event,
@@ -1758,7 +1758,7 @@ static gboolean _button_pressed(GtkWidget *w, GdkEventButton *event,
     ps->has_changed = TRUE;
   }
 
-  return 0;
+  return FALSE;
 }
 
 void _cairo_rectangle(cairo_t *cr,
