@@ -58,9 +58,13 @@ uint32_t view(const dt_view_t *self)
   return DT_VIEW_PRINT;
 }
 
-static void _film_strip_activated(const dt_imgid_t imgid, void *data)
+static void _view_print_filmstrip_activate_callback(gpointer instance,
+                                                    const dt_imgid_t imgid,
+                                                    const dt_view_t *self)
 {
-  const dt_view_t *self = (dt_view_t *)data;
+  if(!dt_is_valid_imgid(imgid))
+    return;
+
   dt_print_t *prt = (dt_print_t *)self->data;
 
   // only select from filmstrip if there is a single image displayed, otherwise
@@ -106,13 +110,6 @@ static void _film_strip_activated(const dt_imgid_t imgid, void *data)
 
   // force redraw
   dt_control_queue_redraw();
-}
-
-static void _view_print_filmstrip_activate_callback(gpointer instance,
-                                                    dt_imgid_t imgid,
-                                                    gpointer user_data)
-{
-  if(dt_is_valid_imgid(imgid)) _film_strip_activated(imgid, user_data);
 }
 
 static void _view_print_settings(const dt_view_t *view,
