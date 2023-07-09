@@ -149,6 +149,7 @@ typedef struct _dialog_description
 } dialog_description_t;
 
 static void _update_slider(dt_lib_print_settings_t *ps);
+// FIXME: are these declarations necessary?
 static void _width_changed(GtkWidget *widget, gpointer user_data);
 static void _height_changed(GtkWidget *widget, gpointer user_data);
 static void _x_changed(GtkWidget *widget, gpointer user_data);
@@ -636,7 +637,7 @@ static void _page_clear_area_clicked(GtkWidget *widget, gpointer user_data)
   ps->has_changed = TRUE;
   dt_printing_clear_boxes(&ps->imgs);
   gtk_widget_set_sensitive(ps->del, FALSE);
-  dt_control_queue_redraw_center();
+  gtk_widget_queue_draw(ps->w_layout);
 }
 
 static void _page_delete_area(const dt_lib_module_t *self,
@@ -663,7 +664,7 @@ static void _page_delete_area(const dt_lib_module_t *self,
   _fill_box_values(ps);
 
   ps->has_changed = TRUE;
-  dt_control_queue_redraw_center();
+  gtk_widget_queue_draw(ps->w_layout);
 }
 
 static void _page_delete_area_clicked(GtkWidget *widget, gpointer user_data)
@@ -1065,13 +1066,15 @@ _orientation_changed(GtkWidget *combo, dt_lib_module_t *self)
 static void
 _snap_grid_callback(GtkWidget *widget, dt_lib_module_t *self)
 {
-  dt_control_queue_redraw_center();
+  // FIXME: if this isn't needed lose callback
+  //dt_control_queue_redraw_center();
 }
 
 static void
 _grid_callback(GtkWidget *widget, dt_lib_module_t *self)
 {
-  dt_control_queue_redraw_center();
+  dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
+  gtk_widget_queue_draw(ps->w_layout);
 }
 
 static void _grid_size_changed(GtkWidget *widget, dt_lib_module_t *self)
@@ -1082,7 +1085,7 @@ static void _grid_size_changed(GtkWidget *widget, dt_lib_module_t *self)
   const float value = gtk_spin_button_get_value(GTK_SPIN_BUTTON(ps->grid_size));
   dt_conf_set_float("plugins/print/print/grid_size", _to_mm(ps, value));
 
-  dt_control_queue_redraw_center();
+  gtk_widget_queue_draw(ps->w_layout);
 }
 
 static void
@@ -1287,7 +1290,9 @@ static void _set_orientation(dt_lib_print_settings_t *ps, dt_imgid_t imgid)
   }
 
   dt_mipmap_cache_release(darktable.mipmap_cache, &buf);
+  // FIXME: need both?
   dt_control_queue_redraw_center();
+  gtk_widget_queue_draw(ps->w_layout);
 }
 
 static void _load_image_full_page(dt_lib_print_settings_t *ps, dt_imgid_t imgid)
@@ -1304,7 +1309,8 @@ static void _load_image_full_page(dt_lib_print_settings_t *ps, dt_imgid_t imgid)
 
   dt_printing_setup_image(&ps->imgs, 0, imgid, 100, 100, ALIGNMENT_CENTER);
 
-  dt_control_queue_redraw_center();
+  //dt_control_queue_redraw_center();
+  gtk_widget_queue_draw(ps->w_layout);
 }
 
 static void _print_settings_update_callback(gpointer instance,
@@ -2234,7 +2240,7 @@ static void _width_changed(GtkWidget *widget, gpointer user_data)
                         _mm_to_hscreen(ps, nv_mm, FALSE), box->screen.height);
 
   ps->has_changed = TRUE;
-  dt_control_queue_redraw_center();
+  gtk_widget_queue_draw(ps->w_layout);
 }
 
 static void _height_changed(GtkWidget *widget, gpointer user_data)
@@ -2253,7 +2259,7 @@ static void _height_changed(GtkWidget *widget, gpointer user_data)
                         box->screen.width, _mm_to_vscreen(ps, nv_mm, FALSE));
 
   ps->has_changed = TRUE;
-  dt_control_queue_redraw_center();
+  gtk_widget_queue_draw(ps->w_layout);
 }
 
 static void _x_changed(GtkWidget *widget, gpointer user_data)
@@ -2272,7 +2278,7 @@ static void _x_changed(GtkWidget *widget, gpointer user_data)
                         box->screen.width, box->screen.height);
 
   ps->has_changed = TRUE;
-  dt_control_queue_redraw_center();
+  gtk_widget_queue_draw(ps->w_layout);
 }
 
 static void _y_changed(GtkWidget *widget, gpointer user_data)
@@ -2291,7 +2297,7 @@ static void _y_changed(GtkWidget *widget, gpointer user_data)
                         box->screen.width, box->screen.height);
 
   ps->has_changed = TRUE;
-  dt_control_queue_redraw_center();
+  gtk_widget_queue_draw(ps->w_layout);
 }
 
 void gui_init(dt_lib_module_t *self)
@@ -3259,6 +3265,7 @@ int set_params(dt_lib_module_t *self,
   gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(ps->black_point_compensation), bpc);
 
   dt_control_queue_redraw_center();
+  gtk_widget_queue_draw(ps->w_layout);
 
   return 0;
 }
@@ -3453,6 +3460,7 @@ void gui_reset(dt_lib_module_t *self)
   ps->has_changed = FALSE;
 
   dt_control_queue_redraw_center();
+  gtk_widget_queue_draw(ps->w_layout);
 }
 
 // clang-format off
