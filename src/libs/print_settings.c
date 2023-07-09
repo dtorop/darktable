@@ -82,7 +82,7 @@ static const gchar *_unit_names[] = { N_("mm"), N_("cm"), N_("inch"), NULL };
 
 typedef struct dt_lib_print_settings_t
 {
-  GtkWidget *w_layout;             // GtkDrawingArea -- center view overlay
+  GtkWidget *w_page;               // GtkDrawingArea -- center view page layout
 
   GtkWidget *profile, *intent, *style, *style_mode, *papers, *media;
   GtkWidget *printers, *orientation, *pprofile, *pintent;
@@ -635,7 +635,7 @@ static void _page_clear_area_clicked(GtkWidget *widget, gpointer user_data)
   ps->has_changed = TRUE;
   dt_printing_clear_boxes(&ps->imgs);
   gtk_widget_set_sensitive(ps->del, FALSE);
-  gtk_widget_queue_draw(ps->w_layout);
+  gtk_widget_queue_draw(ps->w_page);
 }
 
 static void _page_delete_area(dt_lib_print_settings_t *ps, const int box_index)
@@ -659,7 +659,7 @@ static void _page_delete_area(dt_lib_print_settings_t *ps, const int box_index)
   _fill_box_values(ps);
 
   ps->has_changed = TRUE;
-  gtk_widget_queue_draw(ps->w_layout);
+  gtk_widget_queue_draw(ps->w_page);
 }
 
 static void _page_delete_area_clicked(GtkWidget *widget, dt_lib_print_settings_t *ps)
@@ -1060,7 +1060,7 @@ static void
 _grid_callback(GtkWidget *widget, dt_lib_module_t *self)
 {
   dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
-  gtk_widget_queue_draw(ps->w_layout);
+  gtk_widget_queue_draw(ps->w_page);
 }
 
 static void _grid_size_changed(GtkWidget *widget, dt_lib_module_t *self)
@@ -1071,7 +1071,7 @@ static void _grid_size_changed(GtkWidget *widget, dt_lib_module_t *self)
   const float value = gtk_spin_button_get_value(GTK_SPIN_BUTTON(ps->grid_size));
   dt_conf_set_float("plugins/print/print/grid_size", _to_mm(ps, value));
 
-  gtk_widget_queue_draw(ps->w_layout);
+  gtk_widget_queue_draw(ps->w_page);
 }
 
 static void
@@ -1276,7 +1276,7 @@ static void _drag_and_drop_received(GtkWidget *widget,
                             100, 100, ALIGNMENT_CENTER);
 
   ps->imgs.motion_over = -1;
-  gtk_widget_queue_draw(ps->w_layout);
+  gtk_widget_queue_draw(ps->w_page);
 }
 
 static gboolean _drag_motion_received(GtkWidget *widget,
@@ -1290,7 +1290,7 @@ static gboolean _drag_motion_received(GtkWidget *widget,
   ps->imgs.motion_over = bidx;
 
   if(bidx != -1)
-    gtk_widget_queue_draw(ps->w_layout);
+    gtk_widget_queue_draw(ps->w_page);
 
   return TRUE;
 }
@@ -1332,7 +1332,7 @@ static void _load_image_full_page(dt_lib_print_settings_t *ps, dt_imgid_t imgid)
 
   dt_printing_setup_image(&ps->imgs, 0, imgid, 100, 100, ALIGNMENT_CENTER);
 
-  gtk_widget_queue_draw(ps->w_layout);
+  gtk_widget_queue_draw(ps->w_page);
 }
 
 static void _print_settings_update_callback(gpointer instance,
@@ -1451,7 +1451,7 @@ void view_enter(struct dt_lib_module_t *self,
   dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
 
   gtk_overlay_add_overlay(GTK_OVERLAY(dt_ui_center_base(darktable.gui->ui)),
-                          ps->w_layout);
+                          ps->w_page);
 
   // FIXME: needed?
   // be sure that log msg is always placed on top
@@ -1494,7 +1494,7 @@ void view_leave(struct dt_lib_module_t *self,
                                      self);
 
   gtk_container_remove(GTK_CONTAINER(dt_ui_center_base(darktable.gui->ui)),
-                       ps->w_layout);
+                       ps->w_page);
 }
 
 static gboolean _draw_again(gpointer user_data)
@@ -1507,7 +1507,7 @@ static gboolean _draw_again(gpointer user_data)
     ps->imgs.imgid_to_load = NO_IMGID;
   }
 
-  gtk_widget_queue_draw(ps->w_layout);
+  gtk_widget_queue_draw(ps->w_page);
   return FALSE;
 }
 
@@ -1674,7 +1674,7 @@ static gboolean _mouse_moved(GtkWidget *w, GdkEventMotion *event,
   }
 
   if(expose)
-    gtk_widget_queue_draw(ps->w_layout);
+    gtk_widget_queue_draw(ps->w_page);
 
   return FALSE;
 }
@@ -2279,7 +2279,7 @@ static void _width_changed(GtkWidget *widget, gpointer user_data)
                         _mm_to_hscreen(ps, nv_mm, FALSE), box->screen.height);
 
   ps->has_changed = TRUE;
-  gtk_widget_queue_draw(ps->w_layout);
+  gtk_widget_queue_draw(ps->w_page);
 }
 
 static void _height_changed(GtkWidget *widget, gpointer user_data)
@@ -2298,7 +2298,7 @@ static void _height_changed(GtkWidget *widget, gpointer user_data)
                         box->screen.width, _mm_to_vscreen(ps, nv_mm, FALSE));
 
   ps->has_changed = TRUE;
-  gtk_widget_queue_draw(ps->w_layout);
+  gtk_widget_queue_draw(ps->w_page);
 }
 
 static void _x_changed(GtkWidget *widget, gpointer user_data)
@@ -2317,7 +2317,7 @@ static void _x_changed(GtkWidget *widget, gpointer user_data)
                         box->screen.width, box->screen.height);
 
   ps->has_changed = TRUE;
-  gtk_widget_queue_draw(ps->w_layout);
+  gtk_widget_queue_draw(ps->w_page);
 }
 
 static void _y_changed(GtkWidget *widget, gpointer user_data)
@@ -2336,7 +2336,7 @@ static void _y_changed(GtkWidget *widget, gpointer user_data)
                         box->screen.width, box->screen.height);
 
   ps->has_changed = TRUE;
-  gtk_widget_queue_draw(ps->w_layout);
+  gtk_widget_queue_draw(ps->w_page);
 }
 
 void gui_init(dt_lib_module_t *self)
@@ -2391,32 +2391,32 @@ void gui_init(dt_lib_module_t *self)
 
   // create overlay in center area which will show layout boxes,
   // images, and measurements
-  d->w_layout = gtk_drawing_area_new();
-  gtk_widget_set_name(d->w_layout, "print-settings-overlay");
-  gtk_widget_set_events(d->w_layout,
+  d->w_page = gtk_drawing_area_new();
+  gtk_widget_set_name(d->w_page, "print-page");
+  gtk_widget_set_events(d->w_page,
                         GDK_POINTER_MOTION_MASK | GDK_BUTTON_PRESS_MASK
                         | GDK_BUTTON_RELEASE_MASK);
-  g_signal_connect(G_OBJECT(d->w_layout), "draw",
+  g_signal_connect(G_OBJECT(d->w_page), "draw",
                    G_CALLBACK(_draw_overlay), d);
-  g_signal_connect(G_OBJECT(d->w_layout), "motion-notify-event",
+  g_signal_connect(G_OBJECT(d->w_page), "motion-notify-event",
                    G_CALLBACK(_mouse_moved), d);
-  g_signal_connect(G_OBJECT(d->w_layout), "button-press-event",
+  g_signal_connect(G_OBJECT(d->w_page), "button-press-event",
                    G_CALLBACK(_button_pressed), d);
-  g_signal_connect(G_OBJECT(d->w_layout), "button-release-event",
+  g_signal_connect(G_OBJECT(d->w_page), "button-release-event",
                    G_CALLBACK(_button_released), d);
 
-  gtk_drag_dest_set(d->w_layout, GTK_DEST_DEFAULT_ALL,
+  gtk_drag_dest_set(d->w_page, GTK_DEST_DEFAULT_ALL,
                     // FIXME: should be target_list_internal?
                     target_list_all, n_targets_all, GDK_ACTION_MOVE);
-  g_signal_connect(d->w_layout, "drag-data-received",
+  g_signal_connect(d->w_page, "drag-data-received",
                    G_CALLBACK(_drag_and_drop_received), d);
-  g_signal_connect(d->w_layout, "drag-motion",
+  g_signal_connect(d->w_page, "drag-motion",
                    G_CALLBACK(_drag_motion_received), d);
 
-  gtk_widget_show(d->w_layout);
+  gtk_widget_show(d->w_page);
   // so that can remove it from ui center overlay when leave print
   // view, and but add it back in when re-enter print view
-  g_object_ref(d->w_layout);
+  g_object_ref(d->w_page);
 
   //  create the spin-button now as values could be set when the
   //  printer has no hardware margin
@@ -3316,7 +3316,7 @@ int set_params(dt_lib_module_t *self,
   // changing orientation, margins, and alignment will all trigger
   // redraw of page background, which in turn will trigger redraw of
   // layout, but just in case make sure to redraw
-  gtk_widget_queue_draw(ps->w_layout);
+  gtk_widget_queue_draw(ps->w_page);
 
   return 0;
 }
@@ -3462,7 +3462,7 @@ void gui_cleanup(dt_lib_module_t *self)
   g_signal_handlers_disconnect_by_func(G_OBJECT(ps->b_right),
                                        G_CALLBACK(_right_border_callback), self);
 
-  g_object_unref(ps->w_layout);
+  g_object_unref(ps->w_page);
 
   g_list_free_full(ps->profiles, g_free);
   g_list_free_full(ps->paper_list, free);
