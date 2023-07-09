@@ -1540,13 +1540,11 @@ static void _snap_to_grid(dt_lib_print_settings_t *ps,
   // FIXME: should clamp values to page size here?
 }
 
-int mouse_moved(struct dt_lib_module_t *self,
-                const double x,
-                const double y,
-                const double pressure,
-                const int which)
+static gboolean _mouse_moved(GtkWidget *w, GdkEventMotion *event,
+                             dt_lib_print_settings_t *ps)
 {
-  dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
+  const double x = event->x;
+  const double y = event->y;
 
   gboolean expose = FALSE;
 
@@ -1630,7 +1628,8 @@ int mouse_moved(struct dt_lib_module_t *self,
     }
   }
 
-  if(expose) dt_control_queue_redraw_center();
+  if(expose)
+    gtk_widget_queue_draw(ps->w_layout);
 
   return 0;
 }
@@ -1838,7 +1837,7 @@ void _cairo_rectangle(cairo_t *cr,
   }
 }
 
-gboolean _draw_overlay(GtkWidget *self, cairo_t *cr, dt_lib_print_settings_t *ps)
+static gboolean _draw_overlay(GtkWidget *self, cairo_t *cr, dt_lib_print_settings_t *ps)
 {
   if(dt_is_valid_imgid(ps->imgs.imgid_to_load))
   {
@@ -2353,7 +2352,11 @@ void gui_init(dt_lib_module_t *self)
   // images, and measurements
   d->w_layout = gtk_drawing_area_new();
   gtk_widget_set_name(d->w_layout, "print-settings-overlay");
-  g_signal_connect(G_OBJECT(d->w_layout), "draw", G_CALLBACK(_draw_overlay), d);
+  gtk_widget_set_events(d->w_layout, GDK_POINTER_MOTION_MASK);
+  g_signal_connect(G_OBJECT(d->w_layout), "draw",
+                   G_CALLBACK(_draw_overlay), d);
+  g_signal_connect(G_OBJECT(d->w_layout), "motion-notify_event",
+                   G_CALLBACK(_mouse_moved), d);
   gtk_widget_show(d->w_layout);
   gtk_overlay_add_overlay(GTK_OVERLAY(dt_ui_center_base(darktable.gui->ui)),
                           d->w_layout);
