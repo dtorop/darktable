@@ -640,11 +640,8 @@ static void _page_clear_area_clicked(GtkWidget *widget, gpointer user_data)
   gtk_widget_queue_draw(ps->w_layout);
 }
 
-static void _page_delete_area(const dt_lib_module_t *self,
-                              const int box_index)
+static void _page_delete_area(dt_lib_print_settings_t *ps, const int box_index)
 {
-  dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
-
   if(box_index == -1) return;
 
   for(int k=box_index; k<MAX_IMAGE_PER_PAGE-1; k++)
@@ -667,12 +664,9 @@ static void _page_delete_area(const dt_lib_module_t *self,
   gtk_widget_queue_draw(ps->w_layout);
 }
 
-static void _page_delete_area_clicked(GtkWidget *widget, gpointer user_data)
+static void _page_delete_area_clicked(GtkWidget *widget, dt_lib_print_settings_t *ps)
 {
-  const dt_lib_module_t *self = (dt_lib_module_t *)user_data;
-  dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
-
-  _page_delete_area(self, ps->last_selected);
+  _page_delete_area(ps, ps->last_selected);
 }
 
 static void _print_job_cleanup(void *p)
@@ -1641,14 +1635,9 @@ static void _swap(float *a, float *b)
   *b = tmp;
 }
 
-int button_released(struct dt_lib_module_t *self,
-                    const double x,
-                    const double y,
-                    const int which,
-                    const uint32_t state)
+static gboolean _button_released(GtkWidget *w, GdkEventButton *event,
+                                 dt_lib_print_settings_t *ps)
 {
-  dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
-
   if(ps->dragging)
   {
     int idx = -1;
@@ -1693,15 +1682,12 @@ int button_released(struct dt_lib_module_t *self,
   return 0;
 }
 
-int button_pressed(struct dt_lib_module_t *self,
-                   const double x,
-                   const double y,
-                   const double pressure,
-                   const int which,
-                   const int type,
-                   const uint32_t state)
+static gboolean _button_pressed(GtkWidget *w, GdkEventButton *event,
+                                dt_lib_print_settings_t *ps)
 {
-  dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
+  const double x = event->x;
+  const double y = event->y;
+  const int which = event->button;
 
   ps->click_pos_x = x;
   ps->click_pos_y = y;
@@ -1717,7 +1703,8 @@ int button_pressed(struct dt_lib_module_t *self,
     _snap_to_grid(ps, &ps->x1, &ps->y1);
   }
   else if(ps->selected > 0
-          && (which == 2 || (which == 1 && dt_modifier_is(state, GDK_CONTROL_MASK))))
+          && (which == 2 || (which == 1 &&
+                             dt_modifier_is(event->state, GDK_CONTROL_MASK))))
   {
     // middle click (or ctrl-click), move selected image down
     dt_image_box b;
@@ -1751,7 +1738,7 @@ int button_pressed(struct dt_lib_module_t *self,
     if(dt_is_valid_imgid(b->imgid))
       b->imgid = NO_IMGID;
     else
-      _page_delete_area(self, ps->selected);
+      _page_delete_area(ps, ps->selected);
 
     ps->last_selected = ps->selected;
     ps->has_changed = TRUE;
@@ -2352,11 +2339,17 @@ void gui_init(dt_lib_module_t *self)
   // images, and measurements
   d->w_layout = gtk_drawing_area_new();
   gtk_widget_set_name(d->w_layout, "print-settings-overlay");
-  gtk_widget_set_events(d->w_layout, GDK_POINTER_MOTION_MASK);
+  gtk_widget_set_events(d->w_layout,
+                        GDK_POINTER_MOTION_MASK | GDK_BUTTON_PRESS_MASK
+                        | GDK_BUTTON_RELEASE_MASK);
   g_signal_connect(G_OBJECT(d->w_layout), "draw",
                    G_CALLBACK(_draw_overlay), d);
-  g_signal_connect(G_OBJECT(d->w_layout), "motion-notify_event",
+  g_signal_connect(G_OBJECT(d->w_layout), "motion-notify-event",
                    G_CALLBACK(_mouse_moved), d);
+  g_signal_connect(G_OBJECT(d->w_layout), "button-press-event",
+                   G_CALLBACK(_button_pressed), d);
+  g_signal_connect(G_OBJECT(d->w_layout), "button-release-event",
+                   G_CALLBACK(_button_released), d);
   gtk_widget_show(d->w_layout);
   gtk_overlay_add_overlay(GTK_OVERLAY(dt_ui_center_base(darktable.gui->ui)),
                           d->w_layout);
@@ -2720,7 +2713,7 @@ void gui_init(dt_lib_module_t *self)
        "drag and drop image from film strip on it"), 0, 0);
 
   d->del = dt_action_button_new(self, N_("delete image area"),
-                                _page_delete_area_clicked, self,
+                                _page_delete_area_clicked, d,
                                 _("delete the currently selected image area"), 0, 0);
   gtk_widget_set_sensitive(d->del, FALSE);
 
