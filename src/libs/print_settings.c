@@ -1496,7 +1496,7 @@ void view_leave(struct dt_lib_module_t *self,
                        ps->w_layout);
 }
 
-static gboolean _expose_again(gpointer user_data)
+static gboolean _draw_again(gpointer user_data)
 {
   dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)user_data;
 
@@ -1883,7 +1883,7 @@ static gboolean _draw_overlay(GtkWidget *self, cairo_t *cr, dt_lib_print_setting
     // we set orientation and delay the reload to ensure the
     // page is properly set before trying to display the image.
     _set_orientation(ps, ps->imgs.imgid_to_load);
-    g_timeout_add(250, _expose_again, ps);
+    g_timeout_add(250, _draw_again, ps);
   }
 
   // display grid
@@ -1975,7 +1975,7 @@ static gboolean _draw_overlay(GtkWidget *self, cairo_t *cr, dt_lib_print_setting
       if(res != DT_VIEW_SURFACE_OK)
       {
         // if the image is missing, we reload it again
-        g_timeout_add(250, _expose_again, ps);
+        g_timeout_add(250, _draw_again, ps);
         if(!ps->busy) dt_control_log_busy_enter();
         ps->busy = TRUE;
       }
