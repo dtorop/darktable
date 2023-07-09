@@ -100,8 +100,11 @@ typedef struct dt_lib_print_settings_t
   GtkDarktableToggleButton *dtba[9];	             // Alignment buttons
   GList *paper_list, *media_list;
   gboolean lock_activated;
+
   dt_print_info_t prt;
   dt_images_box imgs;
+  dt_imgid_t filmstrip_select;
+
   _unit_t unit;
   int v_intent, v_pintent;
   int v_icctype, v_picctype;
@@ -1262,6 +1265,42 @@ _intent_callback(GtkWidget *widget, dt_lib_module_t *self)
   ps->v_intent = pos - 1;
 }
 
+static void _drag_and_drop_received(GtkWidget *widget,
+                                    GdkDragContext *context,
+                                    gint x,
+                                    gint y,
+                                    GtkSelectionData *selection_data,
+                                    guint target_type,
+                                    guint time,
+                                    dt_lib_print_settings_t *ps)
+{
+  const int bidx = dt_printing_get_image_box(&ps->imgs, x, y);
+
+  if(bidx != -1)
+    // FIXME: can we get the image from drag-and-drop data?
+    dt_printing_setup_image(&ps->imgs, bidx, ps->filmstrip_select,
+                            100, 100, ALIGNMENT_CENTER);
+
+  ps->imgs.motion_over = -1;
+  gtk_widget_queue_draw(ps->w_layout);
+}
+
+static gboolean _drag_motion_received(GtkWidget *widget,
+                                      GdkDragContext *dc,
+                                      const gint x,
+                                      const gint y,
+                                      const guint time,
+                                      dt_lib_print_settings_t *ps)
+{
+  const int bidx = dt_printing_get_image_box(&ps->imgs, x, y);
+  ps->imgs.motion_over = bidx;
+
+  if(bidx != -1)
+    gtk_widget_queue_draw(ps->w_layout);
+
+  return TRUE;
+}
+
 static void _set_orientation(dt_lib_print_settings_t *ps, dt_imgid_t imgid)
 {
   dt_mipmap_buffer_t buf;
@@ -1325,6 +1364,10 @@ static void _print_settings_activate_callback(gpointer instance,
 {
   const dt_lib_module_t *self = (dt_lib_module_t *)user_data;
   dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
+
+  // FIXME: this is a shortcut to get the image clicked for drag-and-drop, but should we really read this from the drag data?
+  if(dt_is_valid_imgid(imgid))
+    ps->filmstrip_select = imgid;
 
   // load an image with a simple click on the filmstrip only if a
   // single image is present
@@ -1439,6 +1482,15 @@ void view_enter(struct dt_lib_module_t *self,
                                   G_CALLBACK(_print_settings_update_callback),
                                   self);
 
+  // FIXME: should set this up in gui_init() now that they are tied to a view-specific widget?
+  gtk_drag_dest_set(ps->w_layout, GTK_DEST_DEFAULT_ALL,
+                    // FIXME: should be target_list_internal?
+                    target_list_all, n_targets_all, GDK_ACTION_MOVE);
+  g_signal_connect(ps->w_layout, "drag-data-received",
+                   G_CALLBACK(_drag_and_drop_received), ps);
+  g_signal_connect(ps->w_layout, "drag-motion",
+                   G_CALLBACK(_drag_motion_received), ps);
+
   // NOTE: it would be proper to set image_id here to -1, but this
   // seems to make no difference
 }
@@ -1448,6 +1500,10 @@ void view_leave(struct dt_lib_module_t *self,
                 struct dt_view_t *new_view)
 {
   dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
+
+  // FIXME: these were commented out when they wre in print.c -- as long as the widget is hidden, does this not matter?
+//  g_signal_disconnect(widget, "drag-data-received", G_CALLBACK(_drag_and_drop_received));
+//  g_signal_disconnect(widget, "drag-motion", G_CALLBACK(_drag_motion_received));
 
   DT_DEBUG_CONTROL_SIGNAL_DISCONNECT(darktable.signals,
                                      G_CALLBACK(_print_settings_activate_callback),
@@ -2321,6 +2377,7 @@ void gui_init(dt_lib_module_t *self)
   d->selected = -1;
   d->last_selected = -1;
   d->has_changed = FALSE;
+  d->filmstrip_select = NO_IMGID;
 
   dt_init_print_info(&d->prt);
   dt_view_print_settings(darktable.view_manager, &d->prt, &d->imgs);

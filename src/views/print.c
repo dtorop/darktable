@@ -29,7 +29,6 @@
 #include "develop/develop.h"
 #include "dtgtk/thumbtable.h"
 #include "gui/accelerators.h"
-#include "gui/drag_and_drop.h"
 #include "gui/gtk.h"
 #include "gui/presets.h"
 #include "views/view.h"
@@ -46,7 +45,6 @@ typedef struct dt_print_t
 {
   dt_print_info_t *pinfo;
   dt_images_box *imgs;
-  dt_imgid_t last_selected;
 }
 dt_print_t;
 
@@ -72,13 +70,12 @@ static void _film_strip_activated(const dt_imgid_t imgid, void *data)
   const dt_view_t *self = (dt_view_t *)data;
   dt_print_t *prt = (dt_print_t *)self->data;
 
-  prt->last_selected = imgid;
-
   // only select from filmstrip if there is a single image displayed, otherwise
   // we will drag and drop into different areas.
 
   if(prt->imgs->count != 1) return;
 
+  // FIXME: how does this work overlap with _print_settings_activate_callback() in print_settings?
   // if the previous shown image is selected and the selection is unique
   // then we change the selected image to the new one
   if(dt_is_valid_imgid(prt->imgs->box[0].imgid))
@@ -134,46 +131,6 @@ static void _view_print_settings(const dt_view_t *view,
   prt->pinfo = pinfo;
   prt->imgs = imgs;
   dt_control_queue_redraw();
-}
-
-static void _drag_and_drop_received(GtkWidget *widget,
-                                    GdkDragContext *context,
-                                    gint x,
-                                    gint y,
-                                    GtkSelectionData *selection_data,
-                                    guint target_type,
-                                    guint time,
-                                    gpointer data)
-{
-  const dt_view_t *self = (dt_view_t *)data;
-  dt_print_t *prt = (dt_print_t *)self->data;
-
-  const int bidx = dt_printing_get_image_box(prt->imgs, x, y);
-
-  if(bidx != -1)
-    dt_printing_setup_image(prt->imgs, bidx, prt->last_selected,
-                            100, 100, ALIGNMENT_CENTER);
-
-  prt->imgs->motion_over = -1;
-  dt_control_queue_redraw_center();
-}
-
-static gboolean _drag_motion_received(GtkWidget *widget,
-                                      GdkDragContext *dc,
-                                      const gint x,
-                                      const gint y,
-                                      const guint time,
-                                      gpointer data)
-{
-  const dt_view_t *self = (dt_view_t *)data;
-  dt_print_t *prt = (dt_print_t *)self->data;
-
-  const int bidx = dt_printing_get_image_box(prt->imgs, x, y);
-  prt->imgs->motion_over = bidx;
-
-  if(bidx != -1) dt_control_queue_redraw_center();
-
-  return TRUE;
 }
 
 void
@@ -402,13 +359,6 @@ void enter(dt_view_t *self)
 
   gtk_widget_grab_focus(dt_ui_center(darktable.gui->ui));
 
-  GtkWidget *widget = dt_ui_center(darktable.gui->ui);
-
-  gtk_drag_dest_set(widget, GTK_DEST_DEFAULT_ALL,
-                    target_list_all, n_targets_all, GDK_ACTION_MOVE);
-  g_signal_connect(widget, "drag-data-received", G_CALLBACK(_drag_and_drop_received), self);
-  g_signal_connect(widget, "drag-motion", G_CALLBACK(_drag_motion_received), self);
-
   dt_control_set_mouse_over_id(prt->imgs->imgid_to_load);
 }
 
@@ -427,8 +377,6 @@ void leave(dt_view_t *self)
                                      (gpointer)self);
 
   dt_printing_clear_boxes(prt->imgs);
-//  g_signal_disconnect(widget, "drag-data-received", G_CALLBACK(_drag_and_drop_received));
-//  g_signal_disconnect(widget, "drag-motion", G_CALLBACK(_drag_motion_received));
 }
 
 // clang-format off
