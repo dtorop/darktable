@@ -2367,7 +2367,6 @@ void gui_init(dt_lib_module_t *self)
   gtk_widget_show(d->w_layout);
   // so that can remove it from ui center overlay when leave print
   // view, and but add it back in when re-enter print view
-  // FIXME: remove reference in gui_cleanup()
   g_object_ref(d->w_layout);
 
   //  create the spin-button now as values could be set when the
@@ -3413,6 +3412,8 @@ void gui_cleanup(dt_lib_module_t *self)
                                        G_CALLBACK(_left_border_callback), self);
   g_signal_handlers_disconnect_by_func(G_OBJECT(ps->b_right),
                                        G_CALLBACK(_right_border_callback), self);
+
+  g_object_unref(ps->w_layout);
 
   g_list_free_full(ps->profiles, g_free);
   g_list_free_full(ps->paper_list, free);
