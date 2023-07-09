@@ -1456,7 +1456,7 @@ static gboolean _expose_again(gpointer user_data)
     ps->imgs.imgid_to_load = NO_IMGID;
   }
 
-  dt_control_queue_redraw_center();
+  gtk_widget_queue_draw(ps->w_layout);
   return FALSE;
 }
 
@@ -1832,22 +1832,8 @@ void _cairo_rectangle(cairo_t *cr,
   }
 }
 
-void _draw_overlay(GtkWidget *self, cairo_t *cr, dt_lib_print_settings_t *ps)
+gboolean _draw_overlay(GtkWidget *self, cairo_t *cr, dt_lib_print_settings_t *ps)
 {
-  printf("in draw layout %p = %p\n", ps->w_layout, self);
-  GtkStyleContext *context = gtk_widget_get_style_context(self);
-  gtk_render_background(context, cr, 100, 200, 150, 250);
-}
-
-void gui_post_expose(struct dt_lib_module_t *self,
-                     cairo_t *cr,
-                     const int32_t width,
-                     const int32_t height,
-                     const int32_t pointerx,
-                     const int32_t pointery)
-{
-  dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
-
   if(dt_is_valid_imgid(ps->imgs.imgid_to_load))
   {
     // we set orientation and delay the reload to ensure the
@@ -2228,6 +2214,8 @@ void gui_post_expose(struct dt_lib_module_t *self,
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(ps->borderless), TRUE);
   else
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(ps->borderless), FALSE);
+
+  return FALSE;
 }
 
 static void _width_changed(GtkWidget *widget, gpointer user_data)
@@ -2363,6 +2351,15 @@ void gui_init(dt_lib_module_t *self)
   gtk_widget_show(d->w_layout);
   gtk_overlay_add_overlay(GTK_OVERLAY(dt_ui_center_base(darktable.gui->ui)),
                           d->w_layout);
+
+  // FIXME: needed?
+  // be sure that log msg is always placed on top
+  gtk_overlay_reorder_overlay
+    (GTK_OVERLAY(dt_ui_center_base(darktable.gui->ui)),
+     gtk_widget_get_parent(dt_ui_log_msg(darktable.gui->ui)), -1);
+  gtk_overlay_reorder_overlay
+    (GTK_OVERLAY(dt_ui_center_base(darktable.gui->ui)),
+     gtk_widget_get_parent(dt_ui_toast_msg(darktable.gui->ui)), -1);
 
   //  create the spin-button now as values could be set when the
   //  printer has no hardware margin
@@ -3394,6 +3391,9 @@ void *get_params(dt_lib_module_t *self, int *size)
 void gui_cleanup(dt_lib_module_t *self)
 {
   dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
+
+  gtk_container_remove(GTK_CONTAINER(dt_ui_center_base(darktable.gui->ui)),
+                       ps->w_layout);
 
   // these can be called on shutdown, resulting in null-pointer
   // dereference and division by zero -- not sure what interaction
