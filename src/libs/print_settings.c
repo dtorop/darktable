@@ -1411,6 +1411,20 @@ void view_enter(struct dt_lib_module_t *self,
                 struct dt_view_t *old_view,
                 struct dt_view_t *new_view)
 {
+  dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
+
+  gtk_overlay_add_overlay(GTK_OVERLAY(dt_ui_center_base(darktable.gui->ui)),
+                          ps->w_layout);
+
+  // FIXME: needed?
+  // be sure that log msg is always placed on top
+  gtk_overlay_reorder_overlay
+    (GTK_OVERLAY(dt_ui_center_base(darktable.gui->ui)),
+     gtk_widget_get_parent(dt_ui_log_msg(darktable.gui->ui)), -1);
+  gtk_overlay_reorder_overlay
+    (GTK_OVERLAY(dt_ui_center_base(darktable.gui->ui)),
+     gtk_widget_get_parent(dt_ui_toast_msg(darktable.gui->ui)), -1);
+
   // user activated a new image via the filmstrip or user entered view
   // mode which activates an image: get image_id and orientation
   DT_DEBUG_CONTROL_SIGNAL_CONNECT(darktable.signals,
@@ -1433,12 +1447,17 @@ void view_leave(struct dt_lib_module_t *self,
                 struct dt_view_t *old_view,
                 struct dt_view_t *new_view)
 {
+  dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
+
   DT_DEBUG_CONTROL_SIGNAL_DISCONNECT(darktable.signals,
                                      G_CALLBACK(_print_settings_activate_callback),
                                      self);
   DT_DEBUG_CONTROL_SIGNAL_DISCONNECT(darktable.signals,
                                      G_CALLBACK(_print_settings_update_callback),
                                      self);
+
+  gtk_container_remove(GTK_CONTAINER(dt_ui_center_base(darktable.gui->ui)),
+                       ps->w_layout);
 }
 
 static gboolean _expose_again(gpointer user_data)
@@ -2346,17 +2365,10 @@ void gui_init(dt_lib_module_t *self)
   g_signal_connect(G_OBJECT(d->w_layout), "button-release-event",
                    G_CALLBACK(_button_released), d);
   gtk_widget_show(d->w_layout);
-  gtk_overlay_add_overlay(GTK_OVERLAY(dt_ui_center_base(darktable.gui->ui)),
-                          d->w_layout);
-
-  // FIXME: needed?
-  // be sure that log msg is always placed on top
-  gtk_overlay_reorder_overlay
-    (GTK_OVERLAY(dt_ui_center_base(darktable.gui->ui)),
-     gtk_widget_get_parent(dt_ui_log_msg(darktable.gui->ui)), -1);
-  gtk_overlay_reorder_overlay
-    (GTK_OVERLAY(dt_ui_center_base(darktable.gui->ui)),
-     gtk_widget_get_parent(dt_ui_toast_msg(darktable.gui->ui)), -1);
+  // so that can remove it from ui center overlay when leave print
+  // view, and but add it back in when re-enter print view
+  // FIXME: remove reference in gui_cleanup()
+  g_object_ref(d->w_layout);
 
   //  create the spin-button now as values could be set when the
   //  printer has no hardware margin
@@ -3389,9 +3401,6 @@ void *get_params(dt_lib_module_t *self, int *size)
 void gui_cleanup(dt_lib_module_t *self)
 {
   dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
-
-  gtk_container_remove(GTK_CONTAINER(dt_ui_center_base(darktable.gui->ui)),
-                       ps->w_layout);
 
   // these can be called on shutdown, resulting in null-pointer
   // dereference and division by zero -- not sure what interaction
