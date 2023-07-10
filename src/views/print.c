@@ -110,6 +110,26 @@ static void _view_print_filmstrip_activate_callback(gpointer instance,
   dt_control_queue_redraw();
 }
 
+static void _update_display_coords(dt_print_t *prt, int view_width, int view_height)
+{
+  // FIXME: if use aspect frame we can skip a lot of this work
+  float px=.0f, py=.0f, pwidth=.0f, pheight=.0f;
+  float ax=.0f, ay=.0f, awidth=.0f, aheight=.0f;
+  gboolean borderless = FALSE;
+
+  dt_get_print_layout(prt->pinfo, view_width, view_height,
+                      &px, &py, &pwidth, &pheight,
+                      &ax, &ay, &awidth, &aheight, &borderless);
+
+  // record the screen page dimension. this will be used to draw the
+  // page and to compute the actual layout of the areas placed over
+  // the page.
+  dt_printing_setup_display(prt->imgs,
+                            px, py, pwidth, pheight,
+                            ax, ay, awidth, aheight,
+                            borderless);
+}
+
 static void _view_print_settings(const dt_view_t *view,
                                  dt_print_info_t *pinfo,
                                  dt_images_box *imgs)
@@ -118,6 +138,12 @@ static void _view_print_settings(const dt_view_t *view,
 
   prt->pinfo = pinfo;
   prt->imgs = imgs;
+
+  // FIXME: store these on configure and just retrieve these from there?
+  const int width = gtk_widget_get_allocated_width(dt_ui_center(darktable.gui->ui));
+  const int height = gtk_widget_get_allocated_height(dt_ui_center(darktable.gui->ui));
+  _update_display_coords(prt, width, height);
+
   dt_control_queue_redraw();
 }
 
@@ -137,6 +163,13 @@ void cleanup(dt_view_t *self)
   free(prt);
 }
 
+void configure(dt_view_t *self, int width, int height)
+{
+  dt_print_t *prt = (dt_print_t *)self->data;
+  if(prt)
+    _update_display_coords(prt, width, height);
+}
+
 static void _expose_print_page(dt_view_t *self,
                                cairo_t *cr,
                                const int32_t width,
@@ -149,14 +182,14 @@ static void _expose_print_page(dt_view_t *self,
   if(prt->pinfo == NULL)
     return;
 
-  float px=.0f, py=.0f, pwidth=.0f, pheight=.0f;
-  float ax=.0f, ay=.0f, awidth=.0f, aheight=.0f;
-
-  gboolean borderless = FALSE;
-
-  dt_get_print_layout(prt->pinfo, width, height,
-                      &px, &py, &pwidth, &pheight,
-                      &ax, &ay, &awidth, &aheight, &borderless);
+  const float px = prt->imgs->screen.page.x;
+  const float py = prt->imgs->screen.page.y;
+  const float pwidth = prt->imgs->screen.page.width;
+  const float pheight = prt->imgs->screen.page.height;
+  const float ax = prt->imgs->screen.print_area.x;
+  const float ay = prt->imgs->screen.print_area.y;
+  const float awidth = prt->imgs->screen.print_area.width;
+  const float aheight = prt->imgs->screen.print_area.height;
 
   // page w/h
   float pg_width  = prt->pinfo->paper.width;
@@ -191,14 +224,6 @@ static void _expose_print_page(dt_view_t *self,
   cairo_set_source_rgb (cr, 0.9, 0.9, 0.9);
   cairo_rectangle (cr, px, py, pwidth, pheight);
   cairo_fill (cr);
-
-  // record the screen page dimension. this will be used to compute the actual
-  // layout of the areas placed over the page.
-
-  dt_printing_setup_display(prt->imgs,
-                            px, py, pwidth, pheight,
-                            ax, ay, awidth, aheight,
-                            borderless);
 
   // display non-printable area
   cairo_set_source_rgb (cr, 0.1, 0.1, 0.1);
