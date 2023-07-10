@@ -1370,6 +1370,7 @@ static void _print_settings_activate_callback(gpointer instance,
     if(ps->has_changed)
     {
       dt_printing_setup_image(&ps->imgs, 0, imgid, 100, 100, ps->imgs.box[0].alignment);
+      gtk_widget_queue_draw(ps->w_page);
     }
     else
     {

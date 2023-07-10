@@ -99,10 +99,6 @@ static void _view_print_filmstrip_activate_callback(gpointer instance,
   dt_view_active_images_reset(FALSE);
   // this triggers print_settings callback which can load the activated image
   dt_view_active_images_add(imgid, TRUE);
-
-  // force redraw
-  // FIXME: needed?
-  dt_control_queue_redraw();
 }
 
 static void _update_display_coords(dt_print_t *prt, int view_width, int view_height)
