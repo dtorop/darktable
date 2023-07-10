@@ -133,11 +133,7 @@ static void _view_print_settings(const dt_view_t *view,
   prt->pinfo = pinfo;
   prt->imgs = imgs;
 
-  // FIXME: store these on configure and just retrieve these from there?
-  const int width = gtk_widget_get_allocated_width(dt_ui_center(darktable.gui->ui));
-  const int height = gtk_widget_get_allocated_height(dt_ui_center(darktable.gui->ui));
-  _update_display_coords(prt, width, height);
-
+  _update_display_coords(prt, view->width, view->height);
   dt_control_queue_redraw();
 }
 
@@ -163,6 +159,12 @@ void configure(dt_view_t *self, int width, int height)
   dt_print_t *prt = (dt_print_t *)self->data;
   if(prt)
     _update_display_coords(prt, width, height);
+}
+
+void expose(dt_view_t *self, cairo_t *cr, int32_t width, int32_t height,
+            int32_t pointerx, int32_t pointery)
+{
+  // FIXME: somehow is necessary?
 }
 
 static void _expose_print_page(dt_print_t *prt,
