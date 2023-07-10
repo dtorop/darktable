@@ -95,9 +95,6 @@ static void _view_print_filmstrip_activate_callback(gpointer instance,
 
   prt->imgs->imgid_to_load = imgid;
 
-  // FIXME: do need to do this? or does thumbtable catch the activate signal and do this?
-  dt_thumbtable_set_offset_image(dt_ui_thumbtable(darktable.gui->ui), imgid, TRUE);
-
   // update the active images list
   dt_view_active_images_reset(FALSE);
   // this triggers print_settings callback which can load the activated image
