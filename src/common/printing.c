@@ -50,7 +50,6 @@ void dt_printing_clear_boxes(dt_images_box *imgs)
   imgs->motion_over = -1;
   imgs->page_width = imgs->page_height = 0;
   imgs->page_width_mm = imgs->page_height_mm = 0;
-  imgs->imgid_to_load = -1;
 }
 
 int32_t dt_printing_get_image_box(const dt_images_box *imgs, const int x, const int y)

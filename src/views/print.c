@@ -64,13 +64,12 @@ static void _view_print_filmstrip_activate_callback(gpointer instance,
 {
   dt_print_t *prt = (dt_print_t *)self->data;
 
-
   if(!dt_is_valid_imgid(imgid))
     return;
 
   // if the previous shown image is selected and the selection is unique
   // then we change the selected image to the new one
-  if(dt_is_valid_imgid(prt->imgs->box[0].imgid))
+  if(dt_is_valid_imgid(prt->imgs->imgid_to_load))
   {
     sqlite3_stmt *stmt;
     DT_DEBUG_SQLITE3_PREPARE_V2(dt_database_get(darktable.db),
@@ -81,7 +80,7 @@ static void _view_print_filmstrip_activate_callback(gpointer instance,
     gboolean follow = FALSE;
     if(sqlite3_step(stmt) == SQLITE_ROW)
     {
-      if(sqlite3_column_int(stmt, 0) == prt->imgs->box[0].imgid
+      if(sqlite3_column_int(stmt, 0) == prt->imgs->imgid_to_load
          && sqlite3_step(stmt) != SQLITE_ROW)
       {
         follow = TRUE;
@@ -94,16 +93,15 @@ static void _view_print_filmstrip_activate_callback(gpointer instance,
     }
   }
 
+  prt->imgs->imgid_to_load = imgid;
+
+  // FIXME: do need to do this? or does thumbtable catch the activate signal and do this?
   dt_thumbtable_set_offset_image(dt_ui_thumbtable(darktable.gui->ui), imgid, TRUE);
 
   // update the active images list
-  g_slist_free(darktable.view_manager->active_images);
-  darktable.view_manager->active_images = g_slist_prepend(NULL, GINT_TO_POINTER(imgid));
-  // this triggers print_settings callback, which must happen after
-  // changing selected images, as print_settings callback may change
-  // what is in the current image box
-  // FIXME: can we just move this code to print_settings? or save current selection here?
-  DT_DEBUG_CONTROL_SIGNAL_RAISE(darktable.signals, DT_SIGNAL_ACTIVE_IMAGES_CHANGE);
+  dt_view_active_images_reset(FALSE);
+  // this triggers print_settings callback which can load the activated image
+  dt_view_active_images_add(imgid, TRUE);
 
   // force redraw
   // FIXME: needed?
@@ -343,7 +341,8 @@ gboolean try_enter(dt_view_t *self)
   // and drop the lock again.
   dt_image_cache_read_release(darktable.image_cache, img);
 
-  // we need to setup the selected image
+  // set up load for the selected image when print_settings gets
+  // signal that we've entered print view
   prt->imgs->imgid_to_load = imgid;
 
   return FALSE;
@@ -354,13 +353,16 @@ void enter(dt_view_t *self)
   dt_print_t *prt = (dt_print_t*)self->data;
 
   /* scroll filmstrip to the first selected image */
-  if(prt->imgs->imgid_to_load >= 0)
+  if(dt_is_valid_imgid(prt->imgs->imgid_to_load))
   {
     // change active image
+    // FIXME: if we raise signal will this not be necessary?
     dt_thumbtable_set_offset_image(dt_ui_thumbtable(darktable.gui->ui),
                                    prt->imgs->box[0].imgid, TRUE);
+    // but no need to raise signal, as print settings is already will
+    // load this image on view enter
     dt_view_active_images_reset(FALSE);
-    dt_view_active_images_add(prt->imgs->imgid_to_load, TRUE);
+    dt_view_active_images_add(prt->imgs->imgid_to_load, FALSE);
   }
 
   DT_DEBUG_CONTROL_SIGNAL_CONNECT(darktable.signals, DT_SIGNAL_VIEWMANAGER_THUMBTABLE_ACTIVATE,

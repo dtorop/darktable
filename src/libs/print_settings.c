@@ -1357,10 +1357,7 @@ static void _print_settings_activate_callback(gpointer instance,
 {
   dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
 
-  if(!darktable.view_manager->active_images)
-    return;
-
-  dt_imgid_t imgid = GPOINTER_TO_INT(darktable.view_manager->active_images->data);
+  dt_imgid_t imgid = ps->imgs.imgid_to_load;
 
   // FIXME: this is a shortcut to get the image clicked for drag-and-drop, but should we really read this from the drag data?
   if(dt_is_valid_imgid(imgid))
@@ -1467,8 +1464,7 @@ void view_enter(struct dt_lib_module_t *self,
 
   // user activated a new image via the filmstrip or user entered view
   // mode which activates an image: get image_id and orientation
-  DT_DEBUG_CONTROL_SIGNAL_CONNECT(darktable.signals,
-                                  DT_SIGNAL_ACTIVE_IMAGES_CHANGE,
+  DT_DEBUG_CONTROL_SIGNAL_CONNECT(darktable.signals, DT_SIGNAL_ACTIVE_IMAGES_CHANGE,
                                   G_CALLBACK(_print_settings_activate_callback),
                                   self);
 
@@ -1479,8 +1475,8 @@ void view_enter(struct dt_lib_module_t *self,
                                   G_CALLBACK(_print_settings_update_callback),
                                   self);
 
-  // NOTE: it would be proper to set image_id here to -1, but this
-  // seems to make no difference
+  if(dt_is_valid_imgid(ps->imgs.imgid_to_load))
+    _load_image_full_page(ps, ps->imgs.imgid_to_load);
 }
 
 void view_leave(struct dt_lib_module_t *self,
@@ -1503,13 +1499,6 @@ void view_leave(struct dt_lib_module_t *self,
 static gboolean _draw_again(gpointer user_data)
 {
   dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)user_data;
-
-  if(dt_is_valid_imgid(ps->imgs.imgid_to_load))
-  {
-    _load_image_full_page(ps, ps->imgs.imgid_to_load);
-    ps->imgs.imgid_to_load = NO_IMGID;
-  }
-
   gtk_widget_queue_draw(ps->w_page);
   return FALSE;
 }
@@ -1882,14 +1871,6 @@ void _cairo_rectangle(cairo_t *cr,
 
 static gboolean _draw_overlay(GtkWidget *self, cairo_t *cr, dt_lib_print_settings_t *ps)
 {
-  if(dt_is_valid_imgid(ps->imgs.imgid_to_load))
-  {
-    // we set orientation and delay the reload to ensure the
-    // page is properly set before trying to display the image.
-    _set_orientation(ps, ps->imgs.imgid_to_load);
-    g_timeout_add(250, _draw_again, ps);
-  }
-
   // display grid
 
   // 1mm
@@ -3504,10 +3485,11 @@ void gui_reset(dt_lib_module_t *self)
   gtk_widget_set_sensitive(GTK_WIDGET(ps->style_mode), FALSE);
 
   // reset page orientation to fit the picture if a single one is displayed
-  // this will trigger redraw of page background if needed
+  // FIXME: instead of using image last box, just use current image from filmstrip?
   const dt_imgid_t imgid = (ps->imgs.count > 0) ? ps->imgs.box[0].imgid : NO_IMGID;
   dt_printing_clear_boxes(&ps->imgs);
   ps->imgs.imgid_to_load = imgid;
+  _load_image_full_page(ps, ps->imgs.imgid_to_load);
 
   ps->creation = ps->dragging = FALSE;
   ps->selected = -1;
