@@ -51,9 +51,7 @@ typedef struct dt_print_t
   GtkWidget *w_margins;      // GtkDrawingArea -- paper outside margins
   GtkWidget *w_content;      // GtkDrawingArea -- paper inside margins;
   GtkWidget *w_hw_margins;   // GtkDrawingArea -- tick-marks showing hardware margins of printer
-  GtkWidget *w_page;         // GtkDrawingArea -- temp catchall
-}
-dt_print_t;
+} dt_print_t;
 
 const char *name(const dt_view_t *self)
 {
@@ -280,98 +278,6 @@ static gboolean _event_draw_hw_margins(GtkWidget *widget, cairo_t *cr,
   return FALSE;
 }
 
-static gboolean _event_draw_page(GtkWidget *self, cairo_t *cr, dt_print_t *prt)
-{
-  // print page & borders only. Images are displayed in
-  // gui_post_expose in print_settings module.
-  if(!prt->pinfo)
-    return FALSE;
-
-  const float px = prt->imgs->screen.page.x;
-  const float py = prt->imgs->screen.page.y;
-  const float pwidth = prt->imgs->screen.page.width;
-  const float pheight = prt->imgs->screen.page.height;
-  const float ax = prt->imgs->screen.print_area.x;
-  const float ay = prt->imgs->screen.print_area.y;
-  const float awidth = prt->imgs->screen.print_area.width;
-  const float aheight = prt->imgs->screen.print_area.height;
-
-  // page w/h
-  float pg_width  = prt->pinfo->paper.width;
-  float pg_height = prt->pinfo->paper.height;
-
-  // non-printable
-  float np_top = prt->pinfo->printer.hw_margin_top;
-  float np_left = prt->pinfo->printer.hw_margin_left;
-  float np_right = prt->pinfo->printer.hw_margin_right;
-  float np_bottom = prt->pinfo->printer.hw_margin_bottom;
-
-  // handle the landscape mode if needed
-  if(prt->pinfo->page.landscape)
-  {
-    float tmp = pg_width;
-    pg_width = pg_height;
-    pg_height = tmp;
-
-    // rotate the non-printable margins
-    tmp       = np_top;
-    np_top    = np_right;
-    np_right  = np_bottom;
-    np_bottom = np_left;
-    np_left   = tmp;
-  }
-
-  const float pright = px + pwidth;
-  const float pbottom = py + pheight;
-
-  // x page -> x display
-  // (x / pg_width) * p_width + p_x
-  cairo_set_source_rgb (cr, 0.9, 0.9, 0.9);
-  cairo_rectangle (cr, px, py, pwidth, pheight);
-  cairo_fill (cr);
-
-  // display non-printable area
-  cairo_set_source_rgb (cr, 0.1, 0.1, 0.1);
-
-  const float np1x = px + (np_left / pg_width) * pwidth;
-  const float np1y = py + (np_top / pg_height) * pheight;
-  const float np2x = pright - (np_right / pg_width) * pwidth;
-  const float np2y = pbottom - (np_bottom / pg_height) * pheight;
-
-  // top-left
-  cairo_move_to (cr, np1x-10, np1y);
-  cairo_line_to (cr, np1x, np1y); cairo_line_to (cr, np1x, np1y-10);
-  cairo_stroke (cr);
-
-  // top-right
-  // npy = p_y + (np_top / pg_height) * p_height;
-  cairo_move_to (cr, np2x+10, np1y);
-  cairo_line_to (cr, np2x, np1y); cairo_line_to (cr, np2x, np1y-10);
-  cairo_stroke (cr);
-
-  // bottom-left
-  cairo_move_to (cr, np1x-10, np2y);
-  cairo_line_to (cr, np1x, np2y); cairo_line_to (cr, np1x, np2y+10);
-  cairo_stroke (cr);
-
-  // bottom-right
-  cairo_move_to (cr, np2x+10, np2y);
-  cairo_line_to (cr, np2x, np2y); cairo_line_to (cr, np2x, np2y+10);
-  cairo_stroke (cr);
-
-  // clip to this area to ensure that the image won't be larger,
-  // this is needed when using negative margin to enlarge the print
-
-  cairo_rectangle (cr, np1x, np1y, np2x-np1x, np2y-np1y);
-  cairo_clip(cr);
-
-  cairo_set_source_rgb (cr, 0.77, 0.77, 0.77);
-  cairo_rectangle (cr, ax, ay, awidth, aheight);
-  cairo_fill (cr);
-
-  return FALSE;
-}
-
 void mouse_moved(dt_view_t *self,
                  double x,
                  double y,
@@ -528,15 +434,11 @@ void gui_init(dt_view_t *self)
   prt->w_hw_margins = gtk_drawing_area_new();
   gtk_widget_set_name(prt->w_hw_margins, "print-hw-margins");
 
-  prt->w_page = gtk_drawing_area_new();
-  gtk_widget_set_name(prt->w_page, "print-paper");
-
   prt->w_main = gtk_overlay_new();
   gtk_widget_set_name(prt->w_main, "print-main");
   gtk_container_add(GTK_CONTAINER(prt->w_main), w_background);
   gtk_overlay_add_overlay(GTK_OVERLAY(prt->w_main), prt->w_aspect1);
   gtk_overlay_add_overlay(GTK_OVERLAY(prt->w_main), prt->w_hw_margins);
-  gtk_overlay_add_overlay(GTK_OVERLAY(prt->w_main), prt->w_page);
   gtk_overlay_add_overlay(GTK_OVERLAY(prt->w_main),
                           darktable.lib->proxy.print.w_settings_main);
   // so that margin start will be left, end will be right
@@ -547,7 +449,6 @@ void gui_init(dt_view_t *self)
   g_signal_connect(G_OBJECT(prt->w_content), "draw", G_CALLBACK(_event_draw_rect), NULL);
   g_signal_connect(G_OBJECT(prt->w_hw_margins), "draw",
                    G_CALLBACK(_event_draw_hw_margins), prt);
-  g_signal_connect(G_OBJECT(prt->w_page), "draw", G_CALLBACK(_event_draw_page), prt);
 
   gtk_widget_show(w_background);
   gtk_widget_show(prt->w_margins);
@@ -555,7 +456,6 @@ void gui_init(dt_view_t *self)
   gtk_widget_show(w_overlay);
   gtk_widget_show(prt->w_aspect1);
   gtk_widget_show(prt->w_hw_margins);
-  //gtk_widget_show(prt->w_page);
   gtk_widget_show(prt->w_main);
 
   // so that can remove it from ui center overlay when leave print
