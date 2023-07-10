@@ -45,6 +45,8 @@ typedef struct dt_print_t
 {
   dt_print_info_t *pinfo;
   dt_images_box *imgs;
+
+  GtkWidget *w_page;         // GtkDrawingArea -- temp catchall
 }
 dt_print_t;
 
@@ -161,15 +163,9 @@ void configure(dt_view_t *self, int width, int height)
     _update_display_coords(prt, width, height);
 }
 
-static void _expose_print_page(dt_view_t *self,
-                               cairo_t *cr,
-                               const int32_t width,
-                               const int32_t height,
-                               const int32_t pointerx,
-                               const int32_t pointery)
+static void _expose_print_page(dt_print_t *prt,
+                               cairo_t *cr)
 {
-  dt_print_t *prt = (dt_print_t *)self->data;
-
   if(prt->pinfo == NULL)
     return;
 
@@ -256,21 +252,16 @@ static void _expose_print_page(dt_view_t *self,
   cairo_fill (cr);
 }
 
-void expose(dt_view_t *self,
-            cairo_t *cri,
-            int32_t width_i,
-            int32_t height_i,
-            int32_t pointerx,
-            int32_t pointery)
+static void _event_draw_page(GtkWidget *self, cairo_t *cr, dt_print_t *prt)
 {
   // clear the current surface
-  dt_gui_gtk_set_source_rgb(cri, DT_GUI_COLOR_PRINT_BG);
-  cairo_paint(cri);
+  dt_gui_gtk_set_source_rgb(cr, DT_GUI_COLOR_PRINT_BG);
+  cairo_paint(cr);
 
   // print page & borders only. Images are displayed in
   // gui_post_expose in print_settings module.
 
-  _expose_print_page(self, cri, width_i, height_i, pointerx, pointery);
+  _expose_print_page(prt, cr);
 }
 
 void mouse_moved(dt_view_t *self,
@@ -357,6 +348,18 @@ void enter(dt_view_t *self)
     dt_view_active_images_add(prt->imgs->imgid_to_load, FALSE);
   }
 
+  gtk_overlay_add_overlay(GTK_OVERLAY(dt_ui_center_base(darktable.gui->ui)),
+                          prt->w_page);
+
+  // FIXME: needed?
+  // be sure that log msg is always placed on top
+  gtk_overlay_reorder_overlay
+    (GTK_OVERLAY(dt_ui_center_base(darktable.gui->ui)),
+     gtk_widget_get_parent(dt_ui_log_msg(darktable.gui->ui)), -1);
+  gtk_overlay_reorder_overlay
+    (GTK_OVERLAY(dt_ui_center_base(darktable.gui->ui)),
+     gtk_widget_get_parent(dt_ui_toast_msg(darktable.gui->ui)), -1);
+
   DT_DEBUG_CONTROL_SIGNAL_CONNECT(darktable.signals, DT_SIGNAL_VIEWMANAGER_THUMBTABLE_ACTIVATE,
                             G_CALLBACK(_view_print_filmstrip_activate_callback), self);
 
@@ -374,7 +377,22 @@ void leave(dt_view_t *self)
                                      G_CALLBACK(_view_print_filmstrip_activate_callback),
                                      (gpointer)self);
 
+  gtk_container_remove(GTK_CONTAINER(dt_ui_center_base(darktable.gui->ui)),
+                       prt->w_page);
+
   dt_printing_clear_boxes(prt->imgs);
+}
+
+void gui_init(dt_view_t *self)
+{
+  dt_print_t *prt = (dt_print_t*)self->data;
+
+  prt->w_page = gtk_drawing_area_new();
+  gtk_widget_set_name(prt->w_page, "print-paper");
+
+  g_signal_connect(G_OBJECT(prt->w_page), "draw", G_CALLBACK(_event_draw_page), prt);
+
+  gtk_widget_show(prt->w_page);
 }
 
 // clang-format off
