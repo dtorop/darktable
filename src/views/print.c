@@ -47,6 +47,8 @@ typedef struct dt_print_t
   dt_images_box *imgs;
 
   GtkWidget *w_main;         // GtkOverlay -- contains all other widgets
+  GtkWidget *w_aspect1;      // GtkAspectFrame -- contains margins/content background
+  GtkWidget *w_margins;      // GtkDrawingArea -- paper outside margins
   GtkWidget *w_page;         // GtkDrawingArea -- temp catchall
 }
 dt_print_t;
@@ -167,18 +169,32 @@ void expose(dt_view_t *self, cairo_t *cr, int32_t width, int32_t height,
   // FIXME: somehow is necessary?
 }
 
-static void _event_draw_bkgd(GtkWidget *widget, cairo_t *cr, gpointer user_data)
+static gboolean _event_draw_bkgd(GtkWidget *widget, cairo_t *cr, gpointer user_data)
 {
   dt_gui_gtk_set_source_rgb(cr, DT_GUI_COLOR_PRINT_BG);
   cairo_paint(cr);
+  return FALSE;
 }
 
-static void _event_draw_page(GtkWidget *self, cairo_t *cr, dt_print_t *prt)
+static gboolean _event_draw_rect(GtkWidget *widget, cairo_t *cr, gpointer user_data)
+{
+  // Background-color is CSS dependent, hence same draw code can paper
+  // margins and content. The page content widget is simply drawn over
+  // the margins widget.
+  GtkStyleContext *context = gtk_widget_get_style_context(widget);
+  guint width = gtk_widget_get_allocated_width(widget);
+  guint height = gtk_widget_get_allocated_height(widget);
+  gtk_render_background(context, cr, 0, 0, width, height);
+  gtk_render_frame(context, cr, 0, 0, width, height);
+  return FALSE;
+}
+
+static gboolean _event_draw_page(GtkWidget *self, cairo_t *cr, dt_print_t *prt)
 {
   // print page & borders only. Images are displayed in
   // gui_post_expose in print_settings module.
   if(!prt->pinfo)
-    return;
+    return FALSE;
 
   const float px = prt->imgs->screen.page.x;
   const float py = prt->imgs->screen.page.y;
@@ -261,6 +277,8 @@ static void _event_draw_page(GtkWidget *self, cairo_t *cr, dt_print_t *prt)
   cairo_set_source_rgb (cr, 0.77, 0.77, 0.77);
   cairo_rectangle (cr, ax, ay, awidth, aheight);
   cairo_fill (cr);
+
+  return FALSE;
 }
 
 void mouse_moved(dt_view_t *self,
@@ -390,21 +408,43 @@ void gui_init(dt_view_t *self)
   GtkWidget* w_background = gtk_drawing_area_new();
   gtk_widget_set_name(w_background, "print-view-bkgd");
 
+  // page margins
+  prt->w_margins = gtk_drawing_area_new();
+  gtk_widget_set_name(prt->w_margins, "print-paper-margins");
+
+  // page content & margins
+  GtkWidget *w_overlay = gtk_overlay_new();
+  gtk_widget_set_name(w_overlay, "print-paper-overlay");
+  gtk_container_add(GTK_CONTAINER(w_overlay), prt->w_margins);
+  //gtk_overlay_add_overlay(GTK_OVERLAY(w_overlay), prt->w_content);
+
+  // fits page in center area
+  prt->w_aspect1 = gtk_aspect_frame_new(NULL, 0.5f, 0.5f, 1.0f, FALSE);
+  gtk_widget_set_name(prt->w_aspect1, "print-paper-frame");
+  gtk_container_add(GTK_CONTAINER(prt->w_aspect1), w_overlay);
+  gtk_widget_set_size_request(prt->w_aspect1, DT_PIXEL_APPLY_DPI(200),
+                              DT_PIXEL_APPLY_DPI(200));
+
   prt->w_page = gtk_drawing_area_new();
   gtk_widget_set_name(prt->w_page, "print-paper");
 
   prt->w_main = gtk_overlay_new();
   gtk_widget_set_name(prt->w_main, "print-main");
   gtk_container_add(GTK_CONTAINER(prt->w_main), w_background);
+  gtk_overlay_add_overlay(GTK_OVERLAY(prt->w_main), prt->w_aspect1);
   gtk_overlay_add_overlay(GTK_OVERLAY(prt->w_main), prt->w_page);
   gtk_overlay_add_overlay(GTK_OVERLAY(prt->w_main),
                           darktable.lib->proxy.print.w_settings_main);
 
   g_signal_connect(G_OBJECT(w_background), "draw", G_CALLBACK(_event_draw_bkgd), NULL);
+  g_signal_connect(G_OBJECT(prt->w_margins), "draw", G_CALLBACK(_event_draw_rect), NULL);
   g_signal_connect(G_OBJECT(prt->w_page), "draw", G_CALLBACK(_event_draw_page), prt);
 
   gtk_widget_show(w_background);
-  gtk_widget_show(prt->w_page);
+  gtk_widget_show(prt->w_margins);
+  gtk_widget_show(w_overlay);
+  gtk_widget_show(prt->w_aspect1);
+  //gtk_widget_show(prt->w_page);
   gtk_widget_show(prt->w_main);
 
   // so that can remove it from ui center overlay when leave print
