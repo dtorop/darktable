@@ -234,28 +234,26 @@ static gboolean _event_draw_hw_margins(GtkWidget *widget, cairo_t *cr,
 
   cairo_translate(cr, page_x, page_y);
 
-  const dt_paper_info_t *paper = &prt->pinfo->paper;
-  const dt_printer_info_t *printer = &prt->pinfo->printer;
-  const dt_image_pos *screen = &prt->imgs->screen.page;
+  // page w/h in px
+  const float pwidth = prt->imgs->screen.page.width;
+  const float pheight = prt->imgs->screen.page.height;
 
-  const float pwidth = screen->width;
-  const float pheight = screen->height;
-
-  // page w/h
-  const float pg_width  = paper->width;
-  const float pg_height = paper->height;
+  // page w/h in mm
+  const float pg_width  = prt->pinfo->paper.width;
+  const float pg_height = prt->pinfo->paper.height;
 
   // display non-printable area
-  const gboolean landscape = prt->pinfo->page.landscape;
-  const float np_top = landscape ? printer->hw_margin_right : printer->hw_margin_top;
-  const float np_left = landscape ? printer->hw_margin_top : printer->hw_margin_left;
-  const float np_right = landscape ? printer->hw_margin_bottom : printer->hw_margin_right;
-  const float np_bottom = landscape ? printer->hw_margin_left : printer->hw_margin_bottom;
+  const dt_printer_info_t *prntr = &prt->pinfo->printer;
+  const gboolean lndscp = prt->pinfo->page.landscape;
+  const float np_top = lndscp ? prntr->hw_margin_right : prntr->hw_margin_top;
+  const float np_left = lndscp ? prntr->hw_margin_top : prntr->hw_margin_left;
+  const float np_right = lndscp ? prntr->hw_margin_bottom : prntr->hw_margin_right;
+  const float np_bottom = lndscp ? prntr->hw_margin_left : prntr->hw_margin_bottom;
 
   const float np1x = (np_left / pg_width) * pwidth;
   const float np1y = (np_top / pg_height) * pheight;
-  const float np2x = pwidth - (np_right / pg_width) * pwidth;
-  const float np2y = pheight - (np_bottom / pg_height) * pheight;
+  const float np2x = pwidth * (1.0f - np_right / pg_width);
+  const float np2y = pheight * (1.0f - np_bottom / pg_height);
 
   const double tick_width = DT_PIXEL_APPLY_DPI(10.0);
 
