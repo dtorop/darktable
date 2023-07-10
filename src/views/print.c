@@ -99,8 +99,6 @@ static void _view_print_filmstrip_activate_callback(gpointer instance,
     }
   }
 
-  prt->imgs->box[0].imgid = imgid;
-
   dt_thumbtable_set_offset_image(dt_ui_thumbtable(darktable.gui->ui), imgid, TRUE);
 
   // update the active images list
