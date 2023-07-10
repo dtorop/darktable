@@ -51,6 +51,7 @@ typedef struct dt_print_t
   GtkWidget *w_margins;      // GtkDrawingArea -- paper outside margins
   GtkWidget *w_content;      // GtkDrawingArea -- paper inside margins;
   GtkWidget *w_hw_margins;   // GtkDrawingArea -- tick-marks showing hardware margins of printer
+  GtkWidget *w_aspect2;      // GtkAspectFrame -- contains margins/content background
 } dt_print_t;
 
 const char *name(const dt_view_t *self)
@@ -134,7 +135,7 @@ static void _update_display_coords(dt_print_t *prt, int view_width, int view_hei
     gtk_widget_set_margin_bottom(prt->w_content, round((pheight - aheight) - (ay - py)));
   }
 
-  if(prt->w_aspect1)
+  if(prt->w_aspect1 && prt->w_aspect2)
   {
     const dt_paper_info_t *paper = &prt->pinfo->paper;
     if(paper->width > 0.0 && paper->height > 0.0)
@@ -142,7 +143,11 @@ static void _update_display_coords(dt_print_t *prt, int view_width, int view_hei
       gdouble aspect = (prt->pinfo->page.landscape) ?
         paper->height / paper->width : paper->width / paper->height;
 
+      // two matching aspect frames, one for background of margins/page,
+      // one for layout boxes
+      // FIXME: could also bind the ratio parameter?
       gtk_aspect_frame_set(GTK_ASPECT_FRAME(prt->w_aspect1), 0.5f, 0.5f, aspect, FALSE);
+      gtk_aspect_frame_set(GTK_ASPECT_FRAME(prt->w_aspect2), 0.5f, 0.5f, aspect, FALSE);
     }
   }
 }
@@ -434,13 +439,18 @@ void gui_init(dt_view_t *self)
   prt->w_hw_margins = gtk_drawing_area_new();
   gtk_widget_set_name(prt->w_hw_margins, "print-hw-margins");
 
+  // container for page layout boxes
+  prt->w_aspect2 = gtk_aspect_frame_new(NULL, 0.5f, 0.5f, 1.0f, FALSE);
+  gtk_widget_set_name(prt->w_aspect2, "print-layout-frame");
+  gtk_container_add(GTK_CONTAINER(prt->w_aspect2),
+                    darktable.lib->proxy.print.w_settings_main);
+
   prt->w_main = gtk_overlay_new();
   gtk_widget_set_name(prt->w_main, "print-main");
   gtk_container_add(GTK_CONTAINER(prt->w_main), w_background);
   gtk_overlay_add_overlay(GTK_OVERLAY(prt->w_main), prt->w_aspect1);
   gtk_overlay_add_overlay(GTK_OVERLAY(prt->w_main), prt->w_hw_margins);
-  gtk_overlay_add_overlay(GTK_OVERLAY(prt->w_main),
-                          darktable.lib->proxy.print.w_settings_main);
+  gtk_overlay_add_overlay(GTK_OVERLAY(prt->w_main), prt->w_aspect2);
   // so that margin start will be left, end will be right
   gtk_widget_set_direction(prt->w_main, GTK_TEXT_DIR_LTR);
 
@@ -456,6 +466,7 @@ void gui_init(dt_view_t *self)
   gtk_widget_show(w_overlay);
   gtk_widget_show(prt->w_aspect1);
   gtk_widget_show(prt->w_hw_margins);
+  gtk_widget_show(prt->w_aspect2);
   gtk_widget_show(prt->w_main);
 
   // so that can remove it from ui center overlay when leave print
