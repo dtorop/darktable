@@ -46,6 +46,7 @@ typedef struct dt_print_t
   dt_print_info_t *pinfo;
   dt_images_box *imgs;
 
+  GtkWidget *w_main;         // GtkOverlay -- contains all other widgets
   GtkWidget *w_page;         // GtkDrawingArea -- temp catchall
 }
 dt_print_t;
@@ -153,6 +154,7 @@ init(dt_view_t *self)
 void cleanup(dt_view_t *self)
 {
   dt_print_t *prt = (dt_print_t *)self->data;
+  g_object_unref(prt->w_main);
   free(prt);
 }
 
@@ -349,7 +351,7 @@ void enter(dt_view_t *self)
   }
 
   gtk_overlay_add_overlay(GTK_OVERLAY(dt_ui_center_base(darktable.gui->ui)),
-                          prt->w_page);
+                          prt->w_main);
 
   // FIXME: needed?
   // be sure that log msg is always placed on top
@@ -378,7 +380,7 @@ void leave(dt_view_t *self)
                                      (gpointer)self);
 
   gtk_container_remove(GTK_CONTAINER(dt_ui_center_base(darktable.gui->ui)),
-                       prt->w_page);
+                       prt->w_main);
 
   dt_printing_clear_boxes(prt->imgs);
 }
@@ -390,9 +392,20 @@ void gui_init(dt_view_t *self)
   prt->w_page = gtk_drawing_area_new();
   gtk_widget_set_name(prt->w_page, "print-paper");
 
+  prt->w_main = gtk_overlay_new();
+  gtk_widget_set_name(prt->w_main, "print-main");
+  gtk_container_add(GTK_CONTAINER(prt->w_main), prt->w_page);
+  gtk_overlay_add_overlay(GTK_OVERLAY(prt->w_main),
+                          darktable.lib->proxy.print.w_settings_main);
+
   g_signal_connect(G_OBJECT(prt->w_page), "draw", G_CALLBACK(_event_draw_page), prt);
 
   gtk_widget_show(prt->w_page);
+  gtk_widget_show(prt->w_main);
+
+  // so that can remove it from ui center overlay when leave print
+  // view, and but add it back in when re-enter print view
+  g_object_ref(prt->w_main);
 }
 
 // clang-format off

@@ -1451,18 +1451,6 @@ void view_enter(struct dt_lib_module_t *self,
 {
   dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
 
-  gtk_overlay_add_overlay(GTK_OVERLAY(dt_ui_center_base(darktable.gui->ui)),
-                          ps->w_page);
-
-  // FIXME: needed?
-  // be sure that log msg is always placed on top
-  gtk_overlay_reorder_overlay
-    (GTK_OVERLAY(dt_ui_center_base(darktable.gui->ui)),
-     gtk_widget_get_parent(dt_ui_log_msg(darktable.gui->ui)), -1);
-  gtk_overlay_reorder_overlay
-    (GTK_OVERLAY(dt_ui_center_base(darktable.gui->ui)),
-     gtk_widget_get_parent(dt_ui_toast_msg(darktable.gui->ui)), -1);
-
   // user activated a new image via the filmstrip or user entered view
   // mode which activates an image: get image_id and orientation
   DT_DEBUG_CONTROL_SIGNAL_CONNECT(darktable.signals, DT_SIGNAL_ACTIVE_IMAGES_CHANGE,
@@ -1484,17 +1472,12 @@ void view_leave(struct dt_lib_module_t *self,
                 struct dt_view_t *old_view,
                 struct dt_view_t *new_view)
 {
-  dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
-
   DT_DEBUG_CONTROL_SIGNAL_DISCONNECT(darktable.signals,
                                      G_CALLBACK(_print_settings_activate_callback),
                                      self);
   DT_DEBUG_CONTROL_SIGNAL_DISCONNECT(darktable.signals,
                                      G_CALLBACK(_print_settings_update_callback),
                                      self);
-
-  gtk_container_remove(GTK_CONTAINER(dt_ui_center_base(darktable.gui->ui)),
-                       ps->w_page);
 }
 
 static gboolean _draw_again(gpointer user_data)
@@ -2399,9 +2382,7 @@ void gui_init(dt_lib_module_t *self)
                    G_CALLBACK(_drag_motion_received), d);
 
   gtk_widget_show(d->w_page);
-  // so that can remove it from ui center overlay when leave print
-  // view, and but add it back in when re-enter print view
-  g_object_ref(d->w_page);
+  darktable.lib->proxy.print.w_settings_main = d->w_page;
 
   //  create the spin-button now as values could be set when the
   //  printer has no hardware margin
@@ -3446,8 +3427,6 @@ void gui_cleanup(dt_lib_module_t *self)
                                        G_CALLBACK(_left_border_callback), self);
   g_signal_handlers_disconnect_by_func(G_OBJECT(ps->b_right),
                                        G_CALLBACK(_right_border_callback), self);
-
-  g_object_unref(ps->w_page);
 
   g_list_free_full(ps->profiles, g_free);
   g_list_free_full(ps->paper_list, free);
