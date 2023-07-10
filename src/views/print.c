@@ -167,6 +167,12 @@ void expose(dt_view_t *self, cairo_t *cr, int32_t width, int32_t height,
   // FIXME: somehow is necessary?
 }
 
+static void _event_draw_bkgd(GtkWidget *widget, cairo_t *cr, gpointer user_data)
+{
+  dt_gui_gtk_set_source_rgb(cr, DT_GUI_COLOR_PRINT_BG);
+  cairo_paint(cr);
+}
+
 static void _expose_print_page(dt_print_t *prt,
                                cairo_t *cr)
 {
@@ -258,10 +264,6 @@ static void _expose_print_page(dt_print_t *prt,
 
 static void _event_draw_page(GtkWidget *self, cairo_t *cr, dt_print_t *prt)
 {
-  // clear the current surface
-  dt_gui_gtk_set_source_rgb(cr, DT_GUI_COLOR_PRINT_BG);
-  cairo_paint(cr);
-
   // print page & borders only. Images are displayed in
   // gui_post_expose in print_settings module.
 
@@ -391,17 +393,24 @@ void gui_init(dt_view_t *self)
 {
   dt_print_t *prt = (dt_print_t*)self->data;
 
+  // view background outside of page
+  GtkWidget* w_background = gtk_drawing_area_new();
+  gtk_widget_set_name(w_background, "print-view-bkgd");
+
   prt->w_page = gtk_drawing_area_new();
   gtk_widget_set_name(prt->w_page, "print-paper");
 
   prt->w_main = gtk_overlay_new();
   gtk_widget_set_name(prt->w_main, "print-main");
-  gtk_container_add(GTK_CONTAINER(prt->w_main), prt->w_page);
+  gtk_container_add(GTK_CONTAINER(prt->w_main), w_background);
+  gtk_overlay_add_overlay(GTK_OVERLAY(prt->w_main), prt->w_page);
   gtk_overlay_add_overlay(GTK_OVERLAY(prt->w_main),
                           darktable.lib->proxy.print.w_settings_main);
 
+  g_signal_connect(G_OBJECT(w_background), "draw", G_CALLBACK(_event_draw_bkgd), NULL);
   g_signal_connect(G_OBJECT(prt->w_page), "draw", G_CALLBACK(_event_draw_page), prt);
 
+  gtk_widget_show(w_background);
   gtk_widget_show(prt->w_page);
   gtk_widget_show(prt->w_main);
 
