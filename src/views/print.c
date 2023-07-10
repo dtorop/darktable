@@ -349,7 +349,6 @@ void enter(dt_view_t *self)
   if(dt_is_valid_imgid(prt->imgs->imgid_to_load))
   {
     // change active image
-    // FIXME: if we raise signal will this not be necessary?
     dt_thumbtable_set_offset_image(dt_ui_thumbtable(darktable.gui->ui),
                                    prt->imgs->box[0].imgid, TRUE);
     // but no need to raise signal, as print settings is already will
