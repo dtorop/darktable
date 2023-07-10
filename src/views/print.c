@@ -107,19 +107,6 @@ static void _view_print_filmstrip_activate_callback(gpointer instance,
   dt_view_active_images_add(imgid, TRUE);
 }
 
-static void _update_aspect(dt_print_t *const prt)
-{
-  if(!prt->w_aspect1) return;
-  const dt_paper_info_t *paper = &prt->pinfo->paper;
-  if(paper->width > 0.0 && paper->height > 0.0)
-  {
-    gdouble aspect = (prt->pinfo->page.landscape) ?
-      paper->height / paper->width : paper->width / paper->height;
-
-    gtk_aspect_frame_set(GTK_ASPECT_FRAME(prt->w_aspect1), 0.5f, 0.5f, aspect, FALSE);
-  }
-}
-
 static void _update_display_coords(dt_print_t *prt, int view_width, int view_height)
 {
   // FIXME: if use aspect frame we can skip a lot of this work
@@ -148,8 +135,17 @@ static void _update_display_coords(dt_print_t *prt, int view_width, int view_hei
     gtk_widget_set_margin_bottom(prt->w_content, round((pheight - aheight) - (ay - py)));
   }
 
-  // FIME: inline this
-  _update_aspect(prt);
+  if(prt->w_aspect1)
+  {
+    const dt_paper_info_t *paper = &prt->pinfo->paper;
+    if(paper->width > 0.0 && paper->height > 0.0)
+    {
+      gdouble aspect = (prt->pinfo->page.landscape) ?
+        paper->height / paper->width : paper->width / paper->height;
+
+      gtk_aspect_frame_set(GTK_ASPECT_FRAME(prt->w_aspect1), 0.5f, 0.5f, aspect, FALSE);
+    }
+  }
 }
 
 static void _view_print_settings(const dt_view_t *view,
