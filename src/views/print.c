@@ -173,10 +173,11 @@ static void _event_draw_bkgd(GtkWidget *widget, cairo_t *cr, gpointer user_data)
   cairo_paint(cr);
 }
 
-static void _expose_print_page(dt_print_t *prt,
-                               cairo_t *cr)
+static void _event_draw_page(GtkWidget *self, cairo_t *cr, dt_print_t *prt)
 {
-  if(prt->pinfo == NULL)
+  // print page & borders only. Images are displayed in
+  // gui_post_expose in print_settings module.
+  if(!prt->pinfo)
     return;
 
   const float px = prt->imgs->screen.page.x;
@@ -260,14 +261,6 @@ static void _expose_print_page(dt_print_t *prt,
   cairo_set_source_rgb (cr, 0.77, 0.77, 0.77);
   cairo_rectangle (cr, ax, ay, awidth, aheight);
   cairo_fill (cr);
-}
-
-static void _event_draw_page(GtkWidget *self, cairo_t *cr, dt_print_t *prt)
-{
-  // print page & borders only. Images are displayed in
-  // gui_post_expose in print_settings module.
-
-  _expose_print_page(prt, cr);
 }
 
 void mouse_moved(dt_view_t *self,
