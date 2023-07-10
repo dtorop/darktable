@@ -110,29 +110,29 @@ static void _view_print_filmstrip_activate_callback(gpointer instance,
 static void _update_display_coords(dt_print_t *prt, int view_width, int view_height)
 {
   // FIXME: if use aspect frame we can skip a lot of this work
-  float px=.0f, py=.0f, pwidth=.0f, pheight=.0f;
+  float pwidth=.0f, pheight=.0f;
   float ax=.0f, ay=.0f, awidth=.0f, aheight=.0f;
   gboolean borderless = FALSE;
 
   dt_get_print_layout(prt->pinfo, view_width, view_height,
-                      &px, &py, &pwidth, &pheight,
+                      &pwidth, &pheight,
                       &ax, &ay, &awidth, &aheight, &borderless);
 
   // record the screen page dimension. this will be used to draw the
   // page and to compute the actual layout of the areas placed over
   // the page.
   dt_printing_setup_display(prt->imgs,
-                            px, py, pwidth, pheight,
+                            pwidth, pheight,
                             ax, ay, awidth, aheight,
                             borderless);
 
   // FIXME: if some of the pixel dimensions aren't used outside of here, don't store theme! if we can put them in a form to make them easier here, do that
   if(prt->w_content)
   {
-    gtk_widget_set_margin_start(prt->w_content, round(ax - px));
-    gtk_widget_set_margin_end(prt->w_content, round((pwidth - awidth) - (ax - px)));
-    gtk_widget_set_margin_top(prt->w_content, round(ay - py));
-    gtk_widget_set_margin_bottom(prt->w_content, round((pheight - aheight) - (ay - py)));
+    gtk_widget_set_margin_start(prt->w_content, round(ax));
+    gtk_widget_set_margin_end(prt->w_content, round((pwidth - awidth) - ax));
+    gtk_widget_set_margin_top(prt->w_content, round(ay));
+    gtk_widget_set_margin_bottom(prt->w_content, round((pheight - aheight) - ay));
   }
 
   if(prt->w_aspect1 && prt->w_aspect2)
