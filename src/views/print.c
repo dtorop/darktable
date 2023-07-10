@@ -49,6 +49,7 @@ typedef struct dt_print_t
   GtkWidget *w_main;         // GtkOverlay -- contains all other widgets
   GtkWidget *w_aspect1;      // GtkAspectFrame -- contains margins/content background
   GtkWidget *w_margins;      // GtkDrawingArea -- paper outside margins
+  GtkWidget *w_content;      // GtkDrawingArea -- paper inside margins;
   GtkWidget *w_page;         // GtkDrawingArea -- temp catchall
 }
 dt_print_t;
@@ -138,6 +139,16 @@ static void _update_display_coords(dt_print_t *prt, int view_width, int view_hei
                             ax, ay, awidth, aheight,
                             borderless);
 
+  // FIXME: if some of the pixel dimensions aren't used outside of here, don't store theme! if we can put them in a form to make them easier here, do that
+  if(prt->w_content)
+  {
+    gtk_widget_set_margin_start(prt->w_content, round(ax - px));
+    gtk_widget_set_margin_end(prt->w_content, round((pwidth - awidth) - (ax - px)));
+    gtk_widget_set_margin_top(prt->w_content, round(ay - py));
+    gtk_widget_set_margin_bottom(prt->w_content, round((pheight - aheight) - (ay - py)));
+  }
+
+  // FIME: inline this
   _update_aspect(prt);
 }
 
@@ -427,11 +438,17 @@ void gui_init(dt_view_t *self)
   prt->w_margins = gtk_drawing_area_new();
   gtk_widget_set_name(prt->w_margins, "print-paper-margins");
 
+  // inner content (this widget draws the background of the paper
+  // within margins, but prt->body, in a higher layer, contains the
+  // layout boxes)
+  prt->w_content = gtk_drawing_area_new();
+  gtk_widget_set_name(prt->w_content, "print-paper-content");
+
   // page content & margins
   GtkWidget *w_overlay = gtk_overlay_new();
   gtk_widget_set_name(w_overlay, "print-paper-overlay");
   gtk_container_add(GTK_CONTAINER(w_overlay), prt->w_margins);
-  //gtk_overlay_add_overlay(GTK_OVERLAY(w_overlay), prt->w_content);
+  gtk_overlay_add_overlay(GTK_OVERLAY(w_overlay), prt->w_content);
 
   // fits page in center area
   prt->w_aspect1 = gtk_aspect_frame_new(NULL, 0.5f, 0.5f, 1.0f, FALSE);
@@ -452,13 +469,17 @@ void gui_init(dt_view_t *self)
   gtk_overlay_add_overlay(GTK_OVERLAY(prt->w_main), prt->w_page);
   gtk_overlay_add_overlay(GTK_OVERLAY(prt->w_main),
                           darktable.lib->proxy.print.w_settings_main);
+  // so that margin start will be left, end will be right
+  gtk_widget_set_direction(prt->w_main, GTK_TEXT_DIR_LTR);
 
   g_signal_connect(G_OBJECT(w_background), "draw", G_CALLBACK(_event_draw_bkgd), NULL);
   g_signal_connect(G_OBJECT(prt->w_margins), "draw", G_CALLBACK(_event_draw_rect), NULL);
+  g_signal_connect(G_OBJECT(prt->w_content), "draw", G_CALLBACK(_event_draw_rect), NULL);
   g_signal_connect(G_OBJECT(prt->w_page), "draw", G_CALLBACK(_event_draw_page), prt);
 
   gtk_widget_show(w_background);
   gtk_widget_show(prt->w_margins);
+  gtk_widget_show(prt->w_content);
   gtk_widget_show(w_overlay);
   gtk_widget_show(prt->w_aspect1);
   //gtk_widget_show(prt->w_page);

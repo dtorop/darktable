@@ -231,6 +231,7 @@ Why that? Just because it's a developer choice and most classes use underscore i
 @define-color colorlabel_purple rgb(230,0,230);
 
 /* Print view of page layout */
+@define-color print_paper @grey_80;
 @define-color print_margin @grey_90;
 /* Reset GTK defaults - Otherwise dt inherits Adwaita default theme dark */
 *
@@ -2299,6 +2300,15 @@ Details :
   background-color: rgba(20, 20, 20, 0.5);
 }
 
+/* Lighttable toolbox */
+#lighttable_layouts_box,
+#footer-toolbar .toggle,
+#footer-toolbar entry,
+#footer-toolbar scale
+{
+  margin: 0.07em 0.28em;
+}
+
 /*-------------------------------------------------
   - print view layout -
   -----------------------------------------------*/
@@ -2310,11 +2320,8 @@ Details :
   border: 0.07em solid @bg_color;
 }
 
-/* Lighttable toolbox */
-#lighttable_layouts_box,
-#footer-toolbar .toggle,
-#footer-toolbar entry,
-#footer-toolbar scale
+/* page body, area within margins */
+#print-paper-content
 {
-  margin: 0.07em 0.28em;
+  background-color: @print_paper;
 }
