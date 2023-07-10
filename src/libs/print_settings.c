@@ -120,7 +120,7 @@ typedef struct dt_lib_print_settings_t
   int last_selected;               // last selected area to edit
   dt_box_control_set sel_controls; // which border/corner is selected
   float click_pos_x, click_pos_y;
-  gboolean has_changed;
+  gboolean has_changed;            // layout box has changed for default full page
 } dt_lib_print_settings_t;
 
 typedef struct dt_lib_print_job_t
@@ -1353,11 +1353,14 @@ static void _print_settings_update_callback(gpointer instance,
 }
 
 static void _print_settings_activate_callback(gpointer instance,
-                                              const dt_imgid_t imgid,
-                                              gpointer user_data)
+                                              const dt_lib_module_t *self)
 {
-  const dt_lib_module_t *self = (dt_lib_module_t *)user_data;
   dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
+
+  if(!darktable.view_manager->active_images)
+    return;
+
+  dt_imgid_t imgid = GPOINTER_TO_INT(darktable.view_manager->active_images->data);
 
   // FIXME: this is a shortcut to get the image clicked for drag-and-drop, but should we really read this from the drag data?
   if(dt_is_valid_imgid(imgid))
@@ -1465,7 +1468,7 @@ void view_enter(struct dt_lib_module_t *self,
   // user activated a new image via the filmstrip or user entered view
   // mode which activates an image: get image_id and orientation
   DT_DEBUG_CONTROL_SIGNAL_CONNECT(darktable.signals,
-                                  DT_SIGNAL_VIEWMANAGER_THUMBTABLE_ACTIVATE,
+                                  DT_SIGNAL_ACTIVE_IMAGES_CHANGE,
                                   G_CALLBACK(_print_settings_activate_callback),
                                   self);
 

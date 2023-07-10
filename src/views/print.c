@@ -62,17 +62,12 @@ static void _view_print_filmstrip_activate_callback(gpointer instance,
                                                     const dt_imgid_t imgid,
                                                     const dt_view_t *self)
 {
+  dt_print_t *prt = (dt_print_t *)self->data;
+
+
   if(!dt_is_valid_imgid(imgid))
     return;
 
-  dt_print_t *prt = (dt_print_t *)self->data;
-
-  // only select from filmstrip if there is a single image displayed, otherwise
-  // we will drag and drop into different areas.
-
-  if(prt->imgs->count != 1) return;
-
-  // FIXME: how does this work overlap with _print_settings_activate_callback() in print_settings?
   // if the previous shown image is selected and the selection is unique
   // then we change the selected image to the new one
   if(dt_is_valid_imgid(prt->imgs->box[0].imgid))
@@ -104,9 +99,14 @@ static void _view_print_filmstrip_activate_callback(gpointer instance,
   // update the active images list
   g_slist_free(darktable.view_manager->active_images);
   darktable.view_manager->active_images = g_slist_prepend(NULL, GINT_TO_POINTER(imgid));
+  // this triggers print_settings callback, which must happen after
+  // changing selected images, as print_settings callback may change
+  // what is in the current image box
+  // FIXME: can we just move this code to print_settings? or save current selection here?
   DT_DEBUG_CONTROL_SIGNAL_RAISE(darktable.signals, DT_SIGNAL_ACTIVE_IMAGES_CHANGE);
 
   // force redraw
+  // FIXME: needed?
   dt_control_queue_redraw();
 }
 
