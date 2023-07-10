@@ -585,13 +585,13 @@ void dt_get_print_layout(const dt_print_info_t *prt,
   /* this is where the layout is done for the display and for the print too. So this routine is one
      of the most critical for the print circuitry. */
 
-  // page w/h
+  // page w/h in mm
   float pg_width  = prt->paper.width;
   float pg_height = prt->paper.height;
 
   /* here, width and height correspond to the area for the picture */
 
-  // non-printable
+  // non-printable in mm
   float np_top = prt->printer.hw_margin_top;
   float np_left = prt->printer.hw_margin_left;
   float np_right = prt->printer.hw_margin_right;
@@ -622,19 +622,18 @@ void dt_get_print_layout(const dt_print_info_t *prt,
   // display page
   float p_bottom, p_right;
 
+  // FIXME: when everything is relative to aspect frame we won't need to do so mcuch work or keep px/py
+  *px = 0;
+  *py = 0;
   if(a_aspect > pg_aspect)
   {
-    *px = (area_width - (area_height * pg_aspect)) / 2.0f;
-    *py = 0;
+    p_right = area_height * pg_aspect;
     p_bottom = area_height;
-    p_right = area_width - *px;
   }
   else
   {
-    *px = 0;
-    *py = (area_height - (area_width / pg_aspect)) / 2.0f;
     p_right = area_width;
-    p_bottom = area_height - *py;
+    p_bottom = area_width / pg_aspect;
   }
 
   *pwidth = p_right - *px;

@@ -55,6 +55,7 @@ typedef struct dt_printer_info_t
 {
   char name[MAX_NAME];
   int resolution;
+  // non-printable margins in mm
   double hw_margin_top, hw_margin_bottom, hw_margin_left, hw_margin_right;
   dt_iop_color_intent_t intent;
   char profile[256];

@@ -123,15 +123,15 @@ void dt_printing_setup_display(dt_images_box *imgs,
 
   imgs->screen.borderless = borderless;
 
-  // and now reset the box to be resised accordingly if needed
+  // and now reset the box to be resized accordingly if needed
   for(int k=0; k<imgs->count; k++)
   {
     dt_image_box *box = &imgs->box[k];
 
     if(box->pos.x > 0)
     {
-      box->screen.x      = pwidth * box->pos.x + px;
-      box->screen.y      = pheight * box->pos.y + py;
+      box->screen.x      = pwidth * box->pos.x;
+      box->screen.y      = pheight * box->pos.y;
       box->screen.width  = pwidth * box->pos.width;
       box->screen.height = pheight * box->pos.height;
     }
