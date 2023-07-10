@@ -50,6 +50,7 @@ typedef struct dt_print_t
   GtkWidget *w_aspect1;      // GtkAspectFrame -- contains margins/content background
   GtkWidget *w_margins;      // GtkDrawingArea -- paper outside margins
   GtkWidget *w_content;      // GtkDrawingArea -- paper inside margins;
+  GtkWidget *w_hw_margins;   // GtkDrawingArea -- tick-marks showing hardware margins of printer
   GtkWidget *w_page;         // GtkDrawingArea -- temp catchall
 }
 dt_print_t;
@@ -208,6 +209,76 @@ static gboolean _event_draw_rect(GtkWidget *widget, cairo_t *cr, gpointer user_d
   guint height = gtk_widget_get_allocated_height(widget);
   gtk_render_background(context, cr, 0, 0, width, height);
   gtk_render_frame(context, cr, 0, 0, width, height);
+  return FALSE;
+}
+
+static gboolean _event_draw_hw_margins(GtkWidget *widget, cairo_t *cr,
+                                       dt_print_t *prt)
+{
+  gint page_x, page_y;
+  if(!gtk_widget_translate_coordinates(prt->w_margins, widget, 0, 0, &page_x, &page_y))
+  {
+    // FIXME: presumably the page widget is not yet realized
+    dt_print(DT_DEBUG_ALWAYS, "_event_draw_hw_margins: could not translate from page to hw coordinates\n");
+    return FALSE;
+  }
+
+  GtkStyleContext *context = gtk_widget_get_style_context(widget);
+  // it would be more succinct to use gtk_render_line(), but it always
+  // draws 1 px wide lines, and the tick-marks should be 2 px
+  GdkRGBA color;
+  gtk_style_context_get_color(context,
+                              gtk_style_context_get_state(context),
+                              &color);
+  gdk_cairo_set_source_rgba(cr, &color);
+
+  cairo_translate(cr, page_x, page_y);
+
+  const dt_paper_info_t *paper = &prt->pinfo->paper;
+  const dt_printer_info_t *printer = &prt->pinfo->printer;
+  const dt_image_pos *screen = &prt->imgs->screen.page;
+
+  const float pwidth = screen->width;
+  const float pheight = screen->height;
+
+  // page w/h
+  const float pg_width  = paper->width;
+  const float pg_height = paper->height;
+
+  // display non-printable area
+  const gboolean landscape = prt->pinfo->page.landscape;
+  const float np_top = landscape ? printer->hw_margin_right : printer->hw_margin_top;
+  const float np_left = landscape ? printer->hw_margin_top : printer->hw_margin_left;
+  const float np_right = landscape ? printer->hw_margin_bottom : printer->hw_margin_right;
+  const float np_bottom = landscape ? printer->hw_margin_left : printer->hw_margin_bottom;
+
+  const float np1x = (np_left / pg_width) * pwidth;
+  const float np1y = (np_top / pg_height) * pheight;
+  const float np2x = pwidth - (np_right / pg_width) * pwidth;
+  const float np2y = pheight - (np_bottom / pg_height) * pheight;
+
+  const double tick_width = DT_PIXEL_APPLY_DPI(10.0);
+
+  // top-left
+  cairo_move_to(cr, np1x-tick_width, np1y);
+  cairo_line_to(cr, np1x, np1y); cairo_line_to(cr, np1x, np1y-tick_width);
+  cairo_stroke(cr);
+
+  // top-right
+  cairo_move_to(cr, np2x+tick_width, np1y);
+  cairo_line_to(cr, np2x, np1y); cairo_line_to(cr, np2x, np1y-tick_width);
+  cairo_stroke(cr);
+
+  // bottom-left
+  cairo_move_to(cr, np1x-tick_width, np2y);
+  cairo_line_to(cr, np1x, np2y); cairo_line_to (cr, np1x, np2y+tick_width);
+  cairo_stroke(cr);
+
+  // bottom-right
+  cairo_move_to(cr, np2x+tick_width, np2y);
+  cairo_line_to(cr, np2x, np2y); cairo_line_to (cr, np2x, np2y+tick_width);
+  cairo_stroke(cr);
+
   return FALSE;
 }
 
@@ -455,6 +526,10 @@ void gui_init(dt_view_t *self)
                               DT_PIXEL_APPLY_DPI(200));
 #endif
 
+  // tick marks to show hardware margins -- this may extend beyond paper widget
+  prt->w_hw_margins = gtk_drawing_area_new();
+  gtk_widget_set_name(prt->w_hw_margins, "print-hw-margins");
+
   prt->w_page = gtk_drawing_area_new();
   gtk_widget_set_name(prt->w_page, "print-paper");
 
@@ -462,6 +537,7 @@ void gui_init(dt_view_t *self)
   gtk_widget_set_name(prt->w_main, "print-main");
   gtk_container_add(GTK_CONTAINER(prt->w_main), w_background);
   gtk_overlay_add_overlay(GTK_OVERLAY(prt->w_main), prt->w_aspect1);
+  gtk_overlay_add_overlay(GTK_OVERLAY(prt->w_main), prt->w_hw_margins);
   gtk_overlay_add_overlay(GTK_OVERLAY(prt->w_main), prt->w_page);
   gtk_overlay_add_overlay(GTK_OVERLAY(prt->w_main),
                           darktable.lib->proxy.print.w_settings_main);
@@ -471,6 +547,8 @@ void gui_init(dt_view_t *self)
   g_signal_connect(G_OBJECT(w_background), "draw", G_CALLBACK(_event_draw_bkgd), NULL);
   g_signal_connect(G_OBJECT(prt->w_margins), "draw", G_CALLBACK(_event_draw_rect), NULL);
   g_signal_connect(G_OBJECT(prt->w_content), "draw", G_CALLBACK(_event_draw_rect), NULL);
+  g_signal_connect(G_OBJECT(prt->w_hw_margins), "draw",
+                   G_CALLBACK(_event_draw_hw_margins), prt);
   g_signal_connect(G_OBJECT(prt->w_page), "draw", G_CALLBACK(_event_draw_page), prt);
 
   gtk_widget_show(w_background);
@@ -478,6 +556,7 @@ void gui_init(dt_view_t *self)
   gtk_widget_show(prt->w_content);
   gtk_widget_show(w_overlay);
   gtk_widget_show(prt->w_aspect1);
+  gtk_widget_show(prt->w_hw_margins);
   //gtk_widget_show(prt->w_page);
   gtk_widget_show(prt->w_main);
 

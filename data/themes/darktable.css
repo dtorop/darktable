@@ -233,6 +233,8 @@ Why that? Just because it's a developer choice and most classes use underscore i
 /* Print view of page layout */
 @define-color print_paper @grey_80;
 @define-color print_margin @grey_90;
+@define-color print_hw_margin @grey_10;
+
 /* Reset GTK defaults - Otherwise dt inherits Adwaita default theme dark */
 *
 {
@@ -2324,4 +2326,10 @@ Details :
 #print-paper-content
 {
   background-color: @print_paper;
+}
+
+#print-hw-margins
+{
+  /* tick-marks representing hardware margins */
+  color: @print_hw_margin;
 }
