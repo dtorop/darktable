@@ -106,6 +106,19 @@ static void _view_print_filmstrip_activate_callback(gpointer instance,
   dt_view_active_images_add(imgid, TRUE);
 }
 
+static void _update_aspect(dt_print_t *const prt)
+{
+  if(!prt->w_aspect1) return;
+  const dt_paper_info_t *paper = &prt->pinfo->paper;
+  if(paper->width > 0.0 && paper->height > 0.0)
+  {
+    gdouble aspect = (prt->pinfo->page.landscape) ?
+      paper->height / paper->width : paper->width / paper->height;
+
+    gtk_aspect_frame_set(GTK_ASPECT_FRAME(prt->w_aspect1), 0.5f, 0.5f, aspect, FALSE);
+  }
+}
+
 static void _update_display_coords(dt_print_t *prt, int view_width, int view_height)
 {
   // FIXME: if use aspect frame we can skip a lot of this work
@@ -124,6 +137,8 @@ static void _update_display_coords(dt_print_t *prt, int view_width, int view_hei
                             px, py, pwidth, pheight,
                             ax, ay, awidth, aheight,
                             borderless);
+
+  _update_aspect(prt);
 }
 
 static void _view_print_settings(const dt_view_t *view,
@@ -422,8 +437,10 @@ void gui_init(dt_view_t *self)
   prt->w_aspect1 = gtk_aspect_frame_new(NULL, 0.5f, 0.5f, 1.0f, FALSE);
   gtk_widget_set_name(prt->w_aspect1, "print-paper-frame");
   gtk_container_add(GTK_CONTAINER(prt->w_aspect1), w_overlay);
+#if 0
   gtk_widget_set_size_request(prt->w_aspect1, DT_PIXEL_APPLY_DPI(200),
                               DT_PIXEL_APPLY_DPI(200));
+#endif
 
   prt->w_page = gtk_drawing_area_new();
   gtk_widget_set_name(prt->w_page, "print-paper");
