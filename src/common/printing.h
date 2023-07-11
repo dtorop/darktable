@@ -48,10 +48,9 @@ typedef struct _image_box
 
 typedef struct dt_screen_pos
 {
-  // FIXME: x,y of this is always zero, just make float page_width, page_height?
-  dt_image_pos page;       // this is for reference and is the box of the
-                           // white page (in pixels) in print module.
-                           // it is the full page.
+  float page_width, page_height;  // this is for reference and is the dimensions
+                                  // of the white page (in pixels) in print module.
+                                  // it is the full page.
 
   dt_image_pos print_area; // this is for reference and is the box of the
                            // grey area in the white page (in pixels) in print

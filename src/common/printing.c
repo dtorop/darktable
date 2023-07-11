@@ -43,7 +43,7 @@ void dt_printing_clear_boxes(dt_images_box *imgs)
   for(int k=0; k<MAX_IMAGE_PER_PAGE; k++)
     dt_printing_clear_box(&imgs->box[k]);
 
-  _clear_pos(&imgs->screen.page);
+  imgs->screen.page_width = imgs->screen.page_height = 0.0f;
   _clear_pos(&imgs->screen.print_area);
 
   imgs->count = 0;
@@ -90,8 +90,8 @@ void _compute_rel_pos(const dt_images_box *imgs, const dt_image_pos *ref, dt_ima
 {
   // compute the printing position & width as % of the page
 
-  const float page_width  = imgs->screen.page.width;
-  const float page_height = imgs->screen.page.height;
+  const float page_width  = imgs->screen.page_width;
+  const float page_height = imgs->screen.page_height;
 
   pos->x      = ref->x / page_width;
   pos->y      = ref->y / page_height;
@@ -104,11 +104,8 @@ void dt_printing_setup_display(dt_images_box *imgs,
                                const float ax, const float ay, const float awidth, const float aheight,
                                gboolean borderless)
 {
-  // FIXME: now that these are always 0, either just store width/height or make sure that code knows that this is always zero
-  imgs->screen.page.x      = 0.0;
-  imgs->screen.page.y      = 0.0;
-  imgs->screen.page.width  = pwidth;
-  imgs->screen.page.height = pheight;
+  imgs->screen.page_width  = pwidth;
+  imgs->screen.page_height = pheight;
 
   imgs->screen.print_area.x      = ax;
   imgs->screen.print_area.y      = ay;

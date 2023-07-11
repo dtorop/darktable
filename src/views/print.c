@@ -239,8 +239,8 @@ static gboolean _event_draw_hw_margins(GtkWidget *widget, cairo_t *cr,
 
   // FIXME: use patterns/arrays to make this more succinct
   // page w/h in px
-  const float pwidth = prt->imgs->screen.page.width;
-  const float pheight = prt->imgs->screen.page.height;
+  const float pwidth = prt->imgs->screen.page_width;
+  const float pheight = prt->imgs->screen.page_height;
 
   // page w/h in mm
   const float pg_width  = prt->pinfo->paper.width;

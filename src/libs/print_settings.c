@@ -216,23 +216,23 @@ static float _to_mm(dt_lib_print_settings_t *ps,
 // horizontal mm to pixels
 static float _mm_to_hscreen(dt_lib_print_settings_t *ps, const float value)
 {
-  return ps->imgs.screen.page.width * value / _get_page_width_mm(&ps->prt);
+  return ps->imgs.screen.page_width * value / _get_page_width_mm(&ps->prt);
 }
 
 // vertical mm to pixels
 static float _mm_to_vscreen(dt_lib_print_settings_t *ps, const float value)
 {
-  return ps->imgs.screen.page.height * value / _get_page_height_mm(&ps->prt);
+  return ps->imgs.screen.page_height * value / _get_page_height_mm(&ps->prt);
 }
 
 static float _hscreen_to_mm(dt_lib_print_settings_t *ps, const float value)
 {
-  return _get_page_width_mm(&ps->prt) * value / ps->imgs.screen.page.width;
+  return _get_page_width_mm(&ps->prt) * value / ps->imgs.screen.page_width;
 }
 
 static float _vscreen_to_mm(dt_lib_print_settings_t *ps, const float value)
 {
-  return _get_page_height_mm(&ps->prt) * value / ps->imgs.screen.page.height;
+  return _get_page_height_mm(&ps->prt) * value / ps->imgs.screen.page_height;
 }
 
 
@@ -1302,7 +1302,7 @@ static void _load_image_full_page(dt_lib_print_settings_t *ps, dt_imgid_t imgid)
   _set_orientation(ps, imgid);
 
   dt_printing_setup_box(&ps->imgs, 0, 0.0f, 0.0f,
-                        ps->imgs.screen.page.width, ps->imgs.screen.page.height);
+                        ps->imgs.screen.page_width, ps->imgs.screen.page_height);
   float width, height;
   _get_page_dimension(&ps->prt, &width, &height);
 
@@ -1838,7 +1838,7 @@ static gboolean _draw_overlay(GtkWidget *self, cairo_t *cr, dt_lib_print_setting
     const double h_step = _mm_to_hscreen(ps, step);
     int n = 0;
 
-    while(grid_pos < ps->imgs.screen.page.width)
+    while(grid_pos < ps->imgs.screen.page_width)
     {
       cairo_set_dash(cr,
                      dash, ((n % 5) == 0)
@@ -1849,7 +1849,7 @@ static gboolean _draw_overlay(GtkWidget *self, cairo_t *cr, dt_lib_print_setting
                            ? DT_PIXEL_APPLY_DPI(1.0)
                            : DT_PIXEL_APPLY_DPI(0.5));
       cairo_move_to(cr, grid_pos, 0.0);
-      cairo_line_to(cr, grid_pos, ps->imgs.screen.page.height);
+      cairo_line_to(cr, grid_pos, ps->imgs.screen.page_height);
       cairo_stroke(cr);
       grid_pos += h_step;
       n++;
@@ -1861,7 +1861,7 @@ static gboolean _draw_overlay(GtkWidget *self, cairo_t *cr, dt_lib_print_setting
     const float v_step = _mm_to_vscreen(ps, step);
     n = 0;
 
-    while(grid_pos < ps->imgs.screen.page.height)
+    while(grid_pos < ps->imgs.screen.page_height)
     {
       cairo_set_dash(cr, dash,
                      ((n % 5) == 0)
@@ -1873,7 +1873,7 @@ static gboolean _draw_overlay(GtkWidget *self, cairo_t *cr, dt_lib_print_setting
                            : DT_PIXEL_APPLY_DPI(0.5));
 
       cairo_move_to(cr, 0.0, grid_pos);
-      cairo_line_to(cr, ps->imgs.screen.page.width, grid_pos);
+      cairo_line_to(cr, ps->imgs.screen.page_width, grid_pos);
       cairo_stroke(cr);
       grid_pos += v_step;
       n++;
@@ -2018,7 +2018,7 @@ static gboolean _draw_overlay(GtkWidget *self, cairo_t *cr, dt_lib_print_setting
 
     yp = y1 + (y2 - y1 - text_h) * 0.5;
 
-    if(x1 >= 0 && x1 <= ps->imgs.screen.page.width)
+    if(x1 >= 0 && x1 <= ps->imgs.screen.page_width)
     {
       snprintf(dimensions, sizeof(dimensions), precision, dx1);
       pango_layout_set_text(layout, dimensions, -1);
@@ -2049,17 +2049,17 @@ static gboolean _draw_overlay(GtkWidget *self, cairo_t *cr, dt_lib_print_setting
       pango_cairo_show_layout(cr, layout);
     }
 
-    if(x2 >= 0.0 && x2 <= ps->imgs.screen.page.width)
+    if(x2 >= 0.0 && x2 <= ps->imgs.screen.page_width)
     {
       snprintf(dimensions, sizeof(dimensions), precision, pwidth * units[ps->unit] - dx2);
       pango_layout_set_text(layout, dimensions, -1);
       pango_layout_get_pixel_extents(layout, NULL, &ext);
-      xp = x2 + (ps->imgs.screen.page.width - x2 - ext.width) * 0.5;
-      if(xp + ext.width + margin > ps->imgs.screen.page.width)
+      xp = x2 + (ps->imgs.screen.page_width - x2 - ext.width) * 0.5;
+      if(xp + ext.width + margin > ps->imgs.screen.page_width)
         xp = x2 - ext.width - 2 * margin;
       cairo_set_source_rgba(cr, .7, .7, .7, .9);
       cairo_move_to(cr, x2, yp + text_h * 0.5);
-      cairo_line_to(cr, ps->imgs.screen.page.width, yp + text_h * 0.5);
+      cairo_line_to(cr, ps->imgs.screen.page_width, yp + text_h * 0.5);
       cairo_stroke_preserve(cr);
       cairo_set_source_rgba(cr, .5, .5, .5, .9);
       cairo_set_dash(cr, &dash, 1, dash);
@@ -2074,7 +2074,7 @@ static gboolean _draw_overlay(GtkWidget *self, cairo_t *cr, dt_lib_print_setting
 
     xp = x1 + (x2 - x1 - text_h) * 0.5;
 
-    if(y1 >= 0.0 && y1 <= ps->imgs.screen.page.height)
+    if(y1 >= 0.0 && y1 <= ps->imgs.screen.page_height)
     {
       snprintf(dimensions, sizeof(dimensions), precision, dy1);
       pango_layout_set_text(layout, dimensions, -1);
@@ -2105,17 +2105,17 @@ static gboolean _draw_overlay(GtkWidget *self, cairo_t *cr, dt_lib_print_setting
       cairo_restore(cr);
     }
 
-    if(y2 >= 0.0 && y2 <= ps->imgs.screen.page.height)
+    if(y2 >= 0.0 && y2 <= ps->imgs.screen.page_height)
     {
       snprintf(dimensions, sizeof(dimensions), precision, pheight * units[ps->unit] - dy2);
       pango_layout_set_text(layout, dimensions, -1);
       pango_layout_get_pixel_extents(layout, NULL, &ext);
-      yp = y2 + (ps->imgs.screen.page.height - y2 - ext.width) * 0.5;
-      if(yp + ext.width + margin > ps->imgs.screen.page.height)
+      yp = y2 + (ps->imgs.screen.page_height - y2 - ext.width) * 0.5;
+      if(yp + ext.width + margin > ps->imgs.screen.page_height)
         yp = y2 - ext.width - 2 * margin;
       cairo_set_source_rgba(cr, .7, .7, .7, .9);
       cairo_move_to(cr, xp + text_h * 0.5, y2);
-      cairo_line_to(cr, xp + text_h * 0.5, ps->imgs.screen.page.height);
+      cairo_line_to(cr, xp + text_h * 0.5, ps->imgs.screen.page_height);
       cairo_stroke_preserve(cr);
       cairo_set_source_rgba(cr, .5, .5, .5, .9);
       cairo_set_dash(cr, &dash, 1, dash);
