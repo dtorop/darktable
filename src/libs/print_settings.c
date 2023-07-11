@@ -1036,13 +1036,6 @@ _orientation_changed(GtkWidget *combo, dt_lib_module_t *self)
   _update_slider(ps);
 }
 
-static void
-_grid_callback(GtkWidget *widget, dt_lib_module_t *self)
-{
-  dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
-  gtk_widget_queue_draw(ps->w_page);
-}
-
 static void _grid_size_changed(GtkWidget *widget, dt_lib_module_t *self)
 {
   if(darktable.gui->reset) return;
@@ -1827,10 +1820,9 @@ static gboolean _draw_grid(GtkWidget *self, cairo_t *cr, dt_lib_print_settings_t
   const float step =
     gtk_spin_button_get_value(GTK_SPIN_BUTTON(ps->grid_size)) / units[ps->unit];
 
-  // FIXME: make widget visibility depend on grid checkbutton
   // only display grid if spacing more than 5 pixels
-  if(gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(ps->grid))
-     && (int)_mm_to_hscreen(ps, step) > DT_PIXEL_APPLY_DPI(5))
+  // FIXME: if grid isn't displayed we should provide some other feedback
+  if((int)_mm_to_hscreen(ps, step) > DT_PIXEL_APPLY_DPI(5))
   {
     const double dash[] = { DT_PIXEL_APPLY_DPI(5.0), DT_PIXEL_APPLY_DPI(5.0) };
 
@@ -2327,8 +2319,6 @@ void gui_init(dt_lib_module_t *self)
   g_signal_connect(d->w_page, "drag-motion",
                    G_CALLBACK(_drag_motion_received), d);
 
-  // FIXME: make grid visibility linked to display grid checkbox widget
-  gtk_widget_show(d->w_grid);
   gtk_widget_show(d->w_page);
   gtk_widget_show(w_overlay);
   darktable.lib->proxy.print.w_settings_main = w_overlay;
@@ -2620,8 +2610,9 @@ void gui_init(dt_lib_module_t *self)
 
     g_signal_connect(G_OBJECT(d->grid_size), "value-changed",
                      G_CALLBACK(_grid_size_changed), self);
-    g_signal_connect(G_OBJECT(d->grid), "toggled",
-                     G_CALLBACK(_grid_callback), self);
+    g_object_bind_property(G_OBJECT(d->grid), "active",
+                           G_OBJECT(d->w_grid), "visible",
+                           G_BINDING_DEFAULT);
   }
 
   d->borderless = gtk_check_button_new_with_label(_("borderless mode required"));
