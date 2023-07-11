@@ -1835,11 +1835,8 @@ static gboolean _draw_grid(GtkWidget *self, cairo_t *cr, dt_lib_print_settings_t
 
     // V lines
     double grid_pos = 0.0;
-
     const double h_step = _mm_to_hscreen(ps, step);
-    int n = 0;
-
-    while(grid_pos < ps->imgs.screen.page_width)
+    for(int n=0; grid_pos < ps->imgs.screen.page_width; grid_pos += h_step, n++)
     {
       cairo_set_dash(cr,
                      dash, ((n % 5) == 0)
@@ -1852,17 +1849,12 @@ static gboolean _draw_grid(GtkWidget *self, cairo_t *cr, dt_lib_print_settings_t
       cairo_move_to(cr, grid_pos, 0.0);
       cairo_line_to(cr, grid_pos, ps->imgs.screen.page_height);
       cairo_stroke(cr);
-      grid_pos += h_step;
-      n++;
     }
 
     // H lines
     grid_pos = 0.0;
-
     const float v_step = _mm_to_vscreen(ps, step);
-    n = 0;
-
-    while(grid_pos < ps->imgs.screen.page_height)
+    for(int n=0; grid_pos < ps->imgs.screen.page_height; grid_pos += v_step, n++)
     {
       cairo_set_dash(cr, dash,
                      ((n % 5) == 0)
@@ -1872,12 +1864,9 @@ static gboolean _draw_grid(GtkWidget *self, cairo_t *cr, dt_lib_print_settings_t
                            ((n % 5) == 0)
                            ? DT_PIXEL_APPLY_DPI(1.0)
                            : DT_PIXEL_APPLY_DPI(0.5));
-
       cairo_move_to(cr, 0.0, grid_pos);
       cairo_line_to(cr, ps->imgs.screen.page_width, grid_pos);
       cairo_stroke(cr);
-      grid_pos += v_step;
-      n++;
     }
   }
 
