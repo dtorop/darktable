@@ -1818,7 +1818,11 @@ void _cairo_rectangle(cairo_t *cr,
 
 static gboolean _draw_grid(GtkWidget *self, cairo_t *cr, dt_lib_print_settings_t *ps)
 {
-  // FIXME: make color come from CSS
+  GtkStyleContext *context = gtk_widget_get_style_context(self);
+  GdkRGBA color;
+  gtk_style_context_get_color(context, gtk_style_context_get_state(context), &color);
+  gdk_cairo_set_source_rgba(cr, &color);
+
   const float step =
     gtk_spin_button_get_value(GTK_SPIN_BUTTON(ps->grid_size)) / units[ps->unit];
 
@@ -1828,7 +1832,6 @@ static gboolean _draw_grid(GtkWidget *self, cairo_t *cr, dt_lib_print_settings_t
      && (int)_mm_to_hscreen(ps, step) > DT_PIXEL_APPLY_DPI(5))
   {
     const double dash[] = { DT_PIXEL_APPLY_DPI(5.0), DT_PIXEL_APPLY_DPI(5.0) };
-    cairo_set_source_rgba(cr, 1, .2, .2, 0.6);
 
     // V lines
     double grid_pos = 0.0;
@@ -2332,6 +2335,8 @@ void gui_init(dt_lib_module_t *self)
 
   g_signal_connect(G_OBJECT(w_grid), "draw",
                    G_CALLBACK(_draw_grid), d);
+  // FIXME: add a notify event so that when change grid size this widget is redrawn
+
   g_signal_connect(G_OBJECT(d->w_page), "draw",
                    G_CALLBACK(_draw_overlay), d);
   g_signal_connect(G_OBJECT(d->w_page), "motion-notify-event",

@@ -2333,3 +2333,8 @@ Details :
   /* tick-marks representing hardware margins */
   color: @print_hw_margin;
 }
+
+#print-page-grid
+{
+  color: rgba(100%, 20%, 20%, 0.6);
+}
