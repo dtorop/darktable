@@ -2313,6 +2313,11 @@ void gui_init(dt_lib_module_t *self)
   // images, and measurements
   d->w_page = gtk_drawing_area_new();
   gtk_widget_set_name(d->w_page, "print-page");
+
+  GtkWidget *w_overlay = gtk_overlay_new();
+  gtk_container_add(GTK_CONTAINER(w_overlay), d->w_page);
+  gtk_widget_set_name(w_overlay, "print-page-overlay");
+
   gtk_widget_set_events(d->w_page,
                         GDK_POINTER_MOTION_MASK | GDK_BUTTON_PRESS_MASK
                         | GDK_BUTTON_RELEASE_MASK);
@@ -2334,7 +2339,8 @@ void gui_init(dt_lib_module_t *self)
                    G_CALLBACK(_drag_motion_received), d);
 
   gtk_widget_show(d->w_page);
-  darktable.lib->proxy.print.w_settings_main = d->w_page;
+  gtk_widget_show(w_overlay);
+  darktable.lib->proxy.print.w_settings_main = w_overlay;
 
   //  create the spin-button now as values could be set when the
   //  printer has no hardware margin
