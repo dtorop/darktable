@@ -1818,19 +1818,11 @@ void _cairo_rectangle(cairo_t *cr,
 
 static gboolean _draw_grid(GtkWidget *self, cairo_t *cr, dt_lib_print_settings_t *ps)
 {
-  // FIXME: move grid drawing code here and make its color come from CSS
-  return FALSE;
-}
-
-static gboolean _draw_overlay(GtkWidget *self, cairo_t *cr, dt_lib_print_settings_t *ps)
-{
-  // display grid
-
-  // 1mm
-
+  // FIXME: make color come from CSS
   const float step =
     gtk_spin_button_get_value(GTK_SPIN_BUTTON(ps->grid_size)) / units[ps->unit];
 
+  // FIXME: make widget visibility depend on grid checkbutton
   // only display grid if spacing more than 5 pixels
   if(gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(ps->grid))
      && (int)_mm_to_hscreen(ps, step) > DT_PIXEL_APPLY_DPI(5))
@@ -1887,10 +1879,16 @@ static gboolean _draw_overlay(GtkWidget *self, cairo_t *cr, dt_lib_print_setting
   }
 
   // disable dash
-  cairo_set_source_rgba(cr, 1, .2, .2, 0.6);
+  // FIXME: do need this or will other drawing code get a fresh context?
   cairo_set_dash(cr, NULL, 0, 0);
 
+  return FALSE;
+}
+
+static gboolean _draw_overlay(GtkWidget *self, cairo_t *cr, dt_lib_print_settings_t *ps)
+{
   const float scaler = 1.0f / darktable.gui->ppd_thb;
+  cairo_set_source_rgba(cr, 1, .2, .2, 0.6);
 
   for(int k=0; k<ps->imgs.count; k++)
   {
@@ -2351,8 +2349,8 @@ void gui_init(dt_lib_module_t *self)
   g_signal_connect(d->w_page, "drag-motion",
                    G_CALLBACK(_drag_motion_received), d);
 
-  // FIXME: is the grid ever shown on init?
-  //gtk_widget_show(w_grid);
+  // FIXME: make grid visibility linked to display grid checkbox widget
+  gtk_widget_show(w_grid);
   gtk_widget_show(d->w_page);
   gtk_widget_show(w_overlay);
   darktable.lib->proxy.print.w_settings_main = w_overlay;
