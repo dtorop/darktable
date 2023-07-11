@@ -159,20 +159,23 @@ int position(const dt_lib_module_t *self)
 }
 
 /* get paper dimension for the orientation (in mm) */
+
+static float _get_page_width_mm(dt_print_info_t *prt)
+{
+  return prt->page.landscape ? prt->paper.height : prt->paper.width;
+}
+
+static float _get_page_height_mm(dt_print_info_t *prt)
+{
+  return prt->page.landscape ? prt->paper.width : prt->paper.height;
+}
+
 static void _get_page_dimension(dt_print_info_t *prt,
                                 float *width,
                                 float *height)
 {
-  if(prt->page.landscape)
-  {
-    *width = prt->paper.height;
-    *height = prt->paper.width;
-  }
-  else
-  {
-    *width = prt->paper.width;
-    *height = prt->paper.height;
-  }
+  *width = _get_page_width_mm(prt);
+  *height = _get_page_height_mm(prt);
 }
 
 static void _precision_by_unit(const _unit_t unit,
@@ -211,48 +214,25 @@ static float _to_mm(dt_lib_print_settings_t *ps,
 }
 
 // horizontal mm to pixels
-static float _mm_to_hscreen(dt_lib_print_settings_t *ps,
-                            const float value)
+static float _mm_to_hscreen(dt_lib_print_settings_t *ps, const float value)
 {
-  // FIXME: as we only use one of these, simplify this into assignment
-  float width, height;
-  _get_page_dimension(&ps->prt, &width, &height);
-
-  return ps->imgs.screen.page.width * value / width;
+  return ps->imgs.screen.page.width * value / _get_page_width_mm(&ps->prt);
 }
 
 // vertical mm to pixels
-// FIXME: get rid of unused offset param
-static float _mm_to_vscreen(dt_lib_print_settings_t *ps,
-                            const float value)
+static float _mm_to_vscreen(dt_lib_print_settings_t *ps, const float value)
 {
-  // FIXME: as we only use one of these, simplify this into assignment
-  float width, height;
-  _get_page_dimension(&ps->prt, &width, &height);
-
-  return ps->imgs.screen.page.height * value / height;
+  return ps->imgs.screen.page.height * value / _get_page_height_mm(&ps->prt);
 }
 
-static float _hscreen_to_mm(dt_lib_print_settings_t *ps,
-                            const float value,
-                            const gboolean offset)
+static float _hscreen_to_mm(dt_lib_print_settings_t *ps, const float value)
 {
-  float width, height;
-  _get_page_dimension(&ps->prt, &width, &height);
-
-  return width * (value - (offset ? ps->imgs.screen.page.x : 0.0f))
-    / ps->imgs.screen.page.width;
+  return _get_page_width_mm(&ps->prt) * value / ps->imgs.screen.page.width;
 }
 
-static float _vscreen_to_mm(dt_lib_print_settings_t *ps,
-                            const float value,
-                            const gboolean offset)
+static float _vscreen_to_mm(dt_lib_print_settings_t *ps, const float value)
 {
-  float width, height;
-  _get_page_dimension(&ps->prt, &width, &height);
-
-  return height * (value - (offset ? ps->imgs.screen.page.y : 0.0f))
-    / ps->imgs.screen.page.height;
+  return _get_page_height_mm(&ps->prt) * value / ps->imgs.screen.page.height;
 }
 
 
@@ -2002,10 +1982,10 @@ static gboolean _draw_overlay(GtkWidget *self, cairo_t *cr, dt_lib_print_setting
       x2      = ps->x2;
       y2      = ps->y2;
 
-      dx1     = _hscreen_to_mm(ps, ps->x1, TRUE) * units[ps->unit];
-      dy1     = _vscreen_to_mm(ps, ps->y1, TRUE) * units[ps->unit];
-      dx2     = _hscreen_to_mm(ps, ps->x2, TRUE) * units[ps->unit];
-      dy2     = _vscreen_to_mm(ps, ps->y2, TRUE) * units[ps->unit];
+      dx1     = _hscreen_to_mm(ps, ps->x1) * units[ps->unit];
+      dy1     = _vscreen_to_mm(ps, ps->y1) * units[ps->unit];
+      dx2     = _hscreen_to_mm(ps, ps->x2) * units[ps->unit];
+      dy2     = _vscreen_to_mm(ps, ps->y2) * units[ps->unit];
       dwidth  = fabsf(dx2 - dx1);
       dheight = fabsf(dy2 - dy1);
     }
