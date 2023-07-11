@@ -1816,6 +1816,12 @@ void _cairo_rectangle(cairo_t *cr,
   }
 }
 
+static gboolean _draw_grid(GtkWidget *self, cairo_t *cr, dt_lib_print_settings_t *ps)
+{
+  // FIXME: move grid drawing code here and make its color come from CSS
+  return FALSE;
+}
+
 static gboolean _draw_overlay(GtkWidget *self, cairo_t *cr, dt_lib_print_settings_t *ps)
 {
   // display grid
@@ -2311,16 +2317,23 @@ void gui_init(dt_lib_module_t *self)
 
   // create overlay in center area which will show layout boxes,
   // images, and measurements
+  GtkWidget *w_grid = gtk_drawing_area_new();
+  gtk_widget_set_name(w_grid, "print-page-grid");
+
   d->w_page = gtk_drawing_area_new();
   gtk_widget_set_name(d->w_page, "print-page");
 
   GtkWidget *w_overlay = gtk_overlay_new();
-  gtk_container_add(GTK_CONTAINER(w_overlay), d->w_page);
+  gtk_container_add(GTK_CONTAINER(w_overlay), w_grid);
+  gtk_overlay_add_overlay(GTK_OVERLAY(w_overlay), d->w_page);
   gtk_widget_set_name(w_overlay, "print-page-overlay");
 
   gtk_widget_set_events(d->w_page,
                         GDK_POINTER_MOTION_MASK | GDK_BUTTON_PRESS_MASK
                         | GDK_BUTTON_RELEASE_MASK);
+
+  g_signal_connect(G_OBJECT(w_grid), "draw",
+                   G_CALLBACK(_draw_grid), d);
   g_signal_connect(G_OBJECT(d->w_page), "draw",
                    G_CALLBACK(_draw_overlay), d);
   g_signal_connect(G_OBJECT(d->w_page), "motion-notify-event",
@@ -2338,6 +2351,8 @@ void gui_init(dt_lib_module_t *self)
   g_signal_connect(d->w_page, "drag-motion",
                    G_CALLBACK(_drag_motion_received), d);
 
+  // FIXME: is the grid ever shown on init?
+  //gtk_widget_show(w_grid);
   gtk_widget_show(d->w_page);
   gtk_widget_show(w_overlay);
   darktable.lib->proxy.print.w_settings_main = w_overlay;
