@@ -1515,27 +1515,16 @@ static void _snap_to_grid(dt_lib_print_settings_t *ps,
     // only display the grid if a step of 5 pixels
     const float diff = DT_PIXEL_APPLY_DPI(5);
 
-    float grid_pos = 0.0;
-
     const float h_step = _mm_to_hscreen(ps, step);
-
-    // FIXME: there must be a nicer way to do this with modulo!
-    while(grid_pos < ps->imgs.screen.page.width)
-    {
-      if(fabsf(*x - grid_pos) < diff) *x = grid_pos;
-      grid_pos += h_step;
-    }
+    const float h_dist = fmodf(*x, h_step);
+    if((h_dist < diff) || (h_dist > h_step - diff))
+      *x = h_step * roundf(*x / h_step);
 
     // H lines
-    grid_pos = 0.0f;
-
     const float v_step = _mm_to_vscreen(ps, step);
-
-    while(grid_pos < ps->imgs.screen.page.height)
-    {
-      if(fabsf(*y - grid_pos) < diff) *y = grid_pos;
-      grid_pos += v_step;
-    }
+    const float v_dist = fmodf(*y, v_step);
+    if((v_dist < diff) || (v_dist > v_step - diff))
+      *y = v_step * roundf(*y / v_step);
   }
   // FIXME: should clamp values to page size here?
 }
