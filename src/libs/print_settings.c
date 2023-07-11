@@ -1858,17 +1858,12 @@ static gboolean _draw_grid(GtkWidget *self, cairo_t *cr, dt_lib_print_settings_t
     }
   }
 
-  // disable dash
-  // FIXME: do need this or will other drawing code get a fresh context?
-  cairo_set_dash(cr, NULL, 0, 0);
-
   return FALSE;
 }
 
 static gboolean _draw_overlay(GtkWidget *self, cairo_t *cr, dt_lib_print_settings_t *ps)
 {
   const float scaler = 1.0f / darktable.gui->ppd_thb;
-  cairo_set_source_rgba(cr, 1, .2, .2, 0.6);
 
   for(int k=0; k<ps->imgs.count; k++)
   {
