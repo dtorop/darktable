@@ -90,13 +90,11 @@ void _compute_rel_pos(const dt_images_box *imgs, const dt_image_pos *ref, dt_ima
 {
   // compute the printing position & width as % of the page
 
-  const float ofsx        = imgs->screen.page.x;
-  const float ofsy        = imgs->screen.page.y;
   const float page_width  = imgs->screen.page.width;
   const float page_height = imgs->screen.page.height;
 
-  pos->x      = (ref->x - ofsx) / page_width;
-  pos->y      = (ref->y - ofsy) / page_height;
+  pos->x      = ref->x / page_width;
+  pos->y      = ref->y / page_height;
   pos->width  = ref->width / page_width;
   pos->height = ref->height / page_height;
 }

@@ -212,26 +212,25 @@ static float _to_mm(dt_lib_print_settings_t *ps,
 
 // horizontal mm to pixels
 static float _mm_to_hscreen(dt_lib_print_settings_t *ps,
-                            const float value,
-                            const gboolean offset)
+                            const float value)
 {
+  // FIXME: as we only use one of these, simplify this into assignment
   float width, height;
   _get_page_dimension(&ps->prt, &width, &height);
 
-  return (offset ? ps->imgs.screen.page.x : 0)
-    + (ps->imgs.screen.page.width * value / width);
+  return ps->imgs.screen.page.width * value / width;
 }
 
 // vertical mm to pixels
+// FIXME: get rid of unused offset param
 static float _mm_to_vscreen(dt_lib_print_settings_t *ps,
-                            const float value,
-                            const gboolean offset)
+                            const float value)
 {
+  // FIXME: as we only use one of these, simplify this into assignment
   float width, height;
   _get_page_dimension(&ps->prt, &width, &height);
 
-  return (offset ? ps->imgs.screen.page.y : 0)
-    + (ps->imgs.screen.page.height * value / height);
+  return ps->imgs.screen.page.height * value / height;
 }
 
 static float _hscreen_to_mm(dt_lib_print_settings_t *ps,
@@ -1539,7 +1538,7 @@ static void _snap_to_grid(dt_lib_print_settings_t *ps,
 
     float grid_pos = (float)ps->imgs.screen.page.x;
 
-    const float h_step = _mm_to_hscreen(ps, step, FALSE);
+    const float h_step = _mm_to_hscreen(ps, step);
 
     while(grid_pos < ps->imgs.screen.page.x + ps->imgs.screen.page.width)
     {
@@ -1550,7 +1549,7 @@ static void _snap_to_grid(dt_lib_print_settings_t *ps,
     // H lines
     grid_pos = (float)ps->imgs.screen.page.y;
 
-    const float v_step = _mm_to_vscreen(ps, step, FALSE);
+    const float v_step = _mm_to_vscreen(ps, step);
 
     while(grid_pos < ps->imgs.screen.page.y + ps->imgs.screen.page.height)
     {
@@ -1864,7 +1863,7 @@ static gboolean _draw_overlay(GtkWidget *self, cairo_t *cr, dt_lib_print_setting
 
   // only display grid if spacing more than 5 pixels
   if(gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(ps->grid))
-     && (int)_mm_to_hscreen(ps, step, FALSE) > DT_PIXEL_APPLY_DPI(5))
+     && (int)_mm_to_hscreen(ps, step) > DT_PIXEL_APPLY_DPI(5))
   {
     const double dash[] = { DT_PIXEL_APPLY_DPI(5.0), DT_PIXEL_APPLY_DPI(5.0) };
     cairo_set_source_rgba(cr, 1, .2, .2, 0.6);
@@ -1872,7 +1871,7 @@ static gboolean _draw_overlay(GtkWidget *self, cairo_t *cr, dt_lib_print_setting
     // V lines
     double grid_pos = 0.0;
 
-    const double h_step = _mm_to_hscreen(ps, step, FALSE);
+    const double h_step = _mm_to_hscreen(ps, step);
     int n = 0;
 
     while(grid_pos < ps->imgs.screen.page.width)
@@ -1895,7 +1894,7 @@ static gboolean _draw_overlay(GtkWidget *self, cairo_t *cr, dt_lib_print_setting
     // H lines
     grid_pos = 0.0;
 
-    const float v_step = _mm_to_vscreen(ps, step, FALSE);
+    const float v_step = _mm_to_vscreen(ps, step);
     n = 0;
 
     while(grid_pos < ps->imgs.screen.page.height)
@@ -2244,7 +2243,7 @@ static void _width_changed(GtkWidget *widget, gpointer user_data)
 
   dt_printing_setup_box(&ps->imgs, ps->last_selected,
                         box->screen.x, box->screen.y,
-                        _mm_to_hscreen(ps, nv_mm, FALSE), box->screen.height);
+                        _mm_to_hscreen(ps, nv_mm), box->screen.height);
 
   ps->has_changed = TRUE;
   gtk_widget_queue_draw(ps->w_page);
@@ -2263,7 +2262,7 @@ static void _height_changed(GtkWidget *widget, gpointer user_data)
 
   dt_printing_setup_box(&ps->imgs, ps->last_selected,
                         box->screen.x, box->screen.y,
-                        box->screen.width, _mm_to_vscreen(ps, nv_mm, FALSE));
+                        box->screen.width, _mm_to_vscreen(ps, nv_mm));
 
   ps->has_changed = TRUE;
   gtk_widget_queue_draw(ps->w_page);
@@ -2281,7 +2280,7 @@ static void _x_changed(GtkWidget *widget, gpointer user_data)
   dt_image_box *box = &ps->imgs.box[ps->last_selected];
 
   dt_printing_setup_box(&ps->imgs, ps->last_selected,
-                        _mm_to_hscreen(ps, nv_mm, TRUE), box->screen.y,
+                        _mm_to_hscreen(ps, nv_mm), box->screen.y,
                         box->screen.width, box->screen.height);
 
   ps->has_changed = TRUE;
@@ -2300,7 +2299,7 @@ static void _y_changed(GtkWidget *widget, gpointer user_data)
   dt_image_box *box = &ps->imgs.box[ps->last_selected];
 
   dt_printing_setup_box(&ps->imgs, ps->last_selected,
-                        box->screen.x, _mm_to_vscreen(ps, nv_mm, TRUE),
+                        box->screen.x, _mm_to_vscreen(ps, nv_mm),
                         box->screen.width, box->screen.height);
 
   ps->has_changed = TRUE;
@@ -2347,6 +2346,7 @@ void gui_init(dt_lib_module_t *self)
 
   // set all margins + unit from settings
 
+  // FIXME: these are not in darktableconfig.xml.in, bring over code from v1 branch to add them in
   const float top_b = dt_conf_get_float("plugins/print/print/top_margin");
   const float bottom_b = dt_conf_get_float("plugins/print/print/bottom_margin");
   const float left_b = dt_conf_get_float("plugins/print/print/left_margin");
@@ -2401,6 +2401,7 @@ void gui_init(dt_lib_module_t *self)
   gtk_spin_button_set_digits(GTK_SPIN_BUTTON(d->b_left),   n_digits);
   gtk_spin_button_set_digits(GTK_SPIN_BUTTON(d->b_right),  n_digits);
 
+  // FIXME: these ranges should be larger as there can be pages > 1000mm
   d->b_x      = gtk_spin_button_new_with_range(0, 1000, incr);
   d->b_y      = gtk_spin_button_new_with_range(0, 1000, incr);
   d->b_width  = gtk_spin_button_new_with_range(0, 1000, incr);
