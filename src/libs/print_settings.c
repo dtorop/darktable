@@ -82,6 +82,7 @@ static const gchar *_unit_names[] = { N_("mm"), N_("cm"), N_("inch"), NULL };
 
 typedef struct dt_lib_print_settings_t
 {
+  GtkWidget *w_grid;               // GtkDrawingArea -- grid
   GtkWidget *w_page;               // GtkDrawingArea -- center view page layout
 
   GtkWidget *profile, *intent, *style, *style_mode, *papers, *media;
@@ -1050,7 +1051,7 @@ static void _grid_size_changed(GtkWidget *widget, dt_lib_module_t *self)
   const float value = gtk_spin_button_get_value(GTK_SPIN_BUTTON(ps->grid_size));
   dt_conf_set_float("plugins/print/print/grid_size", _to_mm(ps, value));
 
-  gtk_widget_queue_draw(ps->w_page);
+  gtk_widget_queue_draw(ps->w_grid);
 }
 
 static void
@@ -2290,14 +2291,14 @@ void gui_init(dt_lib_module_t *self)
 
   // create overlay in center area which will show layout boxes,
   // images, and measurements
-  GtkWidget *w_grid = gtk_drawing_area_new();
-  gtk_widget_set_name(w_grid, "print-page-grid");
+  d->w_grid = gtk_drawing_area_new();
+  gtk_widget_set_name(d->w_grid, "print-page-grid");
 
   d->w_page = gtk_drawing_area_new();
   gtk_widget_set_name(d->w_page, "print-page");
 
   GtkWidget *w_overlay = gtk_overlay_new();
-  gtk_container_add(GTK_CONTAINER(w_overlay), w_grid);
+  gtk_container_add(GTK_CONTAINER(w_overlay), d->w_grid);
   gtk_overlay_add_overlay(GTK_OVERLAY(w_overlay), d->w_page);
   gtk_widget_set_name(w_overlay, "print-page-overlay");
 
@@ -2305,7 +2306,7 @@ void gui_init(dt_lib_module_t *self)
                         GDK_POINTER_MOTION_MASK | GDK_BUTTON_PRESS_MASK
                         | GDK_BUTTON_RELEASE_MASK);
 
-  g_signal_connect(G_OBJECT(w_grid), "draw",
+  g_signal_connect(G_OBJECT(d->w_grid), "draw",
                    G_CALLBACK(_draw_grid), d);
   // FIXME: add a notify event so that when change grid size this widget is redrawn
 
@@ -2327,7 +2328,7 @@ void gui_init(dt_lib_module_t *self)
                    G_CALLBACK(_drag_motion_received), d);
 
   // FIXME: make grid visibility linked to display grid checkbox widget
-  gtk_widget_show(w_grid);
+  gtk_widget_show(d->w_grid);
   gtk_widget_show(d->w_page);
   gtk_widget_show(w_overlay);
   darktable.lib->proxy.print.w_settings_main = w_overlay;
