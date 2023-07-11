@@ -239,12 +239,12 @@ static gboolean _event_draw_hw_margins(GtkWidget *widget, cairo_t *cr,
 
   // FIXME: use patterns/arrays to make this more succinct
   // page w/h in px
-  const float pwidth = prt->imgs->screen.page_width;
-  const float pheight = prt->imgs->screen.page_height;
+  const float pg_px_w = prt->imgs->screen.page_width;
+  const float pg_px_h = prt->imgs->screen.page_height;
 
   // page w/h in mm
-  const float pg_width  = prt->pinfo->paper.width;
-  const float pg_height = prt->pinfo->paper.height;
+  const float pg_mm_w  = prt->pinfo->paper.width;
+  const float pg_mm_h = prt->pinfo->paper.height;
 
   // display non-printable area
   const dt_printer_info_t *prntr = &prt->pinfo->printer;
@@ -254,10 +254,10 @@ static gboolean _event_draw_hw_margins(GtkWidget *widget, cairo_t *cr,
   const float np_right = lndscp ? prntr->hw_margin_bottom : prntr->hw_margin_right;
   const float np_bottom = lndscp ? prntr->hw_margin_left : prntr->hw_margin_bottom;
 
-  const float np1x = (np_left / pg_width) * pwidth;
-  const float np1y = (np_top / pg_height) * pheight;
-  const float np2x = pwidth * (1.0f - np_right / pg_width);
-  const float np2y = pheight * (1.0f - np_bottom / pg_height);
+  const float np1x = (np_left / pg_mm_w) * pg_px_w;
+  const float np1y = (np_top / pg_mm_h) * pg_px_h;
+  const float np2x = pg_px_w * (1.0f - np_right / pg_mm_w);
+  const float np2y = pg_px_h * (1.0f - np_bottom / pg_mm_h);
 
   const double tick_width = DT_PIXEL_APPLY_DPI(10.0);
 
