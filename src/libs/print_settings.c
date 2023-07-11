@@ -2018,15 +2018,13 @@ static gboolean _draw_overlay(GtkWidget *self, cairo_t *cr, dt_lib_print_setting
 
     yp = y1 + (y2 - y1 - text_h) * 0.5;
 
-    if(x1 >= ps->imgs.screen.page.x
-       && x1 <= (ps->imgs.screen.page.x + ps->imgs.screen.page.width))
+    if(x1 >= 0 && x1 <= ps->imgs.screen.page.width)
     {
       snprintf(dimensions, sizeof(dimensions), precision, dx1);
       pango_layout_set_text(layout, dimensions, -1);
       pango_layout_get_pixel_extents(layout, NULL, &ext);
-      xp = ps->imgs.screen.page.x
-        + (x1 - text_h - ps->imgs.screen.page.x - ext.width) * 0.5;
-      if(xp < ps->imgs.screen.page.x + 3 * margin)
+      xp = (x1 - text_h - ext.width) * 0.5;
+      if(xp < 3 * margin)
       {
         xp = x1 + 2 * margin;
         // somewhat hacky, assumes that all numeric labels are about
@@ -2034,7 +2032,7 @@ static gboolean _draw_overlay(GtkWidget *self, cairo_t *cr, dt_lib_print_setting
         yp = MIN(y2 - text_h, yp + ext.width + 0.5 * text_h + margin * 3);
       }
       cairo_set_source_rgba(cr, .7, .7, .7, .9);
-      cairo_move_to(cr, ps->imgs.screen.page.x, yp + text_h * 0.5);
+      cairo_move_to(cr, 0.0, yp + text_h * 0.5);
       cairo_line_to(cr, x1, yp + text_h * 0.5);
       cairo_stroke_preserve(cr);
       cairo_set_source_rgba(cr, .5, .5, .5, .9);
@@ -2051,21 +2049,17 @@ static gboolean _draw_overlay(GtkWidget *self, cairo_t *cr, dt_lib_print_setting
       pango_cairo_show_layout(cr, layout);
     }
 
-    if(x2 >= ps->imgs.screen.page.x
-       && x2 <= (ps->imgs.screen.page.x + ps->imgs.screen.page.width))
+    if(x2 >= 0.0 && x2 <= ps->imgs.screen.page.width)
     {
       snprintf(dimensions, sizeof(dimensions), precision, pwidth * units[ps->unit] - dx2);
       pango_layout_set_text(layout, dimensions, -1);
       pango_layout_get_pixel_extents(layout, NULL, &ext);
-      xp = x2 + (ps->imgs.screen.page.x
-                 + ps->imgs.screen.page.width - x2 - ext.width) * 0.5;
-      if(xp + ext.width + margin > ps->imgs.screen.page.x + ps->imgs.screen.page.width)
+      xp = x2 + (ps->imgs.screen.page.width - x2 - ext.width) * 0.5;
+      if(xp + ext.width + margin > ps->imgs.screen.page.width)
         xp = x2 - ext.width - 2 * margin;
       cairo_set_source_rgba(cr, .7, .7, .7, .9);
       cairo_move_to(cr, x2, yp + text_h * 0.5);
-      cairo_line_to(cr,
-                    ps->imgs.screen.page.x + ps->imgs.screen.page.width,
-                    yp + text_h * 0.5);
+      cairo_line_to(cr, ps->imgs.screen.page.width, yp + text_h * 0.5);
       cairo_stroke_preserve(cr);
       cairo_set_source_rgba(cr, .5, .5, .5, .9);
       cairo_set_dash(cr, &dash, 1, dash);
@@ -2080,21 +2074,19 @@ static gboolean _draw_overlay(GtkWidget *self, cairo_t *cr, dt_lib_print_setting
 
     xp = x1 + (x2 - x1 - text_h) * 0.5;
 
-    if(y1 >= ps->imgs.screen.page.y
-       && y1 <= (ps->imgs.screen.page.y + ps->imgs.screen.page.height))
+    if(y1 >= 0.0 && y1 <= ps->imgs.screen.page.height)
     {
       snprintf(dimensions, sizeof(dimensions), precision, dy1);
       pango_layout_set_text(layout, dimensions, -1);
       pango_layout_get_pixel_extents(layout, NULL, &ext);
-      yp = ps->imgs.screen.page.y
-        + (y1 - text_h - ps->imgs.screen.page.y - ext.width) * 0.5;
-      if(yp < ps->imgs.screen.page.y + 3 * margin)
+      yp = (y1 - text_h - ext.width) * 0.5;
+      if(yp < 3 * margin)
       {
         xp = MIN(x2 - text_h, xp + ext.width + 0.5 * text_h + margin * 3);
         yp = y1 + 2 * margin;
       }
       cairo_set_source_rgba(cr, .7, .7, .7, .9);
-      cairo_move_to(cr, xp + text_h * 0.5, ps->imgs.screen.page.y);
+      cairo_move_to(cr, xp + text_h * 0.5, 0.0);
       cairo_line_to(cr, xp + text_h * 0.5, y1);
       cairo_stroke_preserve(cr);
       cairo_set_source_rgba(cr, .5, .5, .5, .9);
@@ -2113,21 +2105,17 @@ static gboolean _draw_overlay(GtkWidget *self, cairo_t *cr, dt_lib_print_setting
       cairo_restore(cr);
     }
 
-    if(y2 >= ps->imgs.screen.page.y
-       && y2 <= (ps->imgs.screen.page.y + ps->imgs.screen.page.height))
+    if(y2 >= 0.0 && y2 <= ps->imgs.screen.page.height)
     {
       snprintf(dimensions, sizeof(dimensions), precision, pheight * units[ps->unit] - dy2);
       pango_layout_set_text(layout, dimensions, -1);
       pango_layout_get_pixel_extents(layout, NULL, &ext);
-      yp = y2 + (ps->imgs.screen.page.y
-                 + ps->imgs.screen.page.height - y2 - ext.width) * 0.5;
-      if(yp + ext.width + margin > ps->imgs.screen.page.y + ps->imgs.screen.page.height)
+      yp = y2 + (ps->imgs.screen.page.height - y2 - ext.width) * 0.5;
+      if(yp + ext.width + margin > ps->imgs.screen.page.height)
         yp = y2 - ext.width - 2 * margin;
       cairo_set_source_rgba(cr, .7, .7, .7, .9);
       cairo_move_to(cr, xp + text_h * 0.5, y2);
-      cairo_line_to(cr,
-                    xp + text_h * 0.5,
-                    ps->imgs.screen.page.y + ps->imgs.screen.page.height);
+      cairo_line_to(cr, xp + text_h * 0.5, ps->imgs.screen.page.height);
       cairo_stroke_preserve(cr);
       cairo_set_source_rgba(cr, .5, .5, .5, .9);
       cairo_set_dash(cr, &dash, 1, dash);
