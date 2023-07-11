@@ -1503,30 +1503,25 @@ int mouse_leave(struct dt_lib_module_t *self)
 }
 
 static void _snap_to_grid(dt_lib_print_settings_t *ps,
-                          float *x,
-                          float *y)
+                          float *x, float *y)
 {
   if(gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(ps->snap_grid)))
   {
-    // V lines
+    // only snap to the grid if within 5 pixels
+    const float diff = DT_PIXEL_APPLY_DPI(5);
     const float step =
       gtk_spin_button_get_value(GTK_SPIN_BUTTON(ps->grid_size)) / units[ps->unit];
-
-    // only display the grid if a step of 5 pixels
-    const float diff = DT_PIXEL_APPLY_DPI(5);
 
     const float h_step = _mm_to_hscreen(ps, step);
     const float h_dist = fmodf(*x, h_step);
     if((h_dist < diff) || (h_dist > h_step - diff))
       *x = h_step * roundf(*x / h_step);
 
-    // H lines
     const float v_step = _mm_to_vscreen(ps, step);
     const float v_dist = fmodf(*y, v_step);
     if((v_dist < diff) || (v_dist > v_step - diff))
       *y = v_step * roundf(*y / v_step);
   }
-  // FIXME: should clamp values to page size here?
 }
 
 static gboolean _mouse_moved(GtkWidget *w, GdkEventMotion *event,
