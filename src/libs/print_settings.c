@@ -1301,8 +1301,7 @@ static void _load_image_full_page(dt_lib_print_settings_t *ps, dt_imgid_t imgid)
   // this will update page background with new aspect
   _set_orientation(ps, imgid);
 
-  dt_printing_setup_box(&ps->imgs, 0,
-                        ps->imgs.screen.page.x, ps->imgs.screen.page.y,
+  dt_printing_setup_box(&ps->imgs, 0, 0.0f, 0.0f,
                         ps->imgs.screen.page.width, ps->imgs.screen.page.height);
   float width, height;
   _get_page_dimension(&ps->prt, &width, &height);
