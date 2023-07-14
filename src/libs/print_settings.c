@@ -83,7 +83,8 @@ static const gchar *_unit_names[] = { N_("mm"), N_("cm"), N_("inch"), NULL };
 typedef struct dt_lib_print_settings_t
 {
   GtkWidget *w_grid;               // GtkDrawingArea -- grid
-  GtkWidget *w_page;               // GtkDrawingArea -- center view page layout
+  GtkWidget *w_layout_boxes;       // GtkDrawingArea -- images in boxes
+  GtkWidget *w_page;               // GtkDrawingArea -- misc. center view page layout
 
   GtkWidget *profile, *intent, *style, *style_mode, *papers, *media;
   GtkWidget *printers, *orientation, *pprofile, *pintent;
@@ -615,7 +616,7 @@ static void _page_clear_area_clicked(GtkWidget *widget, gpointer user_data)
   ps->has_changed = TRUE;
   dt_printing_clear_boxes(&ps->imgs);
   gtk_widget_set_sensitive(ps->del, FALSE);
-  gtk_widget_queue_draw(ps->w_page);
+  gtk_widget_queue_draw(ps->w_layout_boxes);
 }
 
 static void _page_delete_area(dt_lib_print_settings_t *ps, const int box_index)
@@ -639,7 +640,7 @@ static void _page_delete_area(dt_lib_print_settings_t *ps, const int box_index)
   _fill_box_values(ps);
 
   ps->has_changed = TRUE;
-  gtk_widget_queue_draw(ps->w_page);
+  gtk_widget_queue_draw(ps->w_layout_boxes);
 }
 
 static void _page_delete_area_clicked(GtkWidget *widget, dt_lib_print_settings_t *ps)
@@ -1259,7 +1260,7 @@ static void _drag_and_drop_received(GtkWidget *widget,
                             100, 100, ALIGNMENT_CENTER);
 
   ps->imgs.motion_over = -1;
-  gtk_widget_queue_draw(ps->w_page);
+  gtk_widget_queue_draw(ps->w_layout_boxes);
 }
 
 static gboolean _drag_motion_received(GtkWidget *widget,
@@ -1273,7 +1274,7 @@ static gboolean _drag_motion_received(GtkWidget *widget,
   ps->imgs.motion_over = bidx;
 
   if(bidx != -1)
-    gtk_widget_queue_draw(ps->w_page);
+    gtk_widget_queue_draw(ps->w_layout_boxes);
 
   return TRUE;
 }
@@ -1317,7 +1318,7 @@ static void _load_image_full_page(dt_lib_print_settings_t *ps, dt_imgid_t imgid)
 
   dt_printing_setup_image(&ps->imgs, 0, imgid, 100, 100, ALIGNMENT_CENTER);
 
-  gtk_widget_queue_draw(ps->w_page);
+  gtk_widget_queue_draw(ps->w_layout_boxes);
 }
 
 static void _print_settings_update_callback(gpointer instance,
@@ -1355,7 +1356,7 @@ static void _print_settings_activate_callback(gpointer instance,
     if(ps->has_changed)
     {
       dt_printing_setup_image(&ps->imgs, 0, imgid, 100, 100, ps->imgs.box[0].alignment);
-      gtk_widget_queue_draw(ps->w_page);
+      gtk_widget_queue_draw(ps->w_layout_boxes);
     }
     else
     {
@@ -1468,7 +1469,7 @@ void view_leave(struct dt_lib_module_t *self,
 static gboolean _draw_again(gpointer user_data)
 {
   dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)user_data;
-  gtk_widget_queue_draw(ps->w_page);
+  gtk_widget_queue_draw(ps->w_layout_boxes);
   return FALSE;
 }
 
@@ -1621,7 +1622,11 @@ static gboolean _mouse_moved(GtkWidget *w, GdkEventMotion *event,
   }
 
   if(expose)
+  {
+    gtk_widget_queue_draw(ps->w_layout_boxes);
+    // FIXME: this really should just be the selection
     gtk_widget_queue_draw(ps->w_page);
+  }
 
   return FALSE;
 }
@@ -1667,6 +1672,8 @@ static gboolean _button_released(GtkWidget *w, GdkEventButton *event,
       // make the new created box the last edited one
       ps->last_selected = idx;
       _fill_box_values(ps);
+
+      gtk_widget_queue_draw(ps->w_layout_boxes);
     }
   }
 
@@ -1868,12 +1875,13 @@ static gboolean _draw_grid(GtkWidget *self, cairo_t *cr, dt_lib_print_settings_t
   return FALSE;
 }
 
-static gboolean _draw_overlay(GtkWidget *self, cairo_t *cr, dt_lib_print_settings_t *ps)
+static gboolean _draw_layouts(GtkWidget *self, cairo_t *cr, dt_lib_print_settings_t *ps)
 {
   const float scaler = 1.0f / darktable.gui->ppd_thb;
 
-  // FIXME: this doesn't need to be in data structure!
+  // FIXME: busy doesn't need to be in data structure! it is only used locally here, and should eventually be replaced by thumbnail implementation
   ps->busy = FALSE;
+  // FIXME: each layout box should be its own widget
   for(int k=0; k<ps->imgs.count; k++)
   {
     dt_image_box *img = &ps->imgs.box[k];
@@ -1943,6 +1951,12 @@ static gboolean _draw_overlay(GtkWidget *self, cairo_t *cr, dt_lib_print_setting
     dt_control_draw_busy_msg(cr, alloc.width, alloc.height);
   }
 
+  return FALSE;
+}
+
+static gboolean _draw_overlay(GtkWidget *self, cairo_t *cr, dt_lib_print_settings_t *ps)
+{
+  // FIXME: the draggable area for new selections should be the size of the whole center view, so the user can eaily select the entire page -- hence in a widget outside of the aspectframe
   // now display new area if any
   if(ps->dragging || ps->selected != -1)
   {
@@ -2186,7 +2200,7 @@ static void _width_changed(GtkWidget *widget, gpointer user_data)
                         _mm_to_hscreen(ps, nv_mm), box->screen.height);
 
   ps->has_changed = TRUE;
-  gtk_widget_queue_draw(ps->w_page);
+  gtk_widget_queue_draw(ps->w_layout_boxes);
 }
 
 static void _height_changed(GtkWidget *widget, gpointer user_data)
@@ -2205,7 +2219,7 @@ static void _height_changed(GtkWidget *widget, gpointer user_data)
                         box->screen.width, _mm_to_vscreen(ps, nv_mm));
 
   ps->has_changed = TRUE;
-  gtk_widget_queue_draw(ps->w_page);
+  gtk_widget_queue_draw(ps->w_layout_boxes);
 }
 
 static void _x_changed(GtkWidget *widget, gpointer user_data)
@@ -2224,7 +2238,7 @@ static void _x_changed(GtkWidget *widget, gpointer user_data)
                         box->screen.width, box->screen.height);
 
   ps->has_changed = TRUE;
-  gtk_widget_queue_draw(ps->w_page);
+  gtk_widget_queue_draw(ps->w_layout_boxes);
 }
 
 static void _y_changed(GtkWidget *widget, gpointer user_data)
@@ -2243,7 +2257,7 @@ static void _y_changed(GtkWidget *widget, gpointer user_data)
                         box->screen.width, box->screen.height);
 
   ps->has_changed = TRUE;
-  gtk_widget_queue_draw(ps->w_page);
+  gtk_widget_queue_draw(ps->w_layout_boxes);
 }
 
 void gui_init(dt_lib_module_t *self)
@@ -2302,11 +2316,15 @@ void gui_init(dt_lib_module_t *self)
   d->w_grid = gtk_drawing_area_new();
   gtk_widget_set_name(d->w_grid, "print-page-grid");
 
+  d->w_layout_boxes = gtk_drawing_area_new();
+  gtk_widget_set_name(d->w_layout_boxes, "print-layout-boxes");
+
   d->w_page = gtk_drawing_area_new();
   gtk_widget_set_name(d->w_page, "print-page");
 
   GtkWidget *w_overlay = gtk_overlay_new();
   gtk_container_add(GTK_CONTAINER(w_overlay), d->w_grid);
+  gtk_overlay_add_overlay(GTK_OVERLAY(w_overlay), d->w_layout_boxes);
   gtk_overlay_add_overlay(GTK_OVERLAY(w_overlay), d->w_page);
   gtk_widget_set_name(w_overlay, "print-page-overlay");
 
@@ -2316,10 +2334,13 @@ void gui_init(dt_lib_module_t *self)
 
   g_signal_connect(G_OBJECT(d->w_grid), "draw",
                    G_CALLBACK(_draw_grid), d);
-  // FIXME: add a notify event so that when change grid size this widget is redrawn
+
+  g_signal_connect(G_OBJECT(d->w_layout_boxes), "draw",
+                   G_CALLBACK(_draw_layouts), d);
 
   g_signal_connect(G_OBJECT(d->w_page), "draw",
                    G_CALLBACK(_draw_overlay), d);
+  // FIXME: mouse and drag/drop events probably need to be handled via an event box overlaid on top
   g_signal_connect(G_OBJECT(d->w_page), "motion-notify-event",
                    G_CALLBACK(_mouse_moved), d);
   g_signal_connect(G_OBJECT(d->w_page), "button-press-event",
@@ -2327,6 +2348,7 @@ void gui_init(dt_lib_module_t *self)
   g_signal_connect(G_OBJECT(d->w_page), "button-release-event",
                    G_CALLBACK(_button_released), d);
 
+  // FIXME: check out _register_modules_drag_n_drop() from darkroom.c and its callbacks for ideas
   gtk_drag_dest_set(d->w_page, GTK_DEST_DEFAULT_ALL,
                     // FIXME: should be target_list_internal?
                     target_list_all, n_targets_all, GDK_ACTION_MOVE);
@@ -2336,6 +2358,7 @@ void gui_init(dt_lib_module_t *self)
                    G_CALLBACK(_drag_motion_received), d);
 
   gtk_widget_show(d->w_page);
+  gtk_widget_show(d->w_layout_boxes);
   gtk_widget_show(w_overlay);
   darktable.lib->proxy.print.w_settings_main = w_overlay;
 
@@ -3237,6 +3260,8 @@ int set_params(dt_lib_module_t *self,
   gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(ps->dtba[alignment]), TRUE);
   gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(ps->black_point_compensation), bpc);
 
+  // FIXME: are these redraws necessary?
+  gtk_widget_queue_draw(ps->w_layout_boxes);
   // changing orientation, margins, and alignment will all trigger
   // redraw of page background, which in turn will trigger redraw of
   // layout, but just in case make sure to redraw
