@@ -1515,7 +1515,7 @@ static void _init_main_table(GtkWidget *container)
                              | darktable.gui->scroll_mask);
   gtk_widget_set_can_focus(cda, TRUE);
   gtk_widget_set_visible(cda, TRUE);
-  gtk_overlay_add_overlay(GTK_OVERLAY(ocda), cda);
+  gtk_container_add(GTK_CONTAINER(ocda), cda);
 
   gtk_grid_attach(GTK_GRID(centergrid), ocda, 0, 0, 1, 1);
   darktable.gui->ui->center = cda;

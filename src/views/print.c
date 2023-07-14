@@ -194,12 +194,6 @@ void configure(dt_view_t *self, int width, int height)
     _update_display_coords(prt, width, height);
 }
 
-void expose(dt_view_t *self, cairo_t *cr, int32_t width, int32_t height,
-            int32_t pointerx, int32_t pointery)
-{
-  // FIXME: somehow is necessary?
-}
-
 static gboolean _event_draw_bkgd(GtkWidget *widget, cairo_t *cr, gpointer user_data)
 {
   dt_gui_gtk_set_source_rgb(cr, DT_GUI_COLOR_PRINT_BG);
