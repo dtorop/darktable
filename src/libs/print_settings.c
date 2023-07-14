@@ -789,6 +789,11 @@ static void _set_printer(const dt_lib_module_t *self,
     dt_bauhaus_combobox_set(ps->media, 0);
 
   dt_view_print_settings(darktable.view_manager, &ps->prt, &ps->imgs);
+
+  // a different printer may have different hardware margins
+  // FIXME: this is a hacky way to get data back from dt_get_print_layout()
+  gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(ps->borderless),
+                               ps->imgs.screen.borderless);
 }
 
 static void
@@ -849,6 +854,11 @@ static void
 _update_slider(dt_lib_print_settings_t *ps)
 {
   dt_view_print_settings(darktable.view_manager, &ps->prt, &ps->imgs);
+
+  // if margins are changed then borderless mode may be altered
+  // FIXME: this is a hacky way to get data back from dt_get_print_layout()
+  gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(ps->borderless),
+                               ps->imgs.screen.borderless);
 
   // if widget are created, let's display the current image size
 
@@ -2154,12 +2164,6 @@ static gboolean _draw_overlay(GtkWidget *self, cairo_t *cr, dt_lib_print_setting
     g_free(precision);
   }
 
-  // FIXME: this work should happen when borderless is calculated, not here!
-  if(ps->imgs.screen.borderless)
-    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(ps->borderless), TRUE);
-  else
-    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(ps->borderless), FALSE);
-
   return FALSE;
 }
 
@@ -2624,6 +2628,7 @@ void gui_init(dt_lib_module_t *self)
                            G_BINDING_DEFAULT);
   }
 
+  // FIXME: this isn't actually displayed!
   d->borderless = gtk_check_button_new_with_label(_("borderless mode required"));
   gtk_box_pack_start(GTK_BOX(self->widget), GTK_WIDGET(d->borderless), TRUE, TRUE, 0);
   gtk_widget_set_tooltip_text(d->borderless,

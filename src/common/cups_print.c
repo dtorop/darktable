@@ -547,6 +547,7 @@ void dt_print_file(const dt_imgid_t imgid, const char *filename, const char *job
 
     // if the printer has no hardware margins activate the borderless mode
 
+    // FIXME: this seems wrong, the logic for this in dt_get_print_layout() is better, even better would be to only turn on borderless when an image (rather than even a layout box) extends outside of hw margins
     if(pinfo->printer.hw_margin_top == 0 || pinfo->printer.hw_margin_bottom == 0
         || pinfo->printer.hw_margin_left == 0 || pinfo->printer.hw_margin_right == 0)
     {
