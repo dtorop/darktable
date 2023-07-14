@@ -166,8 +166,6 @@ static void _view_print_settings(const dt_view_t *view,
   // FIXME: instead when paper size is changed should catch configure or size event, then update
   // FIXME: inline this, it is only used once
   _update_display_coords(prt, view->width, view->height);
-  // FIXME: only should redraw the changed widgets, this will be a noop
-  dt_control_queue_redraw();
 }
 
 void
