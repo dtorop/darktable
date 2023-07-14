@@ -855,7 +855,7 @@ _update_slider(dt_lib_print_settings_t *ps)
 {
   dt_view_print_settings(darktable.view_manager, &ps->prt, &ps->imgs);
 
-  // if margins are changed then borderless mode may be altered
+  // if margins or orientation are changed then borderless mode may be altered
   // FIXME: this is a hacky way to get data back from dt_get_print_layout()
   gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(ps->borderless),
                                ps->imgs.screen.borderless);
@@ -1295,6 +1295,9 @@ static void _set_orientation(dt_lib_print_settings_t *ps, dt_imgid_t imgid)
     // FIXME: should redraw image here or in _orientation_changed() callback?
     dt_view_print_settings(darktable.view_manager, &ps->prt, &ps->imgs);
     dt_bauhaus_combobox_set(ps->orientation, ps->prt.page.landscape == TRUE ? 1 : 0);
+    // FIXME: this is a hacky way to get data back from dt_get_print_layout()
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(ps->borderless),
+                                 ps->imgs.screen.borderless);
   }
 
   dt_mipmap_cache_release(darktable.mipmap_cache, &buf);
