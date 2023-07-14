@@ -104,6 +104,9 @@ void dt_printing_setup_display(dt_images_box *imgs,
                                const float ax, const float ay, const float awidth, const float aheight,
                                gboolean borderless)
 {
+  // FIXME: should users of these values just locate at aspectframe allocation? but those values won't be floats but ints
+  // FIXME: page width/height can be rounded to nearest integer but kept as floats, with slightly different horizontal/vertical resolution ok, then the measurements of individual boxes should be floats as they may be snapped to grid or margins
+  // FIXME: could make margins be pixel-accurate measures and page width/height a bit fuzzy in comparison, so there is an automatic snap-to-margin behavior
   imgs->screen.page_width  = pwidth;
   imgs->screen.page_height = pheight;
 

@@ -109,11 +109,11 @@ static void _view_print_filmstrip_activate_callback(gpointer instance,
 
 static void _update_display_coords(dt_print_t *prt, int view_width, int view_height)
 {
-  // FIXME: if use aspect frame we can skip a lot of this work
   float pwidth=.0f, pheight=.0f;
   float ax=.0f, ay=.0f, awidth=.0f, aheight=.0f;
   gboolean borderless = FALSE;
 
+  // FIXME: instead get page width in screen pixels from w_margins and and the body area from w_content, perhaps by configure or size-allocate event
   dt_get_print_layout(prt->pinfo, view_width, view_height,
                       &pwidth, &pheight,
                       &ax, &ay, &awidth, &aheight, &borderless);
@@ -121,6 +121,7 @@ static void _update_display_coords(dt_print_t *prt, int view_width, int view_hei
   // record the screen page dimension. this will be used to draw the
   // page and to compute the actual layout of the areas placed over
   // the page.
+  // FIXME: may not need to set up boxes screen coords if they can be read via configure event or size-allocate -- or don't even need to be stored
   dt_printing_setup_display(prt->imgs,
                             pwidth, pheight,
                             ax, ay, awidth, aheight,
@@ -158,10 +159,14 @@ static void _view_print_settings(const dt_view_t *view,
 {
   dt_print_t *prt = (dt_print_t *)view->data;
 
+  // FIXME: either pass a param describing what is changed or have separate functions for each, with changes being to: page (dimensions or orientation), margins, layout boxes
   prt->pinfo = pinfo;
   prt->imgs = imgs;
 
+  // FIXME: instead when paper size is changed should catch configure or size event, then update
+  // FIXME: inline this, it is only used once
   _update_display_coords(prt, view->width, view->height);
+  // FIXME: only should redraw the changed widgets, this will be a noop
   dt_control_queue_redraw();
 }
 

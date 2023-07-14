@@ -634,6 +634,8 @@ void dt_get_print_layout(const dt_print_info_t *prt,
     p_bottom = area_width / pg_aspect;
   }
 
+  // FIXME: as these are the same, just sue pwidth/pheight throughout
+  // FIXME: can we get these values from aspect frame allocation instead? though they won't be floats then, but ints
   *pwidth = p_right;
   *pheight = p_bottom;
 

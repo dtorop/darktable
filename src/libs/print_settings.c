@@ -1499,6 +1499,7 @@ int mouse_leave(struct dt_lib_module_t *self)
 static void _snap_to_grid(dt_lib_print_settings_t *ps,
                           float *x, float *y)
 {
+  // FIXME: there should also be a snap-to-margin, perhaps always on, as if snap to margin in screen pixels it should really snap to margin in mm, might may be different -- unless we make all measurements relative in terms of margin, or deliberately make margins pixel accurate and the page edges be a bit sloppy
   if(gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(ps->snap_grid)))
   {
     // only snap to the grid if within 5 pixels
@@ -1821,7 +1822,7 @@ static gboolean _draw_grid(GtkWidget *self, cairo_t *cr, dt_lib_print_settings_t
     gtk_spin_button_get_value(GTK_SPIN_BUTTON(ps->grid_size)) / units[ps->unit];
 
   // only display grid if spacing more than 5 pixels
-  // FIXME: if grid isn't displayed we should provide some other feedback
+  // FIXME: if grid isn't displayed we should provide some other feedback, e.g. make the "display grid" button not be sensitive and a helpful tooltip
   if((int)_mm_to_hscreen(ps, step) > DT_PIXEL_APPLY_DPI(5))
   {
     const double dash[] = { DT_PIXEL_APPLY_DPI(5.0), DT_PIXEL_APPLY_DPI(5.0) };
@@ -1858,6 +1859,8 @@ static gboolean _draw_overlay(GtkWidget *self, cairo_t *cr, dt_lib_print_setting
 {
   const float scaler = 1.0f / darktable.gui->ppd_thb;
 
+  // FIXME: this doesn't need to be in data structure!
+  ps->busy = FALSE;
   for(int k=0; k<ps->imgs.count; k++)
   {
     dt_image_box *img = &ps->imgs.box[k];
@@ -1880,7 +1883,6 @@ static gboolean _draw_overlay(GtkWidget *self, cairo_t *cr, dt_lib_print_setting
       {
         // if the image is missing, we reload it again
         g_timeout_add(250, _draw_again, ps);
-        if(!ps->busy) dt_control_log_busy_enter();
         ps->busy = TRUE;
       }
       else
@@ -1898,8 +1900,6 @@ static gboolean _draw_overlay(GtkWidget *self, cairo_t *cr, dt_lib_print_setting
         cairo_paint_with_alpha(cr, alpha);
         cairo_surface_destroy(surf);
         cairo_restore(cr);
-        if(ps->busy) dt_control_log_busy_leave();
-        ps->busy = FALSE;
       }
     }
 
@@ -1920,6 +1920,14 @@ static gboolean _draw_overlay(GtkWidget *self, cairo_t *cr, dt_lib_print_setting
                       img->screen.width, img->screen.height);
       cairo_fill(cr);
     }
+  }
+
+  // FIXME: if switch to thumbnail, that should handle this per image
+  if(ps->busy)
+  {
+    GtkAllocation alloc;
+    gtk_widget_get_allocation(self, &alloc);
+    dt_control_draw_busy_msg(cr, alloc.width, alloc.height);
   }
 
   // now display new area if any
@@ -2146,6 +2154,7 @@ static gboolean _draw_overlay(GtkWidget *self, cairo_t *cr, dt_lib_print_setting
     g_free(precision);
   }
 
+  // FIXME: this work should happen when borderless is calculated, not here!
   if(ps->imgs.screen.borderless)
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(ps->borderless), TRUE);
   else
