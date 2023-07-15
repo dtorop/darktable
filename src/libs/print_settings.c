@@ -2554,11 +2554,12 @@ void gui_init(dt_lib_module_t *self)
   gtk_widget_set_tooltip_text(GTK_WIDGET(d->b_left), _("left margin"));
   gtk_grid_attach(bds, GTK_WIDGET(d->b_left), 0, 1, 1, 1);
 
-  // FIXME: make this a lock graphic
-  GtkToggleButton *lock_button =
-    GTK_TOGGLE_BUTTON(gtk_toggle_button_new_with_label(_("lock")));
-  gtk_widget_set_tooltip_text(GTK_WIDGET(lock_button),
-                              _("change all margins uniformly"));
+  // FIXME: make it so that the tabbing through margins doesn't stop at lock widget, because the next tab will then hide all the panels
+  // FIXME: swap in an unlocked icon when lock is not active
+  // FIXME: pack this row more tightly, so lock doesn't take up some width as top/bottom margins
+  // FIXME: identify this section as margins -- currently only tooltip or visual display odes this
+  GtkWidget *lock_button = dtgtk_togglebutton_new(dtgtk_cairo_paint_lock, 0, NULL);
+  gtk_widget_set_tooltip_text(lock_button, _("change all margins uniformly"));
   gtk_grid_attach(bds, GTK_WIDGET(lock_button), 1, 1, 1, 1);
 
   //d->b_right  = gtk_spin_button_new_with_range(0, 10000, 1);
@@ -2690,8 +2691,7 @@ void gui_init(dt_lib_module_t *self)
 
   // X x Y
   GtkWidget *box;
-  // FIXME: add labels to x/y/width/height as otherwise are obscure --
-  // and there is the horizontal space to do this
+  // FIXME: add labels to x/y/width/height as otherwise are obscure without reading tooltip, or move these into center view by making callouts editable
 
   box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL,0);
   // d->b_x = gtk_spin_button_new_with_range(0, 1000, 1);
