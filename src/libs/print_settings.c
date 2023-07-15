@@ -100,7 +100,7 @@ typedef struct dt_lib_print_settings_t
   GtkWidget *b_top, *b_bottom, *b_left, *b_right;
   GtkDarktableToggleButton *dtba[9];	             // Alignment buttons
   GList *paper_list, *media_list;
-  gboolean lock_activated;
+  GBinding *bind_lock_bottom, *bind_lock_left, *bind_lock_right;
 
   dt_print_info_t prt;
   dt_images_box imgs;
@@ -899,39 +899,19 @@ _update_slider(dt_lib_print_settings_t *ps)
   }
 }
 
-static void
-_top_border_callback(GtkWidget *spin, gpointer user_data)
+static void _top_border_callback(GtkWidget *spin, dt_lib_module_t *self)
 {
-  const dt_lib_module_t *self = (dt_lib_module_t *)user_data;
   dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
   const double value = gtk_spin_button_get_value(GTK_SPIN_BUTTON(spin));
 
   dt_conf_set_float("plugins/print/print/top_margin", value);
 
   ps->prt.page.margin_top = _to_mm(ps, value);
-
-  if(ps->lock_activated == TRUE)
-  {
-    ps->prt.page.margin_bottom = _to_mm(ps, value);
-    ps->prt.page.margin_left = _to_mm(ps, value);
-    ps->prt.page.margin_right = _to_mm(ps, value);
-
-    gtk_spin_button_set_value(GTK_SPIN_BUTTON(ps->b_bottom), value);
-    gtk_spin_button_set_value(GTK_SPIN_BUTTON(ps->b_left), value);
-    gtk_spin_button_set_value(GTK_SPIN_BUTTON(ps->b_right), value);
-
-    dt_conf_set_float("plugins/print/print/bottom_margin", value);
-    dt_conf_set_float("plugins/print/print/left_margin", value);
-    dt_conf_set_float("plugins/print/print/right_margin", value);
-  }
-
   _update_slider(ps);
 }
 
-static void
-_bottom_border_callback(GtkWidget *spin, gpointer user_data)
+static void _bottom_border_callback(GtkWidget *spin, dt_lib_module_t *self)
 {
-  const dt_lib_module_t *self = (dt_lib_module_t *)user_data;
   dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
   const double value = gtk_spin_button_get_value(GTK_SPIN_BUTTON(spin));
 
@@ -941,10 +921,8 @@ _bottom_border_callback(GtkWidget *spin, gpointer user_data)
   _update_slider(ps);
 }
 
-static void
-_left_border_callback(GtkWidget *spin, gpointer user_data)
+static void _left_border_callback(GtkWidget *spin, dt_lib_module_t *self)
 {
-  const dt_lib_module_t *self = (dt_lib_module_t *)user_data;
   dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
   const double value = gtk_spin_button_get_value(GTK_SPIN_BUTTON(spin));
 
@@ -954,10 +932,8 @@ _left_border_callback(GtkWidget *spin, gpointer user_data)
   _update_slider(ps);
 }
 
-static void
-_right_border_callback(GtkWidget *spin, gpointer user_data)
+static void _right_border_callback(GtkWidget *spin, dt_lib_module_t *self)
 {
-  const dt_lib_module_t *self = (dt_lib_module_t *)user_data;
   dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
   const double value = gtk_spin_button_get_value(GTK_SPIN_BUTTON(spin));
 
@@ -967,26 +943,38 @@ _right_border_callback(GtkWidget *spin, gpointer user_data)
   _update_slider(ps);
 }
 
-static void
-_lock_callback(GtkWidget *button, gpointer user_data)
+static void _lock_callback(GtkWidget *button, dt_lib_module_t *self)
 {
-  const dt_lib_module_t *self = (dt_lib_module_t *)user_data;
   dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
 
-  ps->lock_activated = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(button));
+  gboolean lock_activated = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(button));
 
-  dt_conf_set_bool("plugins/print/print/lock_borders", ps->lock_activated);
+  dt_conf_set_bool("plugins/print/print/lock_borders", lock_activated);
 
-  gtk_widget_set_sensitive(GTK_WIDGET(ps->b_bottom), !ps->lock_activated);
-  gtk_widget_set_sensitive(GTK_WIDGET(ps->b_left), !ps->lock_activated);
-  gtk_widget_set_sensitive(GTK_WIDGET(ps->b_right), !ps->lock_activated);
+  gtk_widget_set_sensitive(GTK_WIDGET(ps->b_bottom), !lock_activated);
+  gtk_widget_set_sensitive(GTK_WIDGET(ps->b_left), !lock_activated);
+  gtk_widget_set_sensitive(GTK_WIDGET(ps->b_right), !lock_activated);
 
   //  get value of top and set it to all other borders
 
-  const double value = gtk_spin_button_get_value(GTK_SPIN_BUTTON(ps->b_top));
-  gtk_spin_button_set_value(GTK_SPIN_BUTTON(ps->b_bottom), value);
-  gtk_spin_button_set_value(GTK_SPIN_BUTTON(ps->b_left), value);
-  gtk_spin_button_set_value(GTK_SPIN_BUTTON(ps->b_right), value);
+  if(lock_activated)
+  {
+    ps->bind_lock_bottom =
+      g_object_bind_property(ps->b_top, "value", ps->b_bottom, "value",
+                             G_BINDING_SYNC_CREATE);
+    ps->bind_lock_left =
+      g_object_bind_property(ps->b_top, "value", ps->b_left, "value",
+                             G_BINDING_SYNC_CREATE);
+    ps->bind_lock_right =
+      g_object_bind_property(ps->b_top, "value", ps->b_right, "value",
+                             G_BINDING_SYNC_CREATE);
+  }
+  else
+  {
+    g_binding_unbind(ps->bind_lock_bottom);
+    g_binding_unbind(ps->bind_lock_left);
+    g_binding_unbind(ps->bind_lock_right);
+  }
 
   _update_slider (ps);
 }
@@ -2566,8 +2554,6 @@ void gui_init(dt_lib_module_t *self)
   gtk_grid_set_row_spacing(bds, DT_PIXEL_APPLY_DPI(3));
   gtk_grid_set_column_spacing(bds, DT_PIXEL_APPLY_DPI(3));
 
-  d->lock_activated = FALSE;
-
   //d->b_top  = gtk_spin_button_new_with_range(0, 10000, 1);
   gtk_widget_set_tooltip_text(GTK_WIDGET(d->b_top), _("top margin"));
   gtk_grid_attach(bds, GTK_WIDGET(d->b_top), 1, 0, 1, 1);
@@ -2576,6 +2562,7 @@ void gui_init(dt_lib_module_t *self)
   gtk_widget_set_tooltip_text(GTK_WIDGET(d->b_left), _("left margin"));
   gtk_grid_attach(bds, GTK_WIDGET(d->b_left), 0, 1, 1, 1);
 
+  // FIXME: make this a lock graphic
   d->lock_button = GTK_TOGGLE_BUTTON(gtk_toggle_button_new_with_label(_("lock")));
   gtk_widget_set_tooltip_text(GTK_WIDGET(d->lock_button),
                               _("change all margins uniformly"));
