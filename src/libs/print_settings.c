@@ -2150,77 +2150,18 @@ static gboolean _draw_overlay(GtkWidget *self, cairo_t *cr, dt_lib_print_setting
   return FALSE;
 }
 
-static void _width_changed(GtkWidget *widget, gpointer user_data)
+static void _pos_changed(GtkWidget *widget, dt_lib_print_settings_t *ps)
 {
   if(darktable.gui->reset) return;
 
-  dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)user_data;
-
   const float nv = gtk_spin_button_get_value(GTK_SPIN_BUTTON(widget));
-  const float nv_mm = nv / units[ps->unit];
+  const float nv_px = _mm_to_hscreen(ps, nv / units[ps->unit]);
 
-  dt_image_box *box = &ps->imgs.box[ps->last_selected];
+  const dt_image_pos *box = &ps->imgs.box[ps->last_selected].screen;
+  float pos[4] = { box->x, box->y, box->width, box->height };
+  pos[(gsize)g_object_get_data(G_OBJECT(widget), "idx")] = nv_px;
 
-  dt_printing_setup_box(&ps->imgs, ps->last_selected,
-                        box->screen.x, box->screen.y,
-                        _mm_to_hscreen(ps, nv_mm), box->screen.height);
-
-  ps->has_changed = TRUE;
-  gtk_widget_queue_draw(ps->w_layout_boxes);
-}
-
-static void _height_changed(GtkWidget *widget, gpointer user_data)
-{
-  if(darktable.gui->reset) return;
-
-  dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)user_data;
-
-  const float nv = gtk_spin_button_get_value(GTK_SPIN_BUTTON(widget));
-  const float nv_mm = nv / units[ps->unit];
-
-  dt_image_box *box = &ps->imgs.box[ps->last_selected];
-
-  dt_printing_setup_box(&ps->imgs, ps->last_selected,
-                        box->screen.x, box->screen.y,
-                        box->screen.width, _mm_to_vscreen(ps, nv_mm));
-
-  ps->has_changed = TRUE;
-  gtk_widget_queue_draw(ps->w_layout_boxes);
-}
-
-static void _x_changed(GtkWidget *widget, gpointer user_data)
-{
-  if(darktable.gui->reset) return;
-
-  dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)user_data;
-
-  const float nv = gtk_spin_button_get_value(GTK_SPIN_BUTTON(widget));
-  const float nv_mm = nv / units[ps->unit];
-
-  dt_image_box *box = &ps->imgs.box[ps->last_selected];
-
-  dt_printing_setup_box(&ps->imgs, ps->last_selected,
-                        _mm_to_hscreen(ps, nv_mm), box->screen.y,
-                        box->screen.width, box->screen.height);
-
-  ps->has_changed = TRUE;
-  gtk_widget_queue_draw(ps->w_layout_boxes);
-}
-
-static void _y_changed(GtkWidget *widget, gpointer user_data)
-{
-  if(darktable.gui->reset) return;
-
-  dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)user_data;
-
-  const float nv = gtk_spin_button_get_value(GTK_SPIN_BUTTON(widget));
-  const float nv_mm = nv / units[ps->unit];
-
-  dt_image_box *box = &ps->imgs.box[ps->last_selected];
-
-  dt_printing_setup_box(&ps->imgs, ps->last_selected,
-                        box->screen.x, _mm_to_vscreen(ps, nv_mm),
-                        box->screen.width, box->screen.height);
+  dt_printing_setup_box(&ps->imgs, ps->last_selected, pos[0], pos[1], pos[2], pos[3]);
 
   ps->has_changed = TRUE;
   gtk_widget_queue_draw(ps->w_layout_boxes);
@@ -2356,6 +2297,10 @@ void gui_init(dt_lib_module_t *self)
   gtk_spin_button_set_digits(GTK_SPIN_BUTTON(d->b_y), n_digits);
   gtk_spin_button_set_digits(GTK_SPIN_BUTTON(d->b_width), n_digits);
   gtk_spin_button_set_digits(GTK_SPIN_BUTTON(d->b_height), n_digits);
+  g_object_set_data(G_OBJECT(d->b_x), "idx", (gpointer)0);
+  g_object_set_data(G_OBJECT(d->b_y), "idx", (gpointer)1);
+  g_object_set_data(G_OBJECT(d->b_width), "idx", (gpointer)2);
+  g_object_set_data(G_OBJECT(d->b_height), "idx", (gpointer)3);
 
   d->grid_size = gtk_spin_button_new_with_range(0, 100, incr);
   gtk_spin_button_set_digits(GTK_SPIN_BUTTON(d->grid_size),  n_digits);
@@ -2730,13 +2675,13 @@ void gui_init(dt_lib_module_t *self)
   gtk_widget_add_events(d->b_height, GDK_BUTTON_PRESS_MASK);
 
   g_signal_connect(G_OBJECT(d->b_x), "value-changed",
-                   G_CALLBACK(_x_changed), (gpointer)d);
+                   G_CALLBACK(_pos_changed), (gpointer)d);
   g_signal_connect(G_OBJECT(d->b_y), "value-changed",
-                   G_CALLBACK(_y_changed), (gpointer)d);
+                   G_CALLBACK(_pos_changed), (gpointer)d);
   g_signal_connect(G_OBJECT(d->b_width), "value-changed",
-                   G_CALLBACK(_width_changed), (gpointer)d);
+                   G_CALLBACK(_pos_changed), (gpointer)d);
   g_signal_connect(G_OBJECT(d->b_height), "value-changed",
-                   G_CALLBACK(_height_changed), (gpointer)d);
+                   G_CALLBACK(_pos_changed), (gpointer)d);
 
   ////////////////////////// PRINT SETTINGS
 
