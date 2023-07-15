@@ -96,7 +96,6 @@ typedef struct dt_lib_print_settings_t
   GtkWidget *grid, *grid_size, *snap_grid;
   GList *profiles;
   GtkButton *print_button;
-  GtkToggleButton *lock_button;
   GtkWidget *b_top, *b_bottom, *b_left, *b_right;
   GtkDarktableToggleButton *dtba[9];	             // Alignment buttons
   GList *paper_list, *media_list;
@@ -2556,10 +2555,11 @@ void gui_init(dt_lib_module_t *self)
   gtk_grid_attach(bds, GTK_WIDGET(d->b_left), 0, 1, 1, 1);
 
   // FIXME: make this a lock graphic
-  d->lock_button = GTK_TOGGLE_BUTTON(gtk_toggle_button_new_with_label(_("lock")));
-  gtk_widget_set_tooltip_text(GTK_WIDGET(d->lock_button),
+  GtkToggleButton *lock_button =
+    GTK_TOGGLE_BUTTON(gtk_toggle_button_new_with_label(_("lock")));
+  gtk_widget_set_tooltip_text(GTK_WIDGET(lock_button),
                               _("change all margins uniformly"));
-  gtk_grid_attach(bds, GTK_WIDGET(d->lock_button), 1, 1, 1, 1);
+  gtk_grid_attach(bds, GTK_WIDGET(lock_button), 1, 1, 1, 1);
 
   //d->b_right  = gtk_spin_button_new_with_range(0, 10000, 1);
   gtk_widget_set_tooltip_text(GTK_WIDGET(d->b_right), _("right margin"));
@@ -2585,14 +2585,14 @@ void gui_init(dt_lib_module_t *self)
                    G_CALLBACK (_left_border_callback), self);
   g_signal_connect(G_OBJECT (d->b_right), "value-changed",
                    G_CALLBACK (_right_border_callback), self);
-  g_signal_connect(G_OBJECT(d->lock_button), "toggled",
+  g_signal_connect(G_OBJECT(lock_button), "toggled",
                    G_CALLBACK(_lock_callback), self);
 
   gtk_widget_set_halign(GTK_WIDGET(hboxdim), GTK_ALIGN_CENTER);
   gtk_widget_set_halign(GTK_WIDGET(hboxinfo), GTK_ALIGN_CENTER);
 
   const gboolean lock_active = dt_conf_get_bool("plugins/print/print/lock_borders");
-  gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(d->lock_button), lock_active);
+  gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(lock_button), lock_active);
 
   // grid & snap grid
   {
