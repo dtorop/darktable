@@ -974,7 +974,6 @@ static void _lock_callback(GtkWidget *button, dt_lib_module_t *self)
 static void
 _alignment_callback(GtkWidget *tb, gpointer user_data)
 {
-  // FIXME: this needs to redraw the layout box to reflect the alignment change
   if(darktable.gui->reset) return;
 
   int index=-1;
@@ -1004,6 +1003,7 @@ _alignment_callback(GtkWidget *tb, gpointer user_data)
   }
 
   _update_slider(ps);
+  gtk_widget_queue_draw(ps->w_layout_boxes);
 }
 
 static void
@@ -1687,6 +1687,7 @@ static gboolean _button_pressed(GtkWidget *w, GdkEventButton *event,
     memcpy(&ps->imgs.box[ps->selected], &ps->imgs.box[ps->selected-1],
            sizeof(dt_image_box));
     memcpy(&ps->imgs.box[ps->selected-1], &b, sizeof(dt_image_box));
+    gtk_widget_queue_draw(ps->w_layout_boxes);
   }
   else if(ps->selected != -1 && which == 1)
   {
@@ -1709,12 +1710,12 @@ static gboolean _button_pressed(GtkWidget *w, GdkEventButton *event,
   {
     dt_image_box *b = &ps->imgs.box[ps->selected];
 
-    // FIXME: this needs to redraw layout box
     // if image present remove it, otherwise remove the box
     if(dt_is_valid_imgid(b->imgid))
       b->imgid = NO_IMGID;
     else
       _page_delete_area(ps, ps->selected);
+    gtk_widget_queue_draw(ps->w_layout_boxes);
 
     ps->last_selected = ps->selected;
     ps->has_changed = TRUE;
