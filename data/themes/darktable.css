@@ -2330,8 +2330,14 @@ Details :
 
 #print-hw-margins
 {
-  /* tick-marks representing hardware margins */
+  /* ticks representing hardware margins */
   color: @print_hw_margin;
+}
+
+#print-hw-margins.borderless
+{
+  /* user set margins outside of hardware margins */
+  color: rgb(66%, 21%, 1%);
 }
 
 #print-page-grid

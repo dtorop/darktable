@@ -120,6 +120,7 @@ void dt_printing_setup_display(dt_images_box *imgs,
   dt_print(DT_DEBUG_PRINT, "[printing] screen/parea (%3.1f, %3.1f) -> (%3.1f, %3.1f)\n",
            ax, ay, awidth, aheight);
 
+  // FIXME: store this in pinfo->page.borderless or such if it is actually used by cups_print
   imgs->screen.borderless = borderless;
 
   // and now reset the box to be resized accordingly if needed

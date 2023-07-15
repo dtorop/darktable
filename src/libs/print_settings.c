@@ -94,7 +94,6 @@ typedef struct dt_lib_print_settings_t
   GtkWidget *b_width, *b_height;
   GtkWidget *del;
   GtkWidget *grid, *grid_size, *snap_grid;
-  GtkWidget *borderless;
   GList *profiles;
   GtkButton *print_button;
   GtkToggleButton *lock_button;
@@ -790,11 +789,6 @@ static void _set_printer(const dt_lib_module_t *self,
     dt_bauhaus_combobox_set(ps->media, 0);
 
   dt_view_print_settings(darktable.view_manager, &ps->prt, &ps->imgs);
-
-  // a different printer may have different hardware margins
-  // FIXME: this is a hacky way to get data back from dt_get_print_layout()
-  gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(ps->borderless),
-                               ps->imgs.screen.borderless);
 }
 
 static void
@@ -855,11 +849,6 @@ static void
 _update_slider(dt_lib_print_settings_t *ps)
 {
   dt_view_print_settings(darktable.view_manager, &ps->prt, &ps->imgs);
-
-  // if margins or orientation are changed then borderless mode may be altered
-  // FIXME: this is a hacky way to get data back from dt_get_print_layout()
-  gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(ps->borderless),
-                               ps->imgs.screen.borderless);
 
   // if widget are created, let's display the current image size
 
@@ -1296,9 +1285,6 @@ static void _set_orientation(dt_lib_print_settings_t *ps, dt_imgid_t imgid)
     // FIXME: should redraw image here or in _orientation_changed() callback?
     dt_view_print_settings(darktable.view_manager, &ps->prt, &ps->imgs);
     dt_bauhaus_combobox_set(ps->orientation, ps->prt.page.landscape == TRUE ? 1 : 0);
-    // FIXME: this is a hacky way to get data back from dt_get_print_layout()
-    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(ps->borderless),
-                                 ps->imgs.screen.borderless);
   }
 
   dt_mipmap_cache_release(darktable.mipmap_cache, &buf);
@@ -1842,11 +1828,12 @@ static gboolean _draw_grid(GtkWidget *self, cairo_t *cr, dt_lib_print_settings_t
     gtk_spin_button_get_value(GTK_SPIN_BUTTON(ps->grid_size)) / units[ps->unit];
 
   // only display grid if spacing more than 5 pixels
-  // FIXME: if grid isn't displayed we should provide some other feedback, e.g. make the "display grid" button not be sensitive and a helpful tooltip
+  // FIXME: if grid isn't displayed we should provide some other feedback, e.g. make the "display grid" button not be sensitive and a helpful tooltip, or just halve the grid density until it can be visible
   if((int)_mm_to_hscreen(ps, step) > DT_PIXEL_APPLY_DPI(5))
   {
     const double dash[] = { DT_PIXEL_APPLY_DPI(5.0), DT_PIXEL_APPLY_DPI(5.0) };
 
+    // FIXME: these lines are drawn with subpixel accuracy, but it means they're not as bright as they could be, and that they don't match components that are or will be drawn with pixel accuracy because they are GTK widgets: margin/page edges, layout boxes, images, selection -- make these rounded to nearest pixel as well?
     // V lines
     double grid_pos = 0.0;
     const double h_step = _mm_to_hscreen(ps, step);
@@ -2653,15 +2640,6 @@ void gui_init(dt_lib_module_t *self)
                            G_OBJECT(d->w_grid), "visible",
                            G_BINDING_DEFAULT);
   }
-
-  // FIXME: this isn't actually displayed!
-  d->borderless = gtk_check_button_new_with_label(_("borderless mode required"));
-  gtk_box_pack_start(GTK_BOX(self->widget), GTK_WIDGET(d->borderless), TRUE, TRUE, 0);
-  gtk_widget_set_tooltip_text(d->borderless,
-                              _("indicates that the borderless mode should be activated\n"
-                                "in the printer driver because the selected margins are\n"
-                                "below the printer hardware margins"));
-  gtk_widget_set_sensitive(d->borderless, FALSE);
 
   // pack image dimension hbox here
 

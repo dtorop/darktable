@@ -151,6 +151,14 @@ static void _update_display_coords(dt_print_t *prt, int view_width, int view_hei
       gtk_aspect_frame_set(GTK_ASPECT_FRAME(prt->w_aspect2), 0.5f, 0.5f, aspect, FALSE);
     }
   }
+
+  if(prt->w_hw_margins)
+  {
+    if(borderless)
+      dt_gui_add_class(prt->w_hw_margins, "borderless");
+    else
+      dt_gui_remove_class(prt->w_hw_margins, "borderless");
+  }
 }
 
 static void _view_print_settings(const dt_view_t *view,
@@ -192,6 +200,7 @@ void configure(dt_view_t *self, int width, int height)
     _update_display_coords(prt, width, height);
 }
 
+// FIXME: draw this as expose() event for widget to fill in the main drawable of center view?
 static gboolean _event_draw_bkgd(GtkWidget *widget, cairo_t *cr, gpointer user_data)
 {
   dt_gui_gtk_set_source_rgb(cr, DT_GUI_COLOR_PRINT_BG);
@@ -234,29 +243,31 @@ static gboolean _event_draw_hw_margins(GtkWidget *widget, cairo_t *cr,
 
   cairo_translate(cr, page_x, page_y);
 
+  const gboolean lndscp = prt->pinfo->page.landscape;
+
   // FIXME: use patterns/arrays to make this more succinct
   // page w/h in px
   const float pg_px_w = prt->imgs->screen.page_width;
   const float pg_px_h = prt->imgs->screen.page_height;
 
   // page w/h in mm
-  const float pg_mm_w  = prt->pinfo->paper.width;
-  const float pg_mm_h = prt->pinfo->paper.height;
+  const float pg_mm_w  = lndscp ? prt->pinfo->paper.height : prt->pinfo->paper.width;
+  const float pg_mm_h = lndscp ? prt->pinfo->paper.width : prt->pinfo->paper.height;
 
-  // display non-printable area
+  // non-printable area in mm
   const dt_printer_info_t *prntr = &prt->pinfo->printer;
-  const gboolean lndscp = prt->pinfo->page.landscape;
   const float np_top = lndscp ? prntr->hw_margin_right : prntr->hw_margin_top;
   const float np_left = lndscp ? prntr->hw_margin_top : prntr->hw_margin_left;
   const float np_right = lndscp ? prntr->hw_margin_bottom : prntr->hw_margin_right;
   const float np_bottom = lndscp ? prntr->hw_margin_left : prntr->hw_margin_bottom;
 
-  const float np1x = (np_left / pg_mm_w) * pg_px_w;
-  const float np1y = (np_top / pg_mm_h) * pg_px_h;
+  const float np1x = pg_px_w * (np_left / pg_mm_w);
+  const float np1y = pg_px_h * (np_top / pg_mm_h);
   const float np2x = pg_px_w * (1.0f - np_right / pg_mm_w);
   const float np2y = pg_px_h * (1.0f - np_bottom / pg_mm_h);
 
-  const double tick_width = DT_PIXEL_APPLY_DPI(10.0);
+  const double tick_width =
+    DT_PIXEL_APPLY_DPI(prt->imgs->screen.borderless ? 15.0 : 10.0);
 
   // top-left
   cairo_move_to(cr, np1x-tick_width, np1y);
@@ -433,7 +444,7 @@ void gui_init(dt_view_t *self)
                               DT_PIXEL_APPLY_DPI(200));
 #endif
 
-  // tick marks to show hardware margins -- this may extend beyond paper widget
+  // ticks to show hardware margins -- this may extend beyond paper widget
   prt->w_hw_margins = gtk_drawing_area_new();
   gtk_widget_set_name(prt->w_hw_margins, "print-hw-margins");
 
@@ -442,6 +453,8 @@ void gui_init(dt_view_t *self)
   gtk_widget_set_name(prt->w_aspect2, "print-layout-frame");
   gtk_container_add(GTK_CONTAINER(prt->w_aspect2),
                     darktable.lib->proxy.print.w_settings_main);
+
+  // FIXME: add in here an eventbox which is center view size for drawing new selections? this will only be visible when "new image area" is clicked, though it would be even nicer if it worked anytime user clicked not on a layout box
 
   prt->w_main = gtk_overlay_new();
   gtk_widget_set_name(prt->w_main, "print-main");
