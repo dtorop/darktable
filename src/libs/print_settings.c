@@ -100,7 +100,7 @@ typedef struct dt_lib_print_settings_t
   GtkWidget *b_top, *b_bottom, *b_left, *b_right;
   GtkDarktableToggleButton *dtba[9];	             // Alignment buttons
   GList *paper_list, *media_list;
-  GBinding *bind_lock_bottom, *bind_lock_left, *bind_lock_right;
+  GBinding *lock_bottom, *lock_left, *lock_right;
 
   dt_print_info_t prt;
   dt_images_box imgs;
@@ -943,40 +943,32 @@ static void _right_border_callback(GtkWidget *spin, dt_lib_module_t *self)
   _update_slider(ps);
 }
 
+static void _border_update_lock(GtkWidget *w_source, GtkWidget *w_dest,
+                                GBinding **lock, gboolean active)
+{
+  gtk_widget_set_sensitive(w_dest, !active);
+  if(*lock)
+  {
+    g_binding_unbind(*lock);
+    *lock = NULL;
+  }
+  if(active)
+  {
+    *lock = g_object_bind_property(w_source, "value", w_dest, "value",
+                                   G_BINDING_SYNC_CREATE);
+  }
+}
+
 static void _lock_callback(GtkWidget *button, dt_lib_module_t *self)
 {
   dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
 
-  gboolean lock_activated = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(button));
+  gboolean active = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(button));
+  dt_conf_set_bool("plugins/print/print/lock_borders", active);
 
-  dt_conf_set_bool("plugins/print/print/lock_borders", lock_activated);
-
-  gtk_widget_set_sensitive(GTK_WIDGET(ps->b_bottom), !lock_activated);
-  gtk_widget_set_sensitive(GTK_WIDGET(ps->b_left), !lock_activated);
-  gtk_widget_set_sensitive(GTK_WIDGET(ps->b_right), !lock_activated);
-
-  //  get value of top and set it to all other borders
-
-  if(lock_activated)
-  {
-    ps->bind_lock_bottom =
-      g_object_bind_property(ps->b_top, "value", ps->b_bottom, "value",
-                             G_BINDING_SYNC_CREATE);
-    ps->bind_lock_left =
-      g_object_bind_property(ps->b_top, "value", ps->b_left, "value",
-                             G_BINDING_SYNC_CREATE);
-    ps->bind_lock_right =
-      g_object_bind_property(ps->b_top, "value", ps->b_right, "value",
-                             G_BINDING_SYNC_CREATE);
-  }
-  else
-  {
-    g_binding_unbind(ps->bind_lock_bottom);
-    g_binding_unbind(ps->bind_lock_left);
-    g_binding_unbind(ps->bind_lock_right);
-  }
-
-  _update_slider (ps);
+  _border_update_lock(ps->b_top, ps->b_bottom, &ps->lock_bottom, active);
+  _border_update_lock(ps->b_top, ps->b_left, &ps->lock_left, active);
+  _border_update_lock(ps->b_top, ps->b_right, &ps->lock_right, active);
 }
 
 static void
@@ -2257,6 +2249,7 @@ void gui_init(dt_lib_module_t *self)
   d->last_selected = -1;
   d->has_changed = FALSE;
   d->filmstrip_select = NO_IMGID;
+  d->lock_bottom = d->lock_left = d->lock_right = NULL;
   d->imgs.screen.page_width = d->imgs.screen.page_height = 0.0f;
 
   dt_init_print_info(&d->prt);
