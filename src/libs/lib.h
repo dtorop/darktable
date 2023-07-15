@@ -93,6 +93,7 @@ typedef struct dt_lib_t
     struct
     {
       GtkWidget *w_settings_main;
+      GtkWidget *w_new_box;
     } print;
 #endif
   } proxy;

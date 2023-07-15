@@ -231,6 +231,7 @@ static gboolean _event_draw_hw_margins(GtkWidget *widget, cairo_t *cr,
   if(!gtk_widget_translate_coordinates(prt->w_margins, widget, 0, 0, &page_x, &page_y))
   {
     // FIXME: presumably the page widget is not yet realized
+    // FIXME: just return without a diagnostic, save noise to debug
     dt_print(DT_DEBUG_ALWAYS, "_event_draw_hw_margins: could not translate from page to hw coordinates\n");
     return FALSE;
   }
@@ -452,14 +453,13 @@ void gui_init(dt_view_t *self)
   gtk_container_add(GTK_CONTAINER(prt->w_aspect2),
                     darktable.lib->proxy.print.w_settings_main);
 
-  // FIXME: add in here an eventbox which is center view size for drawing new selections? this will only be visible when "new image area" is clicked, though it would be even nicer if it worked anytime user clicked not on a layout box
-
   prt->w_main = gtk_overlay_new();
   gtk_widget_set_name(prt->w_main, "print-main");
   gtk_container_add(GTK_CONTAINER(prt->w_main), w_background);
   gtk_overlay_add_overlay(GTK_OVERLAY(prt->w_main), prt->w_aspect1);
   gtk_overlay_add_overlay(GTK_OVERLAY(prt->w_main), prt->w_hw_margins);
   gtk_overlay_add_overlay(GTK_OVERLAY(prt->w_main), prt->w_aspect2);
+  gtk_overlay_add_overlay(GTK_OVERLAY(prt->w_main), darktable.lib->proxy.print.w_new_box);
   // so that margin start will be left, end will be right
   gtk_widget_set_direction(prt->w_main, GTK_TEXT_DIR_LTR);
 

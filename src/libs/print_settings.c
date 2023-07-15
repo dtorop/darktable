@@ -84,7 +84,8 @@ typedef struct dt_lib_print_settings_t
 {
   GtkWidget *w_grid;               // GtkDrawingArea -- grid
   GtkWidget *w_layout_boxes;       // GtkDrawingArea -- images in boxes
-  GtkWidget *w_box_outline;        // GtkDrawingArea -- outline of current selected/drawn box
+  GtkWidget *w_box_outline;        // GtkDrawingArea -- outline of current selected box
+  GtkWidget *w_new_box;            // GtkDrawingArea -- outline when drawing layout box
   GtkWidget *w_callouts;           // GtkDrawingArea -- callouts of image box dimensions
 
   GtkWidget *profile, *intent, *style, *style_mode, *papers, *media;
@@ -114,7 +115,6 @@ typedef struct dt_lib_print_settings_t
   gboolean busy;
 
   // for adding new area
-  gboolean creation;
   gboolean dragging;
   float x1, y1, x2, y2;
   int selected;                    // selected area in imgs.box
@@ -596,15 +596,22 @@ static void _page_new_area_clicked(GtkWidget *widget, gpointer user_data)
   const dt_lib_module_t *self = (dt_lib_module_t *)user_data;
   dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
 
+  // FIXME: if we make images a GSList this won't be a worry
   if(ps->imgs.count == MAX_IMAGE_PER_PAGE)
   {
     dt_control_log(_("maximum image per page reached"));
     return;
   }
 
-  dt_control_change_cursor(GDK_PLUS);
-  ps->creation = TRUE;
+  GdkCursor *const cursor = gdk_cursor_new_from_name(gdk_display_get_default(),
+                                                     "crosshair");
+  gdk_window_set_cursor(gtk_widget_get_window(gtk_widget_get_parent(ps->w_new_box)),
+                        cursor);
+
+  // FIXME: cue it that not dragging now, so it doesn't display a stale ovelay
+  gtk_widget_show(ps->w_new_box);
   ps->has_changed = TRUE;
+  // FIXME: should highlight the button so long as new area is active
 }
 
 static void _page_clear_area_clicked(GtkWidget *widget, gpointer user_data)
@@ -1425,6 +1432,11 @@ void view_leave(struct dt_lib_module_t *self,
                 struct dt_view_t *old_view,
                 struct dt_view_t *new_view)
 {
+  dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
+
+  // cancel any "new image area" mode
+  gtk_widget_hide(ps->w_new_box);
+
   DT_DEBUG_CONTROL_SIGNAL_DISCONNECT(darktable.signals,
                                      G_CALLBACK(_print_settings_activate_callback),
                                      self);
@@ -1500,7 +1512,7 @@ static void _snap_to_grid(dt_lib_print_settings_t *ps,
   }
 }
 
-static gboolean _mouse_moved(GtkWidget *w, GdkEventMotion *event,
+static gboolean _layout_box_mouse_moved(GtkWidget *w, GdkEventMotion *event,
                              dt_lib_print_settings_t *ps)
 {
   const double x = event->x;
@@ -1508,17 +1520,7 @@ static gboolean _mouse_moved(GtkWidget *w, GdkEventMotion *event,
 
   gboolean expose = FALSE;
 
-  if(ps->creation)
-    dt_control_change_cursor(GDK_PLUS);
-
-  if(ps->creation && ps->dragging)
-  {
-    ps->x2 = x;
-    ps->y2 = y;
-    _snap_to_grid(ps, &ps->x2, &ps->y2);
-    expose = TRUE;
-  }
-  else if(ps->dragging)
+  if(ps->dragging)
   {
     dt_image_box *b = &ps->imgs.box[ps->selected];
     const float dx = x - ps->click_pos_x;
@@ -1569,7 +1571,7 @@ static gboolean _mouse_moved(GtkWidget *w, GdkEventMotion *event,
     _snap_to_grid(ps, &ps->x1, &ps->y1);
     _snap_to_grid(ps, &ps->x2, &ps->y2);
   }
-  else if(!ps->creation)
+  else
   {
     const int bidx = dt_printing_get_image_box(&ps->imgs, x, y);
     ps->sel_controls = 0;
@@ -1581,6 +1583,7 @@ static gboolean _mouse_moved(GtkWidget *w, GdkEventMotion *event,
     }
     else
     {
+      // FIXME: layout box should have mouseover action to show callouts when mouseover box, hide them when mouse
       expose = TRUE;
       ps->selected = bidx;
       _fill_box_values(ps);
@@ -1606,7 +1609,7 @@ static void _swap(float *a, float *b)
   *b = tmp;
 }
 
-static gboolean _button_released(GtkWidget *w, GdkEventButton *event,
+static gboolean _layout_box_button_released(GtkWidget *w, GdkEventButton *event,
                                  dt_lib_print_settings_t *ps)
 {
   if(ps->dragging)
@@ -1616,11 +1619,7 @@ static gboolean _button_released(GtkWidget *w, GdkEventButton *event,
     gtk_widget_set_sensitive(ps->del, TRUE);
 
     // handle new area
-    if(ps->creation)
-    {
-      idx = ps->imgs.count++;
-    }
-    else if(ps->selected != -1)
+    if(ps->selected != -1)
     {
       idx = ps->selected;
     }
@@ -1642,12 +1641,12 @@ static gboolean _button_released(GtkWidget *w, GdkEventButton *event,
       _fill_box_values(ps);
 
       gtk_widget_queue_draw(ps->w_layout_boxes);
+      gtk_widget_queue_draw(ps->w_callouts);
     }
   }
 
   _update_slider(ps);
 
-  ps->creation = FALSE;
   ps->dragging = FALSE;
 
   dt_control_change_cursor(GDK_LEFT_PTR);
@@ -1655,7 +1654,7 @@ static gboolean _button_released(GtkWidget *w, GdkEventButton *event,
   return FALSE;
 }
 
-static gboolean _button_pressed(GtkWidget *w, GdkEventButton *event,
+static gboolean _layout_box_button_pressed(GtkWidget *w, GdkEventButton *event,
                                 dt_lib_print_settings_t *ps)
 {
   const double x = event->x;
@@ -1668,18 +1667,10 @@ static gboolean _button_pressed(GtkWidget *w, GdkEventButton *event,
   ps->click_pos_y = y;
   ps->last_selected = -1;
 
-  if(ps->creation)
-  {
-    ps->dragging = TRUE;
-    ps->selected = -1;
-    ps->x1 = ps->x2 = x;
-    ps->y1 = ps->y2 = y;
-
-    _snap_to_grid(ps, &ps->x1, &ps->y1);
-  }
-  else if(ps->selected > 0
-          && (which == 2 || (which == 1 &&
-                             dt_modifier_is(event->state, GDK_CONTROL_MASK))))
+  // FIXME: clicks should happen in their own widget boxes, so don't have to mind selection
+  if(ps->selected > 0
+     && (which == 2 || (which == 1 &&
+                        dt_modifier_is(event->state, GDK_CONTROL_MASK))))
   {
     // middle click (or ctrl-click), move selected image down
     dt_image_box b;
@@ -1720,6 +1711,103 @@ static gboolean _button_pressed(GtkWidget *w, GdkEventButton *event,
     ps->last_selected = ps->selected;
     ps->has_changed = TRUE;
   }
+
+  return FALSE;
+}
+
+static gboolean _new_box_drag_begin(GtkGestureDrag *gesture,
+                                    gdouble start_x, gdouble start_y,
+                                    dt_lib_print_settings_t *ps)
+{
+  printf("_new_box_drag_begin %f,%f\n", start_x, start_y);
+
+  // FIXME: should gtk_widget_grab_focus(w)? this is what the gtk.c _button_pressed handler does
+
+  ps->click_pos_x = start_x;
+  ps->click_pos_y = start_y;
+  // FIXME: needed?
+  ps->last_selected = -1;
+
+  // FIXME: needed?
+  ps->selected = -1;
+  ps->x1 = ps->x2 = start_x;
+  ps->y1 = ps->y2 = start_y;
+
+  _snap_to_grid(ps, &ps->x1, &ps->y1);
+
+  return FALSE;
+}
+
+static gboolean _new_box_drag_update(GtkGestureDrag *gesture,
+                                     gdouble offset_x, gdouble offset_y,
+                                     dt_lib_print_settings_t *ps)
+{
+#if 0
+ gint page_x, page_y;
+
+  if(!gtk_widget_translate_coordinates(w, prt->w_margins, round(cx), round(cy), &page_x, &page_y))
+  {
+    // FIXME: just return without a diagnostic, save noise to debug
+    dt_print(DT_DEBUG_ALWAYS, "_new_box_button_pressed: could not translate from center area to page coordinates\n");
+    return FALSE;
+  }
+  printf("_new_box_button_pressed at center area %f,%f -> page %d,%d\n", page_x, page_y);
+  // FIXME: if we've seriously clamped this, then should we record what we've clamped from?
+  page_x = CLAMP(page_x, 0, ps->imgs.screen.page_width);
+  page_y = CLAMP(page_y, 0, ps->imgs.screen.page_height);
+#endif
+
+  // FIXME: clamp start/end in page coords
+  // FIXME: store this somewhere else? or will there ever only be one drag at a time?
+  ps->x2 = ps->x1 + offset_x;
+  ps->y2 = ps->y1 + offset_y;
+
+  printf("_new_box_drag_update %f,%f -> %f,%f\n", offset_x, offset_y, ps->x2, ps->y2);
+
+  _snap_to_grid(ps, &ps->x2, &ps->y2);
+  gtk_widget_queue_draw(ps->w_box_outline);
+
+  return FALSE;
+}
+
+static gboolean _new_box_drag_end(GtkGestureDrag *gesture,
+                                  gdouble offset_x, gdouble offset_y,
+                                  dt_lib_print_settings_t *ps)
+{
+  printf("_new_box_drag_end %f,%f\n", offset_x, offset_y);
+
+  // new area
+  const int idx = ps->imgs.count++;
+
+  // FIXME: convert to page coords
+
+  // FIXME: this is shared code with box drag, make it a helper function
+  // make sure the area is in the the printable area taking into account the margins
+
+  // don't allow a too small area
+  if(ps->x2 < ps->x1) _swap(&ps->x1, &ps->x2);
+  if(ps->y2 < ps->y1) _swap(&ps->y1, &ps->y2);
+
+  const float dx = ps->x2 - ps->x1;
+  const float dy = ps->y2 - ps->y1;
+
+  dt_printing_setup_box(&ps->imgs, idx, ps->x1, ps->y1, dx, dy);
+  // make the new created box the last edited one
+  ps->last_selected = idx;
+  _fill_box_values(ps);
+
+  gtk_widget_queue_draw(ps->w_layout_boxes);
+  gtk_widget_queue_draw(ps->w_callouts);
+
+  ps->dragging = FALSE;
+
+  _update_slider(ps);
+
+  printf("changing cursor back, hiding new box\n");
+  gdk_window_set_cursor(gtk_widget_get_window(gtk_widget_get_parent(ps->w_new_box)),
+                        NULL);
+  gtk_widget_set_sensitive(ps->del, TRUE);
+  gtk_widget_hide(ps->w_new_box);
 
   return FALSE;
 }
@@ -1925,12 +2013,9 @@ static gboolean _draw_layouts(GtkWidget *self, cairo_t *cr, dt_lib_print_setting
   return FALSE;
 }
 
-// FIXME: split this into two widgets, one which outlines an active layout box (which may be part of the layout box function) and one which allows for dragging to create a new selection box, and show either/or/neither
 static gboolean _draw_box_outline(GtkWidget *self, cairo_t *cr,
                                   dt_lib_print_settings_t *ps)
 {
-  // FIXME: the draggable area for new selections should be the size of the whole center view, so the user can eaily select the entire page -- hence in a widget outside of the aspectframe
-  // now display new area if any
   if(ps->dragging || ps->selected != -1)
   {
     // FIXME: this duplicates code below, and we should be able to just outline the layout box in the case of not dragging
@@ -1955,6 +2040,24 @@ static gboolean _draw_box_outline(GtkWidget *self, cairo_t *cr,
     cairo_set_source_rgba(cr, .4, .4, .4, 1.0);
     _cairo_rectangle(cr, ps->sel_controls, x1, y1, x2, y2);
   }
+
+  return FALSE;
+}
+
+static gboolean _draw_new_box(GtkWidget *self, cairo_t *cr,
+                              dt_lib_print_settings_t *ps)
+{
+  float x1, y1, x2, y2;                      // box screen coordinates
+
+  // FIXME: deal with difference between new box and page coordinates
+  x1      = ps->x1;
+  y1      = ps->y1;
+  x2      = ps->x2;
+  y2      = ps->y2;
+
+  // FIXME: pull this from CSS, use gtk_render_background()
+  cairo_set_source_rgba(cr, .4, .4, .4, 1.0);
+  _cairo_rectangle(cr, ps->sel_controls, x1, y1, x2, y2);
 
   return FALSE;
 }
@@ -2222,7 +2325,7 @@ void gui_init(dt_lib_module_t *self)
   d->v_piccprofile = NULL;
   d->v_iccprofile = NULL;
   d->v_style = NULL;
-  d->creation = d->dragging = FALSE;
+  d->dragging = FALSE;
   d->selected = -1;
   d->last_selected = -1;
   d->has_changed = FALSE;
@@ -2258,8 +2361,8 @@ void gui_init(dt_lib_module_t *self)
   d->prt.page.margin_left = _to_mm(d, left_b);
   d->prt.page.margin_right = _to_mm(d, right_b);
 
-  // create overlay in center area which will show layout boxes,
-  // images, and measurements
+  // overlay in center area to show layout boxes, images, and
+  // measurements
   d->w_grid = gtk_drawing_area_new();
   gtk_widget_set_name(d->w_grid, "print-page-grid");
 
@@ -2297,11 +2400,11 @@ void gui_init(dt_lib_module_t *self)
                    G_CALLBACK(_draw_callouts), d);
   // FIXME: mouse and drag/drop events probably need to be handled via an event box overlaid on top
   g_signal_connect(G_OBJECT(d->w_callouts), "motion-notify-event",
-                   G_CALLBACK(_mouse_moved), d);
+                   G_CALLBACK(_layout_box_mouse_moved), d);
   g_signal_connect(G_OBJECT(d->w_callouts), "button-press-event",
-                   G_CALLBACK(_button_pressed), d);
+                   G_CALLBACK(_layout_box_button_pressed), d);
   g_signal_connect(G_OBJECT(d->w_callouts), "button-release-event",
-                   G_CALLBACK(_button_released), d);
+                   G_CALLBACK(_layout_box_button_released), d);
 
   // FIXME: check out _register_modules_drag_n_drop() from darkroom.c and its callbacks for ideas
   gtk_drag_dest_set(d->w_callouts, GTK_DEST_DEFAULT_ALL,
@@ -2317,7 +2420,32 @@ void gui_init(dt_lib_module_t *self)
   gtk_widget_show(d->w_box_outline);
   gtk_widget_show(d->w_layout_boxes);
   gtk_widget_show(w_overlay);
+
+  // an overlay for creating new layout boxes, separate so it can full
+  // full center area (unlike w_overlay which only fills a frame with
+  // aspect ratio of the page)
+
+  // FIXME: it would be nice if new boxes could be made by click/dragging anywhere in the page body -- this would get red of the the "new image area" button -- tradeoffs is that it might be harder to maek fullpage boxes or boxes on top of other boxes
+
+  d->w_new_box = gtk_drawing_area_new();
+  gtk_widget_set_name(d->w_new_box, "print-box-new");
+
+  g_signal_connect(G_OBJECT(d->w_new_box), "draw",
+                   G_CALLBACK(_draw_new_box), d);
+
+  GtkGesture *g_event = gtk_gesture_drag_new(d->w_new_box);
+  g_signal_connect(g_event, "drag-begin",
+                   G_CALLBACK(_new_box_drag_begin), d);
+  g_signal_connect(g_event, "drag-update",
+                   G_CALLBACK(_new_box_drag_update), d);
+  g_signal_connect(g_event, "drag-end",
+                   G_CALLBACK(_new_box_drag_end), d);
+
+  // the print view needs access as it will put these in the center
+  // area when in print view
+  // FIXME: can we just do that work here?
   darktable.lib->proxy.print.w_settings_main = w_overlay;
+  darktable.lib->proxy.print.w_new_box = d->w_new_box;
 
   //  create the spin-button now as values could be set when the
   //  printer has no hardware margin
@@ -3404,7 +3532,8 @@ void gui_reset(dt_lib_module_t *self)
   ps->imgs.imgid_to_load = imgid;
   _load_image_full_page(ps, ps->imgs.imgid_to_load);
 
-  ps->creation = ps->dragging = FALSE;
+  gtk_widget_hide(ps->w_new_box);
+  ps->dragging = FALSE;
   ps->selected = -1;
   ps->last_selected = -1;
   ps->has_changed = FALSE;
