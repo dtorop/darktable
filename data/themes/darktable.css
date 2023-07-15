@@ -2334,6 +2334,7 @@ Details :
   color: @print_hw_margin;
 }
 
+/* FIXME: define these custom colors at start */
 #print-hw-margins.borderless
 {
   /* user set margins outside of hardware margins */

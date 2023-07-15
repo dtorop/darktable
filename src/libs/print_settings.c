@@ -84,7 +84,8 @@ typedef struct dt_lib_print_settings_t
 {
   GtkWidget *w_grid;               // GtkDrawingArea -- grid
   GtkWidget *w_layout_boxes;       // GtkDrawingArea -- images in boxes
-  GtkWidget *w_page;               // GtkDrawingArea -- misc. center view page layout
+  GtkWidget *w_box_outline;        // GtkDrawingArea -- outline of current selected/drawn box
+  GtkWidget *w_callouts;           // GtkDrawingArea -- callouts of image box dimensions
 
   GtkWidget *profile, *intent, *style, *style_mode, *papers, *media;
   GtkWidget *printers, *orientation, *pprofile, *pintent;
@@ -973,6 +974,7 @@ static void _lock_callback(GtkWidget *button, dt_lib_module_t *self)
 static void
 _alignment_callback(GtkWidget *tb, gpointer user_data)
 {
+  // FIXME: this needs to redraw the layout box to reflect the alignment change
   if(darktable.gui->reset) return;
 
   int index=-1;
@@ -1589,8 +1591,9 @@ static gboolean _mouse_moved(GtkWidget *w, GdkEventMotion *event,
   if(expose)
   {
     gtk_widget_queue_draw(ps->w_layout_boxes);
-    // FIXME: this really should just be the selection
-    gtk_widget_queue_draw(ps->w_page);
+    // FIXME: this really should just be the selection? or the callouts too?
+    gtk_widget_queue_draw(ps->w_box_outline);
+    gtk_widget_queue_draw(ps->w_callouts);
   }
 
   return FALSE;
@@ -1706,6 +1709,7 @@ static gboolean _button_pressed(GtkWidget *w, GdkEventButton *event,
   {
     dt_image_box *b = &ps->imgs.box[ps->selected];
 
+    // FIXME: this needs to redraw layout box
     // if image present remove it, otherwise remove the box
     if(dt_is_valid_imgid(b->imgid))
       b->imgid = NO_IMGID;
@@ -1920,12 +1924,48 @@ static gboolean _draw_layouts(GtkWidget *self, cairo_t *cr, dt_lib_print_setting
   return FALSE;
 }
 
-static gboolean _draw_overlay(GtkWidget *self, cairo_t *cr, dt_lib_print_settings_t *ps)
+// FIXME: split this into two widgets, one which outlines an active layout box (which may be part of the layout box function) and one which allows for dragging to create a new selection box, and show either/or/neither
+static gboolean _draw_box_outline(GtkWidget *self, cairo_t *cr,
+                                  dt_lib_print_settings_t *ps)
 {
   // FIXME: the draggable area for new selections should be the size of the whole center view, so the user can eaily select the entire page -- hence in a widget outside of the aspectframe
   // now display new area if any
   if(ps->dragging || ps->selected != -1)
   {
+    // FIXME: this duplicates code below, and we should be able to just outline the layout box in the case of not dragging
+    float x1, y1, x2, y2;                      // box screen coordinates
+
+    if(ps->dragging)
+    {
+      x1      = ps->x1;
+      y1      = ps->y1;
+      x2      = ps->x2;
+      y2      = ps->y2;
+    }
+    else
+    {
+      const dt_image_box *box = &ps->imgs.box[ps->selected];
+      x1 = box->screen.x;
+      y1 = box->screen.y;
+      x2 = box->screen.x + box->screen.width;
+      y2 = box->screen.y + box->screen.height;
+    }
+
+    cairo_set_source_rgba(cr, .4, .4, .4, 1.0);
+    _cairo_rectangle(cr, ps->sel_controls, x1, y1, x2, y2);
+  }
+
+  return FALSE;
+}
+
+static gboolean _draw_callouts(GtkWidget *self, cairo_t *cr,
+                               dt_lib_print_settings_t *ps)
+{
+  // FIXME: GTK-ify this code, so there isn't so much customized ad hoc posiitioning code
+  // FIXME: only show this widget if drawing a new layout box or one is selected
+  if(ps->dragging || ps->selected != -1)
+  {
+    // FIXME: this duplicates box outline code above -- we should just size the box outline or layout box and then read these from there, excepting ones that need to be displayed mm-accurate
     float dx1, dy1, dx2, dy2, dwidth, dheight; // displayed values
     float x1, y1, x2, y2;                      // box screen coordinates
 
@@ -1966,9 +2006,6 @@ static gboolean _draw_overlay(GtkWidget *self, cairo_t *cr, dt_lib_print_setting
       x2 = box->screen.x + box->screen.width;
       y2 = box->screen.y + box->screen.height;
     }
-
-    cairo_set_source_rgba(cr, .4, .4, .4, 1.0);
-    _cairo_rectangle(cr, ps->sel_controls, x1, y1, x2, y2);
 
     // display corner coordinates
     // FIXME: here and elsewhere eliminate hardcoded RGB values -- use CSS
@@ -2228,16 +2265,21 @@ void gui_init(dt_lib_module_t *self)
   d->w_layout_boxes = gtk_drawing_area_new();
   gtk_widget_set_name(d->w_layout_boxes, "print-layout-boxes");
 
-  d->w_page = gtk_drawing_area_new();
-  gtk_widget_set_name(d->w_page, "print-page");
+  d->w_box_outline = gtk_drawing_area_new();
+  gtk_widget_set_name(d->w_box_outline, "print-box-outline");
+
+  d->w_callouts = gtk_drawing_area_new();
+  gtk_widget_set_name(d->w_callouts, "print-callouts");
 
   GtkWidget *w_overlay = gtk_overlay_new();
   gtk_container_add(GTK_CONTAINER(w_overlay), d->w_grid);
   gtk_overlay_add_overlay(GTK_OVERLAY(w_overlay), d->w_layout_boxes);
-  gtk_overlay_add_overlay(GTK_OVERLAY(w_overlay), d->w_page);
+  gtk_overlay_add_overlay(GTK_OVERLAY(w_overlay), d->w_box_outline);
+  gtk_overlay_add_overlay(GTK_OVERLAY(w_overlay), d->w_callouts);
   gtk_widget_set_name(w_overlay, "print-page-overlay");
 
-  gtk_widget_set_events(d->w_page,
+  // FIXME: these will start being connected to event boxes
+  gtk_widget_set_events(d->w_callouts,
                         GDK_POINTER_MOTION_MASK | GDK_BUTTON_PRESS_MASK
                         | GDK_BUTTON_RELEASE_MASK);
 
@@ -2247,26 +2289,31 @@ void gui_init(dt_lib_module_t *self)
   g_signal_connect(G_OBJECT(d->w_layout_boxes), "draw",
                    G_CALLBACK(_draw_layouts), d);
 
-  g_signal_connect(G_OBJECT(d->w_page), "draw",
-                   G_CALLBACK(_draw_overlay), d);
+  g_signal_connect(G_OBJECT(d->w_box_outline), "draw",
+                   G_CALLBACK(_draw_box_outline), d);
+
+  g_signal_connect(G_OBJECT(d->w_callouts), "draw",
+                   G_CALLBACK(_draw_callouts), d);
   // FIXME: mouse and drag/drop events probably need to be handled via an event box overlaid on top
-  g_signal_connect(G_OBJECT(d->w_page), "motion-notify-event",
+  g_signal_connect(G_OBJECT(d->w_callouts), "motion-notify-event",
                    G_CALLBACK(_mouse_moved), d);
-  g_signal_connect(G_OBJECT(d->w_page), "button-press-event",
+  g_signal_connect(G_OBJECT(d->w_callouts), "button-press-event",
                    G_CALLBACK(_button_pressed), d);
-  g_signal_connect(G_OBJECT(d->w_page), "button-release-event",
+  g_signal_connect(G_OBJECT(d->w_callouts), "button-release-event",
                    G_CALLBACK(_button_released), d);
 
   // FIXME: check out _register_modules_drag_n_drop() from darkroom.c and its callbacks for ideas
-  gtk_drag_dest_set(d->w_page, GTK_DEST_DEFAULT_ALL,
+  gtk_drag_dest_set(d->w_callouts, GTK_DEST_DEFAULT_ALL,
                     // FIXME: should be target_list_internal?
                     target_list_all, n_targets_all, GDK_ACTION_MOVE);
-  g_signal_connect(d->w_page, "drag-data-received",
+  g_signal_connect(d->w_callouts, "drag-data-received",
                    G_CALLBACK(_drag_and_drop_received), d);
-  g_signal_connect(d->w_page, "drag-motion",
+  g_signal_connect(d->w_callouts, "drag-motion",
                    G_CALLBACK(_drag_motion_received), d);
 
-  gtk_widget_show(d->w_page);
+  gtk_widget_show(d->w_callouts);
+  // FIXME: don't show this initially, only when box is selected or when dragging
+  gtk_widget_show(d->w_box_outline);
   gtk_widget_show(d->w_layout_boxes);
   gtk_widget_show(w_overlay);
   darktable.lib->proxy.print.w_settings_main = w_overlay;
@@ -3164,12 +3211,10 @@ int set_params(dt_lib_module_t *self,
   gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(ps->dtba[alignment]), TRUE);
   gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(ps->black_point_compensation), bpc);
 
-  // FIXME: are these redraws necessary?
-  gtk_widget_queue_draw(ps->w_layout_boxes);
   // changing orientation, margins, and alignment will all trigger
   // redraw of page background, which in turn will trigger redraw of
   // layout, but just in case make sure to redraw
-  gtk_widget_queue_draw(ps->w_page);
+  gtk_widget_queue_draw(ps->w_layout_boxes);
 
   return 0;
 }
