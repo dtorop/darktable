@@ -249,11 +249,9 @@ static gboolean _event_draw_hw_margins(GtkWidget *widget, cairo_t *cr,
   const gboolean lndscp = prt->pinfo->page.landscape;
 
   // FIXME: use patterns/arrays to make this more succinct
-  // page w/h in px
   const float pg_px_w = prt->imgs->screen.page_width;
   const float pg_px_h = prt->imgs->screen.page_height;
 
-  // page w/h in mm
   const float pg_mm_w  = lndscp ? prt->pinfo->paper.height : prt->pinfo->paper.width;
   const float pg_mm_h = lndscp ? prt->pinfo->paper.width : prt->pinfo->paper.height;
 

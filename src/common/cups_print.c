@@ -585,31 +585,17 @@ void dt_get_print_layout(const dt_print_info_t *prt,
   /* this is where the layout is done for the display and for the print too. So this routine is one
      of the most critical for the print circuitry. */
 
+  const gboolean lndscp = prt->page.landscape;
+  const dt_printer_info_t *prntr = &prt->printer;
 
-  float pg_mm_w  = prt->paper.width;
-  float pg_mm_h = prt->paper.height;
+  const float pg_mm_w  = lndscp ? prt->paper.height : prt->paper.width;
+  const float pg_mm_h = lndscp ? prt->paper.width : prt->paper.height;
 
   // non-printable in mm
-  float np_top = prt->printer.hw_margin_top;
-  float np_left = prt->printer.hw_margin_left;
-  float np_right = prt->printer.hw_margin_right;
-  float np_bottom = prt->printer.hw_margin_bottom;
-
-  /* do some arrangements for the landscape mode. */
-
-  if(prt->page.landscape)
-  {
-    float tmp = pg_mm_w;
-    pg_mm_w = pg_mm_h;
-    pg_mm_h = tmp;
-
-    // rotate the non-printable margins
-    tmp       = np_top;
-    np_top    = np_right;
-    np_right  = np_bottom;
-    np_bottom = np_left;
-    np_left   = tmp;
-  }
+  const float np_top = lndscp ? prntr->hw_margin_right : prntr->hw_margin_top;
+  const float np_left = lndscp ? prntr->hw_margin_top : prntr->hw_margin_left;
+  const float np_right = lndscp ? prntr->hw_margin_bottom : prntr->hw_margin_right;
+  const float np_bottom = lndscp ? prntr->hw_margin_left : prntr->hw_margin_bottom;
 
   // page margins, note that we do not want to change those values for the landscape mode.
   // these margins are those set by the user from the GUI, and the top margin is *always*
