@@ -578,19 +578,16 @@ void dt_print_file(const dt_imgid_t imgid, const char *filename, const char *job
 }
 
 void dt_get_print_layout(const dt_print_info_t *prt,
-                         const int32_t area_width, const int32_t area_height,
-                         float *pwidth, float *pheight,
+                         const float pg_px_w, const float pg_px_h,
                          float *ax, float *ay, float *awidth, float *aheight,
                          gboolean *borderless)
 {
   /* this is where the layout is done for the display and for the print too. So this routine is one
      of the most critical for the print circuitry. */
 
-  // page w/h in mm
-  float pg_width  = prt->paper.width;
-  float pg_height = prt->paper.height;
 
-  /* here, width and height correspond to the area for the picture */
+  float pg_mm_w  = prt->paper.width;
+  float pg_mm_h = prt->paper.height;
 
   // non-printable in mm
   float np_top = prt->printer.hw_margin_top;
@@ -602,9 +599,9 @@ void dt_get_print_layout(const dt_print_info_t *prt,
 
   if(prt->page.landscape)
   {
-    float tmp = pg_width;
-    pg_width = pg_height;
-    pg_height = tmp;
+    float tmp = pg_mm_w;
+    pg_mm_w = pg_mm_h;
+    pg_mm_h = tmp;
 
     // rotate the non-printable margins
     tmp       = np_top;
@@ -613,32 +610,6 @@ void dt_get_print_layout(const dt_print_info_t *prt,
     np_bottom = np_left;
     np_left   = tmp;
   }
-
-  // the image area aspect
-  const float a_aspect = (float)area_width / (float)area_height;
-
-  // page aspect
-  const float pg_aspect = pg_width / pg_height;
-
-  // display page
-  float p_bottom, p_right;
-
-  // FIXME: when everything is relative to aspect frame we won't need to do so much work or keep px/py
-  if(a_aspect > pg_aspect)
-  {
-    p_right = area_height * pg_aspect;
-    p_bottom = area_height;
-  }
-  else
-  {
-    p_right = area_width;
-    p_bottom = area_width / pg_aspect;
-  }
-
-  // FIXME: as these are the same, just sue pwidth/pheight throughout
-  // FIXME: can we get these values from aspect frame allocation instead? though they won't be floats then, but ints
-  *pwidth = p_right;
-  *pheight = p_bottom;
 
   // page margins, note that we do not want to change those values for the landscape mode.
   // these margins are those set by the user from the GUI, and the top margin is *always*
@@ -649,25 +620,19 @@ void dt_get_print_layout(const dt_print_info_t *prt,
   const float border_right = prt->page.margin_right;
   const float border_bottom = prt->page.margin_bottom;
 
-  // display picture area, that is removing the non printable areas and user's margins
+  // page body in pixels, inside of the user's margins
+  // FIXME: could make margins be pixel-accurate measures and page width/height a bit fuzzy in comparison, so there is an automatic snap-to-margin behavior
 
-  const float bx = (border_left / pg_width) * (*pwidth);
-  const float by = (border_top / pg_height) * (*pheight);
-  const float bb = p_bottom - (border_bottom / pg_height) * (*pheight);
-  const float br = p_right - (border_right / pg_width) * (*pwidth);
+  *ax = pg_px_w * (border_left / pg_mm_w);
+  *ay = pg_px_h * (border_top / pg_mm_h);
+  *awidth = pg_px_w * (1.0f - (border_left + border_right) / pg_mm_w);
+  *aheight = pg_px_h * (1.0f - (border_top + border_bottom) / pg_mm_h);
 
   // FIXME: it would be nicer to base borderless on whether any images are outside of hardware margins
   *borderless = border_left   < np_left
              || border_right  < np_right
              || border_top    < np_top
              || border_bottom < np_bottom;
-
-  // now we have the printable area (ax, ay) -> (ax + awidth, ay + aheight)
-
-  *ax      = bx;
-  *ay      = by;
-  *awidth  = br - bx;
-  *aheight = bb - by;
 }
 
 // clang-format off

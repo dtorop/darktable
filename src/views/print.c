@@ -107,23 +107,20 @@ static void _view_print_filmstrip_activate_callback(gpointer instance,
   dt_view_active_images_add(imgid, TRUE);
 }
 
-static void _update_display_coords(dt_print_t *prt, int view_width, int view_height)
+static void _update_display_coords(dt_print_t *prt)
 {
-  float pwidth=.0f, pheight=.0f;
+  const float pwidth = prt->imgs->screen.page_width;
+  const float pheight = prt->imgs->screen.page_height;
   float ax=.0f, ay=.0f, awidth=.0f, aheight=.0f;
   gboolean borderless = FALSE;
 
-  // FIXME: instead get page width in screen pixels from w_margins and and the body area from w_content, perhaps by configure or size-allocate event
-  dt_get_print_layout(prt->pinfo, view_width, view_height,
-                      &pwidth, &pheight,
+  dt_get_print_layout(prt->pinfo, pwidth, pheight,
                       &ax, &ay, &awidth, &aheight, &borderless);
 
-  // record the screen page dimension. this will be used to draw the
-  // page and to compute the actual layout of the areas placed over
-  // the page.
+  // record the screen margins dimension and use to compute the actual
+  // layout of the areas placed over the page.
   // FIXME: may not need to set up boxes screen coords if they can be read via configure event or size-allocate -- or don't even need to be stored
   dt_printing_setup_display(prt->imgs,
-                            pwidth, pheight,
                             ax, ay, awidth, aheight,
                             borderless);
 
@@ -131,25 +128,9 @@ static void _update_display_coords(dt_print_t *prt, int view_width, int view_hei
   if(prt->w_content)
   {
     gtk_widget_set_margin_start(prt->w_content, round(ax));
-    gtk_widget_set_margin_end(prt->w_content, round((pwidth - awidth) - ax));
+    gtk_widget_set_margin_end(prt->w_content, round(pwidth - awidth - ax));
     gtk_widget_set_margin_top(prt->w_content, round(ay));
-    gtk_widget_set_margin_bottom(prt->w_content, round((pheight - aheight) - ay));
-  }
-
-  if(prt->w_aspect1 && prt->w_aspect2)
-  {
-    const dt_paper_info_t *paper = &prt->pinfo->paper;
-    if(paper->width > 0.0 && paper->height > 0.0)
-    {
-      gdouble aspect = (prt->pinfo->page.landscape) ?
-        paper->height / paper->width : paper->width / paper->height;
-
-      // two matching aspect frames, one for background of margins/page,
-      // one for layout boxes
-      // FIXME: could also bind the ratio parameter?
-      gtk_aspect_frame_set(GTK_ASPECT_FRAME(prt->w_aspect1), 0.5f, 0.5f, aspect, FALSE);
-      gtk_aspect_frame_set(GTK_ASPECT_FRAME(prt->w_aspect2), 0.5f, 0.5f, aspect, FALSE);
-    }
+    gtk_widget_set_margin_bottom(prt->w_content, round(pheight - aheight - ay));
   }
 
   if(prt->w_hw_margins)
@@ -171,9 +152,25 @@ static void _view_print_settings(const dt_view_t *view,
   prt->pinfo = pinfo;
   prt->imgs = imgs;
 
-  // FIXME: instead when paper size is changed should catch configure or size event, then update
-  // FIXME: inline this, it is only used once
-  _update_display_coords(prt, view->width, view->height);
+  if(prt->w_aspect1 && prt->w_aspect2)
+  {
+    const dt_paper_info_t *paper = &prt->pinfo->paper;
+    if(paper->width > 0.0 && paper->height > 0.0)
+    {
+      gdouble aspect = (prt->pinfo->page.landscape) ?
+        paper->height / paper->width : paper->width / paper->height;
+
+      // two matching aspect frames, one for background of margins/page,
+      // one for layout boxes
+      // FIXME: could also bind the ratio parameter?
+      gtk_aspect_frame_set(GTK_ASPECT_FRAME(prt->w_aspect1), 0.5f, 0.5f, aspect, FALSE);
+      gtk_aspect_frame_set(GTK_ASPECT_FRAME(prt->w_aspect2), 0.5f, 0.5f, aspect, FALSE);
+    }
+  }
+
+  // only makes sense to setup display once the widget is configured
+  if(imgs->screen.page_width > 0.0f && imgs->screen.page_height > 0.0f)
+    _update_display_coords(prt);
 }
 
 void
@@ -193,11 +190,17 @@ void cleanup(dt_view_t *self)
   free(prt);
 }
 
-void configure(dt_view_t *self, int width, int height)
+static gboolean _event_configure_margins(GtkWidget *widget,
+                                         const GdkEventConfigure *const event,
+                                         dt_print_t *prt)
 {
-  dt_print_t *prt = (dt_print_t *)self->data;
-  if(prt)
-    _update_display_coords(prt, width, height);
+  // FIXME: page width/height can be rounded to nearest integer but kept as floats, with slightly different horizontal/vertical resolution ok, then the measurements of individual boxes should be floats as they may be snapped to grid or margins
+  const int pwidth = gtk_widget_get_allocated_width(widget);
+  const int pheight = gtk_widget_get_allocated_height(widget);
+  prt->imgs->screen.page_width = pwidth;
+  prt->imgs->screen.page_height = pheight;
+  _update_display_coords(prt);
+  return FALSE;
 }
 
 // FIXME: draw this as expose() event for widget to fill in the main drawable of center view?
@@ -353,8 +356,8 @@ gboolean try_enter(dt_view_t *self)
   // and drop the lock again.
   dt_image_cache_read_release(darktable.image_cache, img);
 
-  // set up load for the selected image when print_settings gets
-  // signal that we've entered print view
+  // set up load for the selected image when we signal print_settings
+  // that print view is ready
   prt->imgs->imgid_to_load = imgid;
 
   return FALSE;
@@ -363,18 +366,6 @@ gboolean try_enter(dt_view_t *self)
 void enter(dt_view_t *self)
 {
   dt_print_t *prt = (dt_print_t*)self->data;
-
-  /* scroll filmstrip to the first selected image */
-  if(dt_is_valid_imgid(prt->imgs->imgid_to_load))
-  {
-    // change active image
-    dt_thumbtable_set_offset_image(dt_ui_thumbtable(darktable.gui->ui),
-                                   prt->imgs->box[0].imgid, TRUE);
-    // but no need to raise signal, as print settings is already will
-    // load this image on view enter
-    dt_view_active_images_reset(FALSE);
-    dt_view_active_images_add(prt->imgs->imgid_to_load, FALSE);
-  }
 
   gtk_overlay_add_overlay(GTK_OVERLAY(dt_ui_center_base(darktable.gui->ui)),
                           prt->w_main);
@@ -394,6 +385,15 @@ void enter(dt_view_t *self)
   gtk_widget_grab_focus(dt_ui_center(darktable.gui->ui));
 
   dt_control_set_mouse_over_id(prt->imgs->imgid_to_load);
+
+  // Actually load the initial image full page, as well as updating
+  // the active image in the filmstrip. Don't do this until the
+  // widgets are all properly configured.
+  if(dt_is_valid_imgid(prt->imgs->imgid_to_load))
+  {
+    dt_view_active_images_reset(FALSE);
+    dt_view_active_images_add(prt->imgs->imgid_to_load, TRUE);
+  }
 }
 
 void leave(dt_view_t *self)
@@ -466,8 +466,13 @@ void gui_init(dt_view_t *self)
   gtk_widget_set_direction(prt->w_main, GTK_TEXT_DIR_LTR);
 
   g_signal_connect(G_OBJECT(w_background), "draw", G_CALLBACK(_event_draw_bkgd), NULL);
+
   g_signal_connect(G_OBJECT(prt->w_margins), "draw", G_CALLBACK(_event_draw_rect), NULL);
+  g_signal_connect(G_OBJECT(prt->w_margins), "configure-event",
+                   G_CALLBACK(_event_configure_margins), prt);
+
   g_signal_connect(G_OBJECT(prt->w_content), "draw", G_CALLBACK(_event_draw_rect), NULL);
+
   g_signal_connect(G_OBJECT(prt->w_hw_margins), "draw",
                    G_CALLBACK(_event_draw_hw_margins), prt);
 

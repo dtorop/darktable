@@ -2269,6 +2269,7 @@ void gui_init(dt_lib_module_t *self)
   d->last_selected = -1;
   d->has_changed = FALSE;
   d->filmstrip_select = NO_IMGID;
+  d->imgs.screen.page_width = d->imgs.screen.page_height = 0.0f;
 
   dt_init_print_info(&d->prt);
   dt_view_print_settings(darktable.view_manager, &d->prt, &d->imgs);

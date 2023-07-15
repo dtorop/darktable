@@ -43,7 +43,6 @@ void dt_printing_clear_boxes(dt_images_box *imgs)
   for(int k=0; k<MAX_IMAGE_PER_PAGE; k++)
     dt_printing_clear_box(&imgs->box[k]);
 
-  imgs->screen.page_width = imgs->screen.page_height = 0.0f;
   _clear_pos(&imgs->screen.print_area);
 
   imgs->count = 0;
@@ -100,15 +99,11 @@ void _compute_rel_pos(const dt_images_box *imgs, const dt_image_pos *ref, dt_ima
 }
 
 void dt_printing_setup_display(dt_images_box *imgs,
-                               const float pwidth, const float pheight,
                                const float ax, const float ay, const float awidth, const float aheight,
                                gboolean borderless)
 {
-  // FIXME: should users of these values just locate at aspectframe allocation? but those values won't be floats but ints
-  // FIXME: page width/height can be rounded to nearest integer but kept as floats, with slightly different horizontal/vertical resolution ok, then the measurements of individual boxes should be floats as they may be snapped to grid or margins
-  // FIXME: could make margins be pixel-accurate measures and page width/height a bit fuzzy in comparison, so there is an automatic snap-to-margin behavior
-  imgs->screen.page_width  = pwidth;
-  imgs->screen.page_height = pheight;
+  const float pwidth = imgs->screen.page_width;
+  const float pheight = imgs->screen.page_height;
 
   imgs->screen.print_area.x      = ax;
   imgs->screen.print_area.y      = ay;
