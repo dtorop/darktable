@@ -596,9 +596,8 @@ static int _print_job_run(dt_job_t *job)
   return 0;
 }
 
-static void _page_new_area_clicked(GtkWidget *widget, gpointer user_data)
+static void _page_new_area_clicked(GtkWidget *widget, const dt_lib_module_t *self)
 {
-  const dt_lib_module_t *self = (dt_lib_module_t *)user_data;
   dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
 
   // FIXME: if we make images a GSList this won't be a worry
@@ -609,11 +608,11 @@ static void _page_new_area_clicked(GtkWidget *widget, gpointer user_data)
   }
 
   dt_control_change_cursor(GDK_PLUS);
-  ps->dragging = FALSE;
+  // FIXME: once implement GtkFixed to hold layout boxes, there should be a widget in that fixed layout sized to the area the user has dragged over (with the click detected by w_new_box as a GtkEventBox overlay), so that updates to dragging the box don't have to redraw the entire center area
   gtk_widget_show(ps->w_new_box);
   ps->has_changed = TRUE;
   // FIXME: should highlight the button so long as new area is active
-  printf("_page_new_area_clicked exiting\n");
+  // FIXME: it would be nice if the box were created containing the image currently active on the filmstrip
 }
 
 static void _page_clear_area_clicked(GtkWidget *widget, gpointer user_data)
@@ -1436,10 +1435,7 @@ void view_leave(struct dt_lib_module_t *self,
 {
   dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
 
-  // cancel any "new image area" mode
-  gtk_widget_hide(ps->w_new_box);
-  // FIXME: can we get this from ps->g_new_box?
-  ps->dragging = FALSE;
+  // cancel any "new image area" drag
   gtk_event_controller_reset(GTK_EVENT_CONTROLLER(ps->g_new_box));
 
   DT_DEBUG_CONTROL_SIGNAL_DISCONNECT(darktable.signals,
@@ -1746,11 +1742,7 @@ static void _new_box_drag_begin(GtkGestureDrag *gesture,
                                 gdouble start_x, gdouble start_y,
                                 dt_lib_print_settings_t *ps)
 {
-  printf("_new_box_drag_begin %f,%f\n", start_x, start_y);
-
   // FIXME: should gtk_widget_grab_focus(w)? this is what the gtk.c _button_pressed handler does
-
-  ps->dragging = TRUE;
 
   // FIXME: needed?
   ps->last_selected = -1;
@@ -1839,8 +1831,6 @@ static void _new_box_drag_end(GtkGestureDrag *gesture,
     _update_slider(ps);
   }
 
-  // FIXME: can get this from gesture?
-  ps->dragging = FALSE;
   dt_control_change_cursor(GDK_LEFT_PTR);
   gtk_widget_hide(ps->w_new_box);
 }
@@ -2004,6 +1994,7 @@ static gboolean _draw_layouts(GtkWidget *self, cairo_t *cr, dt_lib_print_setting
         cairo_translate(cr, screen.x, screen.y);
         cairo_scale(cr, scaler, scaler);
         cairo_set_source_surface(cr, surf, 0, 0);
+        // FIXME: even if we keep this, we can figure this out via gtk_gesture_is_active()
         const double alpha =
           (ps->dragging
            || (ps->selected != -1 && ps->selected != k))
@@ -2049,6 +2040,7 @@ static gboolean _draw_layouts(GtkWidget *self, cairo_t *cr, dt_lib_print_setting
 static gboolean _draw_box_outline(GtkWidget *self, cairo_t *cr,
                                   dt_lib_print_settings_t *ps)
 {
+  // FIXME: even if keep this, can figure it out via gtk_gesture_is_active()
   if(ps->dragging || ps->selected != -1)
   {
     // FIXME: this duplicates code below, and we should be able to just outline the layout box in the case of not dragging
@@ -2080,7 +2072,8 @@ static gboolean _draw_box_outline(GtkWidget *self, cairo_t *cr,
 static gboolean _draw_new_box(GtkWidget *self, cairo_t *cr,
                               dt_lib_print_settings_t *ps)
 {
-  if(!ps->dragging) return FALSE;
+  // FIXME: if the new box widget is only shown when dragging to create a new box, won't need this or any of the math below
+  if(!gtk_gesture_is_active(ps->g_new_box)) return FALSE;
 
   gint view_x, view_y;
   if(!gtk_widget_translate_coordinates(ps->w_overlay, ps->w_new_box,
@@ -2117,7 +2110,7 @@ static gboolean _draw_callouts(GtkWidget *self, cairo_t *cr,
 {
   // FIXME: GTK-ify this code, so there isn't so much customized ad hoc posiitioning code
   // FIXME: only show this widget if drawing a new layout box or one is selected
-  if(ps->dragging || ps->selected != -1)
+  if(ps->dragging || gtk_gesture_is_active(ps->g_new_box) || ps->selected != -1)
   {
     // FIXME: this duplicates box outline code above -- we should just size the box outline or layout box and then read these from there, excepting ones that need to be displayed mm-accurate
     float dx1, dy1, dx2, dy2, dwidth, dheight; // displayed values
@@ -2126,7 +2119,7 @@ static gboolean _draw_callouts(GtkWidget *self, cairo_t *cr,
     float pwidth, pheight;
     _get_page_dimension(&ps->prt, &pwidth, &pheight);
 
-    if(ps->dragging)
+    if(ps->dragging || gtk_gesture_is_active(ps->g_new_box))
     {
       x1      = ps->x1;
       y1      = ps->y1;
