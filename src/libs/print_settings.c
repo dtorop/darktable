@@ -1734,9 +1734,9 @@ static void _clamp_to_area(gdouble *x, gdouble *y, dt_image_pos *area)
   *y = CLAMP(*y, area->y, area->y + area->height);
 }
 
-static gboolean _new_box_drag_begin(GtkGestureDrag *gesture,
-                                    gdouble start_x, gdouble start_y,
-                                    dt_lib_print_settings_t *ps)
+static void _new_box_drag_begin(GtkGestureDrag *gesture,
+                                gdouble start_x, gdouble start_y,
+                                dt_lib_print_settings_t *ps)
 {
   printf("_new_box_drag_begin %f,%f\n", start_x, start_y);
 
@@ -1753,12 +1753,9 @@ static gboolean _new_box_drag_begin(GtkGestureDrag *gesture,
   if(!gtk_widget_translate_coordinates(ps->w_new_box, ps->w_overlay,
                                        round(start_x), round(start_y), &page_x, &page_y))
   {
-    // FIXME: just return without a diagnostic, save noise to debug
-    dt_print(DT_DEBUG_ALWAYS, "_new_box_button_pressed: could not translate from center area to page coordinates\n");
-    return FALSE;
+    gtk_event_controller_reset(GTK_EVENT_CONTROLLER(gesture));
+    return;
   }
-  printf("_new_box_button_pressed at center area %f,%f -> page %d,%d\n", start_x, start_y, page_x, page_y);
-  // FIXME: if we've seriously clamped this, then should we record what we've clamped from?
 
   ps->click_pos_x = ps->x1 = ps->x2 = page_x;
   ps->click_pos_y = ps->y1 = ps->y2 = page_y;
@@ -1767,50 +1764,46 @@ static gboolean _new_box_drag_begin(GtkGestureDrag *gesture,
 
   gtk_widget_set_visible(ps->w_callouts, _in_area(ps->click_pos_x, ps->click_pos_y, &ps->imgs.screen.print_area));
   gtk_widget_queue_draw(ps->w_new_box);
-
-  return FALSE;
 }
 
-static gboolean _new_box_drag_update(GtkGestureDrag *gesture,
-                                     gdouble offset_x, gdouble offset_y,
-                                     dt_lib_print_settings_t *ps)
+static void _new_box_drag_update(GtkGestureDrag *gesture,
+                                 gdouble offset_x, gdouble offset_y,
+                                 dt_lib_print_settings_t *ps)
 {
   ps->x2 = ps->click_pos_x + offset_x;
   ps->y2 = ps->click_pos_y + offset_y;
 
-  // FIXME: since we hide callouts until the box is in the page body, we can then swap the first _in_area() check for a !gtk_widget_get_visible(w->callouts)
-  // if we started outside of the page body area but are in it now,
-  // bring origin into page body
-  if(!_in_area(ps->x1, ps->y1, &ps->imgs.screen.print_area) &&
-     _in_area(ps->x2, ps->y2, &ps->imgs.screen.print_area))
+  if(gtk_widget_get_visible(ps->w_callouts))
   {
-    _clamp_to_area(&ps->x1, &ps->y1, &ps->imgs.screen.print_area);
-    gtk_widget_show(ps->w_callouts);
+    // if we're drawing a box within the page body, make sure it
+    // remains within margins
+    if(!_in_area(ps->x2, ps->y2, &ps->imgs.screen.print_area))
+      _clamp_to_area(&ps->x2, &ps->y2, &ps->imgs.screen.print_area);
   }
-
-  // once we're drawing a box in the page body, make sure it remains
-  // within it
-  if(_in_area(ps->x1, ps->y1, &ps->imgs.screen.print_area) &&
-     !_in_area(ps->x2, ps->y2, &ps->imgs.screen.print_area))
+  else
   {
-    _clamp_to_area(&ps->x2, &ps->y2, &ps->imgs.screen.print_area);
+    // if we started dragging outside of the page body area but are in
+    // it now, drag origin jumps into page body
+    if(_in_area(ps->x2, ps->y2, &ps->imgs.screen.print_area))
+    {
+      _clamp_to_area(&ps->x1, &ps->y1, &ps->imgs.screen.print_area);
+      gtk_widget_show(ps->w_callouts);
+    }
   }
-
-  printf("_new_box_drag_update %f,%f -> %f,%f\n", offset_x, offset_y, ps->x2, ps->y2);
 
   _snap_to_grid(ps, &ps->x2, &ps->y2);
   gtk_widget_queue_draw(ps->w_box_outline);
   gtk_widget_queue_draw(ps->w_new_box);
-
-  return FALSE;
 }
 
-static gboolean _new_box_drag_end(GtkGestureDrag *gesture,
-                                  gdouble offset_x, gdouble offset_y,
-                                  dt_lib_print_settings_t *ps)
+static void _new_box_drag_end(GtkGestureDrag *gesture,
+                              gdouble offset_x, gdouble offset_y,
+                              dt_lib_print_settings_t *ps)
 {
   // FIXME: handle if leave view before drag ends!
   printf("_new_box_drag_end %f,%f\n", offset_x, offset_y);
+
+  // FIXME: if the box is entirely out of margins, don't create it
 
   // new area
   const int idx = ps->imgs.count++;
@@ -1847,8 +1840,6 @@ static gboolean _new_box_drag_end(GtkGestureDrag *gesture,
                         NULL);
   gtk_widget_set_sensitive(ps->del, TRUE);
   gtk_widget_hide(ps->w_new_box);
-
-  return FALSE;
 }
 
 void _cairo_rectangle(cairo_t *cr,
@@ -2092,18 +2083,12 @@ static gboolean _draw_new_box(GtkWidget *self, cairo_t *cr,
   if(!gtk_widget_translate_coordinates(ps->w_overlay, ps->w_new_box,
                                        round(ps->x1), round(ps->y1),
                                        &view_x, &view_y))
-  {
-    // FIXME: just return without a diagnostic, save noise to debug
-    dt_print(DT_DEBUG_ALWAYS, "_draw_new_box: could not translate from page coordinates to center area\n");
     return FALSE;
-  }
 
   double x = view_x;
   double y = view_y;
   double width = ps->x2 - ps->x1;
   double height = ps->y2 - ps->y1;
-  printf("x1 %f y1 %f x2 %f y2 %f\n", ps->x1, ps->y1, ps->x2, ps->y2);
-  printf(" view_x %d view_y %d width %f height %f\n", view_x, view_y, width, height);
 
   // unlike cairo GTK render functions don't handle negative dimensions
   if(width < 0)
@@ -2117,7 +2102,6 @@ static gboolean _draw_new_box(GtkWidget *self, cairo_t *cr,
     height = -height;
   }
 
-  printf(" rendering box %f %f %f %f\n", x,y,width,height);
   GtkStyleContext *const context = gtk_widget_get_style_context(self);
   gtk_render_background(context, cr, x, y, width, height);
   gtk_render_frame(context, cr, x, y, width, height);

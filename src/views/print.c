@@ -229,12 +229,7 @@ static gboolean _event_draw_hw_margins(GtkWidget *widget, cairo_t *cr,
 {
   gint page_x, page_y;
   if(!gtk_widget_translate_coordinates(prt->w_margins, widget, 0, 0, &page_x, &page_y))
-  {
-    // FIXME: presumably the page widget is not yet realized
-    // FIXME: just return without a diagnostic, save noise to debug
-    dt_print(DT_DEBUG_ALWAYS, "_event_draw_hw_margins: could not translate from page to hw coordinates\n");
     return FALSE;
-  }
 
   GtkStyleContext *context = gtk_widget_get_style_context(widget);
   // it would be more succinct to use gtk_render_line(), but it always
