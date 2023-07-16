@@ -2345,3 +2345,9 @@ Details :
 {
   color: rgba(100%, 20%, 20%, 0.6);
 }
+
+#print-box-new
+{
+  background-color: alpha(@bg_color, 0.8);
+  border: 0.14em dashed alpha(@border_color, 0.8);
+}

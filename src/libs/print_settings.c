@@ -77,11 +77,12 @@ typedef enum _unit_t
 } _unit_t;
 
 
-static const float units[UNIT_N] = { 1.0f, 0.1f, 1.0f/25.4f };
+static const double units[UNIT_N] = { 1.0f, 0.1f, 1.0f/25.4f };
 static const gchar *_unit_names[] = { N_("mm"), N_("cm"), N_("inch"), NULL };
 
 typedef struct dt_lib_print_settings_t
 {
+  GtkWidget *w_overlay;            // GtkOverlay -- holds page contents
   GtkWidget *w_grid;               // GtkDrawingArea -- grid
   GtkWidget *w_layout_boxes;       // GtkDrawingArea -- images in boxes
   GtkWidget *w_box_outline;        // GtkDrawingArea -- outline of current selected box
@@ -116,7 +117,7 @@ typedef struct dt_lib_print_settings_t
 
   // for adding new area
   gboolean dragging;
-  float x1, y1, x2, y2;
+  gdouble x1, y1, x2, y2;
   int selected;                    // selected area in imgs.box
   int last_selected;               // last selected area to edit
   dt_box_control_set sel_controls; // which border/corner is selected
@@ -215,13 +216,13 @@ static float _to_mm(dt_lib_print_settings_t *ps,
 }
 
 // horizontal mm to pixels
-static float _mm_to_hscreen(dt_lib_print_settings_t *ps, const float value)
+static gdouble _mm_to_hscreen(dt_lib_print_settings_t *ps, const gdouble value)
 {
   return ps->imgs.screen.page_width * value / _get_page_width_mm(&ps->prt);
 }
 
 // vertical mm to pixels
-static float _mm_to_vscreen(dt_lib_print_settings_t *ps, const float value)
+static gdouble _mm_to_vscreen(dt_lib_print_settings_t *ps, const float value)
 {
   return ps->imgs.screen.page_height * value / _get_page_height_mm(&ps->prt);
 }
@@ -608,10 +609,11 @@ static void _page_new_area_clicked(GtkWidget *widget, gpointer user_data)
   gdk_window_set_cursor(gtk_widget_get_window(gtk_widget_get_parent(ps->w_new_box)),
                         cursor);
 
-  // FIXME: cue it that not dragging now, so it doesn't display a stale ovelay
+  ps->dragging = FALSE;
   gtk_widget_show(ps->w_new_box);
   ps->has_changed = TRUE;
   // FIXME: should highlight the button so long as new area is active
+  printf("_page_new_area_clicked exiting\n");
 }
 
 static void _page_clear_area_clicked(GtkWidget *widget, gpointer user_data)
@@ -1490,30 +1492,30 @@ int mouse_leave(struct dt_lib_module_t *self)
 }
 
 static void _snap_to_grid(dt_lib_print_settings_t *ps,
-                          float *x, float *y)
+                          gdouble *x, gdouble *y)
 {
   // FIXME: there should also be a snap-to-margin, perhaps always on, as if snap to margin in screen pixels it should really snap to margin in mm, might may be different -- unless we make all measurements relative in terms of margin, or deliberately make margins pixel accurate and the page edges be a bit sloppy
   if(gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(ps->snap_grid)))
   {
     // only snap to the grid if within 5 pixels
-    const float diff = DT_PIXEL_APPLY_DPI(5);
-    const float step =
+    const gdouble diff = DT_PIXEL_APPLY_DPI(5);
+    const gdouble step =
       gtk_spin_button_get_value(GTK_SPIN_BUTTON(ps->grid_size)) / units[ps->unit];
 
-    const float h_step = _mm_to_hscreen(ps, step);
-    const float h_dist = fmodf(*x, h_step);
+    const gdouble h_step = _mm_to_hscreen(ps, step);
+    const float h_dist = fmod(*x, h_step);
     if((h_dist < diff) || (h_dist > h_step - diff))
-      *x = h_step * roundf(*x / h_step);
+      *x = h_step * round(*x / h_step);
 
     const float v_step = _mm_to_vscreen(ps, step);
-    const float v_dist = fmodf(*y, v_step);
+    const float v_dist = fmod(*y, v_step);
     if((v_dist < diff) || (v_dist > v_step - diff))
-      *y = v_step * roundf(*y / v_step);
+      *y = v_step * round(*y / v_step);
   }
 }
 
 static gboolean _layout_box_mouse_moved(GtkWidget *w, GdkEventMotion *event,
-                             dt_lib_print_settings_t *ps)
+                                        dt_lib_print_settings_t *ps)
 {
   const double x = event->x;
   const double y = event->y;
@@ -1602,7 +1604,7 @@ static gboolean _layout_box_mouse_moved(GtkWidget *w, GdkEventMotion *event,
   return FALSE;
 }
 
-static void _swap(float *a, float *b)
+static void _swap(gdouble *a, gdouble *b)
 {
   const float tmp = *a;
   *a = *b;
@@ -1610,7 +1612,7 @@ static void _swap(float *a, float *b)
 }
 
 static gboolean _layout_box_button_released(GtkWidget *w, GdkEventButton *event,
-                                 dt_lib_print_settings_t *ps)
+                                            dt_lib_print_settings_t *ps)
 {
   if(ps->dragging)
   {
@@ -1655,7 +1657,7 @@ static gboolean _layout_box_button_released(GtkWidget *w, GdkEventButton *event,
 }
 
 static gboolean _layout_box_button_pressed(GtkWidget *w, GdkEventButton *event,
-                                dt_lib_print_settings_t *ps)
+                                           dt_lib_print_settings_t *ps)
 {
   const double x = event->x;
   const double y = event->y;
@@ -1723,15 +1725,30 @@ static gboolean _new_box_drag_begin(GtkGestureDrag *gesture,
 
   // FIXME: should gtk_widget_grab_focus(w)? this is what the gtk.c _button_pressed handler does
 
-  ps->click_pos_x = start_x;
-  ps->click_pos_y = start_y;
-  // FIXME: needed?
-  ps->last_selected = -1;
+  // FIXME: we can set click_pos_[xy] to help us keep track of whether we started out of bounds
+  //ps->click_pos_x = start_x;
+  //ps->click_pos_y = start_y;
+
+  ps->dragging = TRUE;
 
   // FIXME: needed?
+  ps->last_selected = -1;
+  // FIXME: needed?
   ps->selected = -1;
-  ps->x1 = ps->x2 = start_x;
-  ps->y1 = ps->y2 = start_y;
+
+ gint page_x, page_y;
+ if(!gtk_widget_translate_coordinates(ps->w_new_box, ps->w_overlay,
+                                      round(start_x), round(start_y), &page_x, &page_y))
+  {
+    // FIXME: just return without a diagnostic, save noise to debug
+    dt_print(DT_DEBUG_ALWAYS, "_new_box_button_pressed: could not translate from center area to page coordinates\n");
+    return FALSE;
+  }
+ printf("_new_box_button_pressed at center area %f,%f -> page %d,%d\n", start_x, start_y, page_x, page_y);
+  // FIXME: if we've seriously clamped this, then should we record what we've clamped from?
+
+  ps->x1 = ps->x2 = page_x;
+  ps->y1 = ps->y2 = page_y;
 
   _snap_to_grid(ps, &ps->x1, &ps->y1);
 
@@ -1742,23 +1759,6 @@ static gboolean _new_box_drag_update(GtkGestureDrag *gesture,
                                      gdouble offset_x, gdouble offset_y,
                                      dt_lib_print_settings_t *ps)
 {
-#if 0
- gint page_x, page_y;
-
-  if(!gtk_widget_translate_coordinates(w, prt->w_margins, round(cx), round(cy), &page_x, &page_y))
-  {
-    // FIXME: just return without a diagnostic, save noise to debug
-    dt_print(DT_DEBUG_ALWAYS, "_new_box_button_pressed: could not translate from center area to page coordinates\n");
-    return FALSE;
-  }
-  printf("_new_box_button_pressed at center area %f,%f -> page %d,%d\n", page_x, page_y);
-  // FIXME: if we've seriously clamped this, then should we record what we've clamped from?
-  page_x = CLAMP(page_x, 0, ps->imgs.screen.page_width);
-  page_y = CLAMP(page_y, 0, ps->imgs.screen.page_height);
-#endif
-
-  // FIXME: clamp start/end in page coords
-  // FIXME: store this somewhere else? or will there ever only be one drag at a time?
   ps->x2 = ps->x1 + offset_x;
   ps->y2 = ps->y1 + offset_y;
 
@@ -2047,17 +2047,43 @@ static gboolean _draw_box_outline(GtkWidget *self, cairo_t *cr,
 static gboolean _draw_new_box(GtkWidget *self, cairo_t *cr,
                               dt_lib_print_settings_t *ps)
 {
-  float x1, y1, x2, y2;                      // box screen coordinates
+  printf("in _draw_new_box\n");
+  if(!ps->dragging) return FALSE;
 
-  // FIXME: deal with difference between new box and page coordinates
-  x1      = ps->x1;
-  y1      = ps->y1;
-  x2      = ps->x2;
-  y2      = ps->y2;
+  gint view_x, view_y;
+  if(!gtk_widget_translate_coordinates(ps->w_overlay, ps->w_new_box,
+                                       round(ps->x1), round(ps->y1),
+                                       &view_x, &view_y))
+  {
+    // FIXME: just return without a diagnostic, save noise to debug
+    dt_print(DT_DEBUG_ALWAYS, "_draw_new_box: could not translate from page coordinates to center area\n");
+    return FALSE;
+  }
 
-  // FIXME: pull this from CSS, use gtk_render_background()
-  cairo_set_source_rgba(cr, .4, .4, .4, 1.0);
-  _cairo_rectangle(cr, ps->sel_controls, x1, y1, x2, y2);
+  // FIXME: is there any benefit to calculating this and drawing this? or will the callouts take care of this more easily?
+  double x = view_x;
+  double y = view_y;
+  double width = ps->x2 - ps->x1;
+  double height = ps->y2 - ps->y1;
+  printf("x1 %f y1 %f x2 %f y2 %f\n", ps->x1, ps->y1, ps->x2, ps->y2);
+  printf(" view_x %d view_y %d width %f height %f\n", view_x, view_y, width, height);
+
+  // unlike cairo GTK render functions don't handle negative dimensions
+  if(width < 0)
+  {
+    x = x + width;
+    width = -width;
+  }
+  if(height < 0)
+  {
+    y = y + height;
+    height = -height;
+  }
+
+  printf(" rendering box %f %f %f %f\n", x,y,width,height);
+  GtkStyleContext *const context = gtk_widget_get_style_context(self);
+  gtk_render_background(context, cr, x, y, width, height);
+  gtk_render_frame(context, cr, x, y, width, height);
 
   return FALSE;
 }
@@ -2375,12 +2401,12 @@ void gui_init(dt_lib_module_t *self)
   d->w_callouts = gtk_drawing_area_new();
   gtk_widget_set_name(d->w_callouts, "print-callouts");
 
-  GtkWidget *w_overlay = gtk_overlay_new();
-  gtk_container_add(GTK_CONTAINER(w_overlay), d->w_grid);
-  gtk_overlay_add_overlay(GTK_OVERLAY(w_overlay), d->w_layout_boxes);
-  gtk_overlay_add_overlay(GTK_OVERLAY(w_overlay), d->w_box_outline);
-  gtk_overlay_add_overlay(GTK_OVERLAY(w_overlay), d->w_callouts);
-  gtk_widget_set_name(w_overlay, "print-page-overlay");
+  d->w_overlay = gtk_overlay_new();
+  gtk_container_add(GTK_CONTAINER(d->w_overlay), d->w_grid);
+  gtk_overlay_add_overlay(GTK_OVERLAY(d->w_overlay), d->w_layout_boxes);
+  gtk_overlay_add_overlay(GTK_OVERLAY(d->w_overlay), d->w_box_outline);
+  gtk_overlay_add_overlay(GTK_OVERLAY(d->w_overlay), d->w_callouts);
+  gtk_widget_set_name(d->w_overlay, "print-page-overlay");
 
   // FIXME: these will start being connected to event boxes
   gtk_widget_set_events(d->w_callouts,
@@ -2419,7 +2445,7 @@ void gui_init(dt_lib_module_t *self)
   // FIXME: don't show this initially, only when box is selected or when dragging
   gtk_widget_show(d->w_box_outline);
   gtk_widget_show(d->w_layout_boxes);
-  gtk_widget_show(w_overlay);
+  gtk_widget_show(d->w_overlay);
 
   // an overlay for creating new layout boxes, separate so it can full
   // full center area (unlike w_overlay which only fills a frame with
@@ -2444,7 +2470,7 @@ void gui_init(dt_lib_module_t *self)
   // the print view needs access as it will put these in the center
   // area when in print view
   // FIXME: can we just do that work here?
-  darktable.lib->proxy.print.w_settings_main = w_overlay;
+  darktable.lib->proxy.print.w_settings_main = d->w_overlay;
   darktable.lib->proxy.print.w_new_box = d->w_new_box;
 
   //  create the spin-button now as values could be set when the
