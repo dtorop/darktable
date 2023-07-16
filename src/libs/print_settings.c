@@ -1803,42 +1803,40 @@ static void _new_box_drag_end(GtkGestureDrag *gesture,
   // FIXME: handle if leave view before drag ends!
   printf("_new_box_drag_end %f,%f\n", offset_x, offset_y);
 
-  // FIXME: if the box is entirely out of margins, don't create it
+  // only create box if it is within margins
+  if(gtk_widget_get_visible(ps->w_callouts))
+  {
+    // new area
+    const int idx = ps->imgs.count++;
 
-  // new area
-  const int idx = ps->imgs.count++;
+    // FIXME: this is shared code with box drag, make it a helper function
+    // make sure the area is in the the printable area taking into account the margins
+    // FIXME: we don't need to check for margins as the GUI code has already done this
 
-  // FIXME: convert to page coords
+    // don't allow a too small area
+    if(ps->x2 < ps->x1) _swap(&ps->x1, &ps->x2);
+    if(ps->y2 < ps->y1) _swap(&ps->y1, &ps->y2);
 
-  // FIXME: this is shared code with box drag, make it a helper function
-  // make sure the area is in the the printable area taking into account the margins
-  // FIXME: we don't need to check for margins as the GUI code has already done this
+    // FIXME: if right against margins by pixels, should set box to exactly margins rather than pixel translation to margins
 
-  // don't allow a too small area
-  if(ps->x2 < ps->x1) _swap(&ps->x1, &ps->x2);
-  if(ps->y2 < ps->y1) _swap(&ps->y1, &ps->y2);
+    const float dx = ps->x2 - ps->x1;
+    const float dy = ps->y2 - ps->y1;
 
-  // FIXME: if right against margins by pixels, should set box to exactly margins rather than pixel translation to margins
+    dt_printing_setup_box(&ps->imgs, idx, ps->x1, ps->y1, dx, dy);
+    // make the new created box the last edited one
+    ps->last_selected = idx;
+    _fill_box_values(ps);
 
-  const float dx = ps->x2 - ps->x1;
-  const float dy = ps->y2 - ps->y1;
+    gtk_widget_queue_draw(ps->w_layout_boxes);
+    gtk_widget_queue_draw(ps->w_callouts);
+    gtk_widget_set_sensitive(ps->del, TRUE);
 
-  dt_printing_setup_box(&ps->imgs, idx, ps->x1, ps->y1, dx, dy);
-  // make the new created box the last edited one
-  ps->last_selected = idx;
-  _fill_box_values(ps);
-
-  gtk_widget_queue_draw(ps->w_layout_boxes);
-  gtk_widget_queue_draw(ps->w_callouts);
+    _update_slider(ps);
+  }
 
   ps->dragging = FALSE;
-
-  _update_slider(ps);
-
-  printf("changing cursor back, hiding new box\n");
   gdk_window_set_cursor(gtk_widget_get_window(gtk_widget_get_parent(ps->w_new_box)),
                         NULL);
-  gtk_widget_set_sensitive(ps->del, TRUE);
   gtk_widget_hide(ps->w_new_box);
 }
 
