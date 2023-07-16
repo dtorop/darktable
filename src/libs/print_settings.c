@@ -604,6 +604,7 @@ static void _page_new_area_clicked(GtkWidget *widget, gpointer user_data)
     return;
   }
 
+  // FIXME: this is hard to discern, use a different cursor
   GdkCursor *const cursor = gdk_cursor_new_from_name(gdk_display_get_default(),
                                                      "crosshair");
   gdk_window_set_cursor(gtk_widget_get_window(gtk_widget_get_parent(ps->w_new_box)),
@@ -1438,6 +1439,7 @@ void view_leave(struct dt_lib_module_t *self,
 
   // cancel any "new image area" mode
   gtk_widget_hide(ps->w_new_box);
+  ps->dragging = FALSE;
 
   DT_DEBUG_CONTROL_SIGNAL_DISCONNECT(darktable.signals,
                                      G_CALLBACK(_print_settings_activate_callback),
@@ -1717,6 +1719,21 @@ static gboolean _layout_box_button_pressed(GtkWidget *w, GdkEventButton *event,
   return FALSE;
 }
 
+// FIXME: just take dt_lib_print_settings_t, and find area from that
+// FIXME: does this duplicate another function?
+static gboolean _in_area(gdouble x, gdouble y, dt_image_pos *area)
+{
+  return(x >= area->x && x <= area->x + area->width &&
+         y >= area->y && y <= area->y + area->height);
+}
+
+// FIXME: does this duplicate another function?
+static void _clamp_to_area(gdouble *x, gdouble *y, dt_image_pos *area)
+{
+  *x = CLAMP(*x, area->x, area->x + area->width);
+  *y = CLAMP(*y, area->y, area->y + area->height);
+}
+
 static gboolean _new_box_drag_begin(GtkGestureDrag *gesture,
                                     gdouble start_x, gdouble start_y,
                                     dt_lib_print_settings_t *ps)
@@ -1748,21 +1765,10 @@ static gboolean _new_box_drag_begin(GtkGestureDrag *gesture,
 
   _snap_to_grid(ps, &ps->x1, &ps->y1);
 
+  gtk_widget_set_visible(ps->w_callouts, _in_area(ps->click_pos_x, ps->click_pos_y, &ps->imgs.screen.print_area));
+  gtk_widget_queue_draw(ps->w_new_box);
+
   return FALSE;
-}
-
-// FIXME: does this duplicate another function?
-static gboolean _in_area(gdouble x, gdouble y, dt_image_pos *area)
-{
-  return(x >= area->x && x <= area->x + area->width &&
-         y >= area->y && y <= area->y + area->height);
-}
-
-// FIXME: does this duplicate another function?
-static void _clamp_to_area(gdouble *x, gdouble *y, dt_image_pos *area)
-{
-  *x = CLAMP(*x, area->x, area->x + area->width);
-  *y = CLAMP(*y, area->y, area->y + area->height);
 }
 
 static gboolean _new_box_drag_update(GtkGestureDrag *gesture,
@@ -1772,16 +1778,20 @@ static gboolean _new_box_drag_update(GtkGestureDrag *gesture,
   ps->x2 = ps->click_pos_x + offset_x;
   ps->y2 = ps->click_pos_y + offset_y;
 
-  // if we started outside of the printable area but are in it now,
-  // bring origin into printable area
+  // FIXME: since we hide callouts until the box is in the page body, we can then swap the first _in_area() check for a !gtk_widget_get_visible(w->callouts)
+  // if we started outside of the page body area but are in it now,
+  // bring origin into page body
   if(!_in_area(ps->x1, ps->y1, &ps->imgs.screen.print_area) &&
      _in_area(ps->x2, ps->y2, &ps->imgs.screen.print_area))
   {
     _clamp_to_area(&ps->x1, &ps->y1, &ps->imgs.screen.print_area);
+    gtk_widget_show(ps->w_callouts);
   }
 
-  // FIXME: only do this once x1/y1 has been clamped?
-  if(!_in_area(ps->x2, ps->y2, &ps->imgs.screen.print_area))
+  // once we're drawing a box in the page body, make sure it remains
+  // within it
+  if(_in_area(ps->x1, ps->y1, &ps->imgs.screen.print_area) &&
+     !_in_area(ps->x2, ps->y2, &ps->imgs.screen.print_area))
   {
     _clamp_to_area(&ps->x2, &ps->y2, &ps->imgs.screen.print_area);
   }
@@ -1790,6 +1800,7 @@ static gboolean _new_box_drag_update(GtkGestureDrag *gesture,
 
   _snap_to_grid(ps, &ps->x2, &ps->y2);
   gtk_widget_queue_draw(ps->w_box_outline);
+  gtk_widget_queue_draw(ps->w_new_box);
 
   return FALSE;
 }
@@ -1798,6 +1809,7 @@ static gboolean _new_box_drag_end(GtkGestureDrag *gesture,
                                   gdouble offset_x, gdouble offset_y,
                                   dt_lib_print_settings_t *ps)
 {
+  // FIXME: handle if leave view before drag ends!
   printf("_new_box_drag_end %f,%f\n", offset_x, offset_y);
 
   // new area
@@ -2074,7 +2086,6 @@ static gboolean _draw_box_outline(GtkWidget *self, cairo_t *cr,
 static gboolean _draw_new_box(GtkWidget *self, cairo_t *cr,
                               dt_lib_print_settings_t *ps)
 {
-  printf("in _draw_new_box\n");
   if(!ps->dragging) return FALSE;
 
   gint view_x, view_y;
@@ -2087,7 +2098,6 @@ static gboolean _draw_new_box(GtkWidget *self, cairo_t *cr,
     return FALSE;
   }
 
-  // FIXME: is there any benefit to calculating this and drawing this? or will the callouts take care of this more easily?
   double x = view_x;
   double y = view_y;
   double width = ps->x2 - ps->x1;
