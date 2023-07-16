@@ -121,7 +121,7 @@ typedef struct dt_lib_print_settings_t
   int selected;                    // selected area in imgs.box
   int last_selected;               // last selected area to edit
   dt_box_control_set sel_controls; // which border/corner is selected
-  float click_pos_x, click_pos_y;
+  gdouble click_pos_x, click_pos_y;
   gboolean has_changed;            // layout box has changed for default full page
 } dt_lib_print_settings_t;
 
@@ -1725,10 +1725,6 @@ static gboolean _new_box_drag_begin(GtkGestureDrag *gesture,
 
   // FIXME: should gtk_widget_grab_focus(w)? this is what the gtk.c _button_pressed handler does
 
-  // FIXME: we can set click_pos_[xy] to help us keep track of whether we started out of bounds
-  //ps->click_pos_x = start_x;
-  //ps->click_pos_y = start_y;
-
   ps->dragging = TRUE;
 
   // FIXME: needed?
@@ -1736,31 +1732,49 @@ static gboolean _new_box_drag_begin(GtkGestureDrag *gesture,
   // FIXME: needed?
   ps->selected = -1;
 
- gint page_x, page_y;
- if(!gtk_widget_translate_coordinates(ps->w_new_box, ps->w_overlay,
-                                      round(start_x), round(start_y), &page_x, &page_y))
+  gint page_x, page_y;
+  if(!gtk_widget_translate_coordinates(ps->w_new_box, ps->w_overlay,
+                                       round(start_x), round(start_y), &page_x, &page_y))
   {
     // FIXME: just return without a diagnostic, save noise to debug
     dt_print(DT_DEBUG_ALWAYS, "_new_box_button_pressed: could not translate from center area to page coordinates\n");
     return FALSE;
   }
- printf("_new_box_button_pressed at center area %f,%f -> page %d,%d\n", start_x, start_y, page_x, page_y);
+  printf("_new_box_button_pressed at center area %f,%f -> page %d,%d\n", start_x, start_y, page_x, page_y);
   // FIXME: if we've seriously clamped this, then should we record what we've clamped from?
 
-  ps->x1 = ps->x2 = page_x;
-  ps->y1 = ps->y2 = page_y;
+  ps->click_pos_x = ps->x1 = ps->x2 = page_x;
+  ps->click_pos_y = ps->y1 = ps->y2 = page_y;
 
   _snap_to_grid(ps, &ps->x1, &ps->y1);
 
   return FALSE;
 }
 
+// FIXME: does this duplicate another function?
+static gboolean _in_area(gdouble x, gdouble y, dt_image_pos *area)
+{
+  return(x >= area->x && x <= area->x + area->width &&
+         y >= area->y && y <= area->y + area->height);
+}
+
 static gboolean _new_box_drag_update(GtkGestureDrag *gesture,
                                      gdouble offset_x, gdouble offset_y,
                                      dt_lib_print_settings_t *ps)
 {
-  ps->x2 = ps->x1 + offset_x;
-  ps->y2 = ps->y1 + offset_y;
+  ps->x2 = ps->click_pos_x + offset_x;
+  ps->y2 = ps->click_pos_y + offset_y;
+
+  // if we started outside of the printable area but are in it now,
+  // bring origin into printable area
+  if(!_in_area(ps->x1, ps->y1, &ps->imgs.screen.print_area) &&
+     _in_area(ps->x2, ps->y2, &ps->imgs.screen.print_area))
+  {
+    ps->x1 = CLAMP(ps->x1, ps->imgs.screen.print_area.x,
+                   ps->imgs.screen.print_area.x + ps->imgs.screen.print_area.width);
+    ps->y1 = CLAMP(ps->y1, ps->imgs.screen.print_area.y,
+                   ps->imgs.screen.print_area.y + ps->imgs.screen.print_area.height);
+  }
 
   printf("_new_box_drag_update %f,%f -> %f,%f\n", offset_x, offset_y, ps->x2, ps->y2);
 
