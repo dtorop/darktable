@@ -1758,6 +1758,13 @@ static gboolean _in_area(gdouble x, gdouble y, dt_image_pos *area)
          y >= area->y && y <= area->y + area->height);
 }
 
+// FIXME: does this duplicate another function?
+static void _clamp_to_area(gdouble *x, gdouble *y, dt_image_pos *area)
+{
+  *x = CLAMP(*x, area->x, area->x + area->width);
+  *y = CLAMP(*y, area->y, area->y + area->height);
+}
+
 static gboolean _new_box_drag_update(GtkGestureDrag *gesture,
                                      gdouble offset_x, gdouble offset_y,
                                      dt_lib_print_settings_t *ps)
@@ -1770,18 +1777,13 @@ static gboolean _new_box_drag_update(GtkGestureDrag *gesture,
   if(!_in_area(ps->x1, ps->y1, &ps->imgs.screen.print_area) &&
      _in_area(ps->x2, ps->y2, &ps->imgs.screen.print_area))
   {
-    ps->x1 = CLAMP(ps->x1, ps->imgs.screen.print_area.x,
-                   ps->imgs.screen.print_area.x + ps->imgs.screen.print_area.width);
-    ps->y1 = CLAMP(ps->y1, ps->imgs.screen.print_area.y,
-                   ps->imgs.screen.print_area.y + ps->imgs.screen.print_area.height);
+    _clamp_to_area(&ps->x1, &ps->y1, &ps->imgs.screen.print_area);
   }
 
+  // FIXME: only do this once x1/y1 has been clamped?
   if(!_in_area(ps->x2, ps->y2, &ps->imgs.screen.print_area))
   {
-    ps->x2 = CLAMP(ps->x2, ps->imgs.screen.print_area.x,
-                   ps->imgs.screen.print_area.x + ps->imgs.screen.print_area.width);
-    ps->y2 = CLAMP(ps->y2, ps->imgs.screen.print_area.y,
-                   ps->imgs.screen.print_area.y + ps->imgs.screen.print_area.height);
+    _clamp_to_area(&ps->x2, &ps->y2, &ps->imgs.screen.print_area);
   }
 
   printf("_new_box_drag_update %f,%f -> %f,%f\n", offset_x, offset_y, ps->x2, ps->y2);
@@ -1805,10 +1807,13 @@ static gboolean _new_box_drag_end(GtkGestureDrag *gesture,
 
   // FIXME: this is shared code with box drag, make it a helper function
   // make sure the area is in the the printable area taking into account the margins
+  // FIXME: we don't need to check for margins as the GUI code has already done this
 
   // don't allow a too small area
   if(ps->x2 < ps->x1) _swap(&ps->x1, &ps->x2);
   if(ps->y2 < ps->y1) _swap(&ps->y1, &ps->y2);
+
+  // FIXME: if right against margins by pixels, should set box to exactly margins rather than pixel translation to margins
 
   const float dx = ps->x2 - ps->x1;
   const float dy = ps->y2 - ps->y1;
