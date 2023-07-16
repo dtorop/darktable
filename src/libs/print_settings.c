@@ -1776,6 +1776,14 @@ static gboolean _new_box_drag_update(GtkGestureDrag *gesture,
                    ps->imgs.screen.print_area.y + ps->imgs.screen.print_area.height);
   }
 
+  if(!_in_area(ps->x2, ps->y2, &ps->imgs.screen.print_area))
+  {
+    ps->x2 = CLAMP(ps->x2, ps->imgs.screen.print_area.x,
+                   ps->imgs.screen.print_area.x + ps->imgs.screen.print_area.width);
+    ps->y2 = CLAMP(ps->y2, ps->imgs.screen.print_area.y,
+                   ps->imgs.screen.print_area.y + ps->imgs.screen.print_area.height);
+  }
+
   printf("_new_box_drag_update %f,%f -> %f,%f\n", offset_x, offset_y, ps->x2, ps->y2);
 
   _snap_to_grid(ps, &ps->x2, &ps->y2);
