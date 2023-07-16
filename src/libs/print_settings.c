@@ -82,6 +82,7 @@ static const gchar *_unit_names[] = { N_("mm"), N_("cm"), N_("inch"), NULL };
 
 typedef struct dt_lib_print_settings_t
 {
+  // widgets for center area
   GtkWidget *w_overlay;            // GtkOverlay -- holds page contents
   GtkWidget *w_grid;               // GtkDrawingArea -- grid
   GtkWidget *w_layout_boxes;       // GtkDrawingArea -- images in boxes
@@ -89,6 +90,9 @@ typedef struct dt_lib_print_settings_t
   GtkWidget *w_new_box;            // GtkDrawingArea -- outline when drawing layout box
   GtkWidget *w_callouts;           // GtkDrawingArea -- callouts of image box dimensions
 
+  GtkGesture *g_new_box;           // GtkGestureDrag -- creates a new layout box
+
+  // widgets in right panel
   GtkWidget *profile, *intent, *style, *style_mode, *papers, *media;
   GtkWidget *printers, *orientation, *pprofile, *pintent;
   GtkWidget *width, *height, *black_point_compensation;
@@ -604,12 +608,7 @@ static void _page_new_area_clicked(GtkWidget *widget, gpointer user_data)
     return;
   }
 
-  // FIXME: this is hard to discern, use a different cursor
-  GdkCursor *const cursor = gdk_cursor_new_from_name(gdk_display_get_default(),
-                                                     "crosshair");
-  gdk_window_set_cursor(gtk_widget_get_window(gtk_widget_get_parent(ps->w_new_box)),
-                        cursor);
-
+  dt_control_change_cursor(GDK_PLUS);
   ps->dragging = FALSE;
   gtk_widget_show(ps->w_new_box);
   ps->has_changed = TRUE;
@@ -1439,7 +1438,9 @@ void view_leave(struct dt_lib_module_t *self,
 
   // cancel any "new image area" mode
   gtk_widget_hide(ps->w_new_box);
+  // FIXME: can we get this from ps->g_new_box?
   ps->dragging = FALSE;
+  gtk_event_controller_reset(GTK_EVENT_CONTROLLER(ps->g_new_box));
 
   DT_DEBUG_CONTROL_SIGNAL_DISCONNECT(darktable.signals,
                                      G_CALLBACK(_print_settings_activate_callback),
@@ -1719,7 +1720,14 @@ static gboolean _layout_box_button_pressed(GtkWidget *w, GdkEventButton *event,
   return FALSE;
 }
 
-// FIXME: just take dt_lib_print_settings_t, and find area from that
+static gboolean _new_box_enter(GtkWidget *w, GdkEventCrossing event,
+                               gpointer user_data)
+{
+  // until we modernize by connecting cursor to a window, this is necessary
+  dt_control_change_cursor(GDK_PLUS);
+  return FALSE;
+}
+
 // FIXME: does this duplicate another function?
 static gboolean _in_area(gdouble x, gdouble y, dt_image_pos *area)
 {
@@ -1800,9 +1808,6 @@ static void _new_box_drag_end(GtkGestureDrag *gesture,
                               gdouble offset_x, gdouble offset_y,
                               dt_lib_print_settings_t *ps)
 {
-  // FIXME: handle if leave view before drag ends!
-  printf("_new_box_drag_end %f,%f\n", offset_x, offset_y);
-
   // only create box if it is within margins
   if(gtk_widget_get_visible(ps->w_callouts))
   {
@@ -1834,9 +1839,9 @@ static void _new_box_drag_end(GtkGestureDrag *gesture,
     _update_slider(ps);
   }
 
+  // FIXME: can get this from gesture?
   ps->dragging = FALSE;
-  gdk_window_set_cursor(gtk_widget_get_window(gtk_widget_get_parent(ps->w_new_box)),
-                        NULL);
+  dt_control_change_cursor(GDK_LEFT_PTR);
   gtk_widget_hide(ps->w_new_box);
 }
 
@@ -2475,15 +2480,19 @@ void gui_init(dt_lib_module_t *self)
   d->w_new_box = gtk_drawing_area_new();
   gtk_widget_set_name(d->w_new_box, "print-box-new");
 
+  gtk_widget_set_events(d->w_new_box, GDK_ENTER_NOTIFY_MASK);
+
   g_signal_connect(G_OBJECT(d->w_new_box), "draw",
                    G_CALLBACK(_draw_new_box), d);
+  g_signal_connect(G_OBJECT(d->w_new_box), "enter-notify-event",
+                   G_CALLBACK(_new_box_enter), NULL);
 
-  GtkGesture *g_event = gtk_gesture_drag_new(d->w_new_box);
-  g_signal_connect(g_event, "drag-begin",
+  d->g_new_box = gtk_gesture_drag_new(d->w_new_box);
+  g_signal_connect(d->g_new_box, "drag-begin",
                    G_CALLBACK(_new_box_drag_begin), d);
-  g_signal_connect(g_event, "drag-update",
+  g_signal_connect(d->g_new_box, "drag-update",
                    G_CALLBACK(_new_box_drag_update), d);
-  g_signal_connect(g_event, "drag-end",
+  g_signal_connect(d->g_new_box, "drag-end",
                    G_CALLBACK(_new_box_drag_end), d);
 
   // the print view needs access as it will put these in the center
