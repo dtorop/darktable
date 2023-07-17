@@ -219,6 +219,13 @@ static float _to_mm(dt_lib_print_settings_t *ps,
   return value / units[ps->unit];
 }
 
+// FIXME: use this and _to_mm() to clarify and avoid conversion errors
+static float _from_mm(dt_lib_print_settings_t *ps,
+                      const double value)
+{
+  return value * units[ps->unit];
+}
+
 // horizontal mm to pixels
 static gdouble _mm_to_hscreen(dt_lib_print_settings_t *ps, const gdouble value)
 {
@@ -467,28 +474,45 @@ static void _create_pdf(dt_job_t *job,
   }
 }
 
+// update spinbuttons giving current box in right panel
 void _fill_box_values(dt_lib_print_settings_t *ps)
 {
   float x = 0.0f, y = 0.0f, swidth = 0.0f, sheight = 0.0f;
+  int align = -1;
 
-  if(ps->last_selected != -1)
+  // FIXME: this duplicates code with _draw_callouts, merge them
+  if(gtk_gesture_is_active(ps->g_new_box) || ps->last_selected != -1)
   {
-    dt_image_box *box = &ps->imgs.box[ps->last_selected];
+    // FIXME: will this work for dragging an existing box as well?
+    //if(ps->dragging || gtk_gesture_is_active(ps->g_new_box))
+    if(gtk_gesture_is_active(ps->g_new_box))
+    {
+      x       = _from_mm(ps, _hscreen_to_mm(ps, ps->x1));
+      y       = _from_mm(ps, _vscreen_to_mm(ps, ps->y1));
+      swidth  = _from_mm(ps, _hscreen_to_mm(ps, ps->x2)) - x;
+      sheight = _from_mm(ps, _hscreen_to_mm(ps, ps->y2)) - y;
+    }
+    else
+    {
+      dt_image_box *box = &ps->imgs.box[ps->last_selected];
 
-    float width, height;
-    _get_page_dimension(&ps->prt, &width, &height);
+      float width, height;
+      _get_page_dimension(&ps->prt, &width, &height);
 
-    x       = _percent_unit_of(ps, width, box->pos.x);
-    y       = _percent_unit_of(ps, height, box->pos.y);
-    swidth  = _percent_unit_of(ps, width, box->pos.width);
-    sheight = _percent_unit_of(ps, height, box->pos.height);
+      x       = _percent_unit_of(ps, width, box->pos.x);
+      y       = _percent_unit_of(ps, height, box->pos.y);
+      swidth  = _percent_unit_of(ps, width, box->pos.width);
+      sheight = _percent_unit_of(ps, height, box->pos.height);
 
+      align = box->alignment;
+    }
+
+    ++darktable.gui->reset;
     for(int i=0; i<9; i++)
     {
-      ++darktable.gui->reset;
-      gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(ps->dtba[i]), (i == box->alignment));
-      --darktable.gui->reset;
+      gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(ps->dtba[i]), (i == align));
     }
+    --darktable.gui->reset;
   }
 
   // FIXME: if last_selected is -1, shouldn't these spin buttons be made insensitive as well as zeroed out? this will also keep adjusting zeroed out spin buttons from making an out of bounds memory reference
@@ -1756,10 +1780,12 @@ static void _new_box_drag_begin(GtkGestureDrag *gesture,
     return;
   }
 
-  ps->click_pos_x = ps->x1 = ps->x2 = page_x;
-  ps->click_pos_y = ps->y1 = ps->y2 = page_y;
-
+  ps->x1 = page_x;
+  ps->y1 = page_y;
   _snap_to_grid(ps, &ps->x1, &ps->y1);
+
+  ps->click_pos_x = ps->x2 = ps->x1;
+  ps->click_pos_y = ps->y2 = ps->y1;
 
   gtk_widget_set_visible(ps->w_callouts, _in_area(ps->click_pos_x, ps->click_pos_y, &ps->imgs.screen.print_area));
   gtk_widget_queue_draw(ps->w_new_box);
@@ -2100,6 +2126,8 @@ static gboolean _draw_new_box(GtkWidget *self, cairo_t *cr,
   GtkStyleContext *const context = gtk_widget_get_style_context(self);
   gtk_render_background(context, cr, x, y, width, height);
   gtk_render_frame(context, cr, x, y, width, height);
+
+  _fill_box_values(ps);
 
   return FALSE;
 }
