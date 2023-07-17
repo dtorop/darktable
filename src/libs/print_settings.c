@@ -211,17 +211,18 @@ static void _precision_by_unit(const _unit_t unit,
   }
 }
 
-// unit conversion
+// unit conversion between mm (used internally) and user selected
+// units
 
-static float _to_mm(dt_lib_print_settings_t *ps,
-                    const double value)
+static float _user_to_mm(dt_lib_print_settings_t *ps,
+                         const double value)
 {
   return value / units[ps->unit];
 }
 
-// FIXME: use this and _to_mm() to clarify and avoid conversion errors
-static float _from_mm(dt_lib_print_settings_t *ps,
-                      const double value)
+// FIXME: use this and _user_to_mm() to clarify and avoid conversion errors
+static float _mm_to_user(dt_lib_print_settings_t *ps,
+                         const double value)
 {
   return value * units[ps->unit];
 }
@@ -487,10 +488,10 @@ void _fill_box_values(dt_lib_print_settings_t *ps)
     //if(ps->dragging || gtk_gesture_is_active(ps->g_new_box))
     if(gtk_gesture_is_active(ps->g_new_box))
     {
-      x       = _from_mm(ps, _hscreen_to_mm(ps, ps->x1));
-      y       = _from_mm(ps, _vscreen_to_mm(ps, ps->y1));
-      swidth  = _from_mm(ps, _hscreen_to_mm(ps, ps->x2)) - x;
-      sheight = _from_mm(ps, _hscreen_to_mm(ps, ps->y2)) - y;
+      x       = _mm_to_user(ps, _hscreen_to_mm(ps, ps->x1));
+      y       = _mm_to_user(ps, _vscreen_to_mm(ps, ps->y1));
+      swidth  = _mm_to_user(ps, _hscreen_to_mm(ps, ps->x2)) - x;
+      sheight = _mm_to_user(ps, _hscreen_to_mm(ps, ps->y2)) - y;
     }
     else
     {
@@ -939,7 +940,7 @@ static void _top_border_callback(GtkWidget *spin, dt_lib_module_t *self)
 
   dt_conf_set_float("plugins/print/print/top_margin", value);
 
-  ps->prt.page.margin_top = _to_mm(ps, value);
+  ps->prt.page.margin_top = _user_to_mm(ps, value);
   _update_slider(ps);
 }
 
@@ -950,7 +951,7 @@ static void _bottom_border_callback(GtkWidget *spin, dt_lib_module_t *self)
 
   dt_conf_set_float("plugins/print/print/bottom_margin", value);
 
-  ps->prt.page.margin_bottom = _to_mm(ps, value);
+  ps->prt.page.margin_bottom = _user_to_mm(ps, value);
   _update_slider(ps);
 }
 
@@ -961,7 +962,7 @@ static void _left_border_callback(GtkWidget *spin, dt_lib_module_t *self)
 
   dt_conf_set_float("plugins/print/print/left_margin", value);
 
-  ps->prt.page.margin_left = _to_mm(ps, value);
+  ps->prt.page.margin_left = _user_to_mm(ps, value);
   _update_slider(ps);
 }
 
@@ -972,7 +973,7 @@ static void _right_border_callback(GtkWidget *spin, dt_lib_module_t *self)
 
   dt_conf_set_float("plugins/print/print/right_margin", value);
 
-  ps->prt.page.margin_right = _to_mm(ps, value);
+  ps->prt.page.margin_right = _user_to_mm(ps, value);
   _update_slider(ps);
 }
 
@@ -1056,7 +1057,7 @@ static void _grid_size_changed(GtkWidget *widget, dt_lib_module_t *self)
 
   dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
   const float value = gtk_spin_button_get_value(GTK_SPIN_BUTTON(ps->grid_size));
-  dt_conf_set_float("plugins/print/print/grid_size", _to_mm(ps, value));
+  dt_conf_set_float("plugins/print/print/grid_size", _user_to_mm(ps, value));
 
   gtk_widget_queue_draw(ps->w_grid);
 }
@@ -2166,10 +2167,10 @@ static gboolean _draw_callouts(GtkWidget *self, cairo_t *cr,
       x2      = ps->x2;
       y2      = ps->y2;
 
-      dx1     = _hscreen_to_mm(ps, ps->x1) * units[ps->unit];
-      dy1     = _vscreen_to_mm(ps, ps->y1) * units[ps->unit];
-      dx2     = _hscreen_to_mm(ps, ps->x2) * units[ps->unit];
-      dy2     = _vscreen_to_mm(ps, ps->y2) * units[ps->unit];
+      dx1     = _mm_to_user(ps, _hscreen_to_mm(ps, ps->x1));
+      dy1     = _mm_to_user(ps, _vscreen_to_mm(ps, ps->y1));
+      dx2     = _mm_to_user(ps, _hscreen_to_mm(ps, ps->x2));
+      dy2     = _mm_to_user(ps, _vscreen_to_mm(ps, ps->y2));
       dwidth  = fabsf(dx2 - dx1);
       dheight = fabsf(dy2 - dy1);
     }
@@ -2215,6 +2216,7 @@ static gboolean _draw_callouts(GtkWidget *self, cairo_t *cr,
 
     yp = y1 + (y2 - y1 - text_h) * 0.5;
 
+    // FIXME: rather than snprintf() x,y,width,height can use gtk_entry_get_layout() to draw same as in right panel, or at the least gtk_entry_get_text()
     if(x1 >= 0 && x1 <= ps->imgs.screen.page_width)
     {
       snprintf(dimensions, sizeof(dimensions), precision, dx1);
@@ -2440,10 +2442,10 @@ void gui_init(dt_lib_module_t *self)
   const float left_b = dt_conf_get_float("plugins/print/print/left_margin");
   const float right_b = dt_conf_get_float("plugins/print/print/right_margin");
 
-  d->prt.page.margin_top = _to_mm(d, top_b);
-  d->prt.page.margin_bottom = _to_mm(d, bottom_b);
-  d->prt.page.margin_left = _to_mm(d, left_b);
-  d->prt.page.margin_right = _to_mm(d, right_b);
+  d->prt.page.margin_top = _user_to_mm(d, top_b);
+  d->prt.page.margin_bottom = _user_to_mm(d, bottom_b);
+  d->prt.page.margin_left = _user_to_mm(d, left_b);
+  d->prt.page.margin_right = _user_to_mm(d, right_b);
 
   // overlay in center area to show layout boxes, images, and
   // measurements
