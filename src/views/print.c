@@ -129,10 +129,10 @@ static void _update_display_coords(dt_print_t *prt)
   // FIXME: if some of the pixel dimensions aren't used outside of here, don't store theme! if we can put them in a form to make them easier here, do that
   if(prt->w_content)
   {
-    gtk_widget_set_margin_start(prt->w_content, round(ax));
-    gtk_widget_set_margin_end(prt->w_content, round(pwidth - awidth - ax));
-    gtk_widget_set_margin_top(prt->w_content, round(ay));
-    gtk_widget_set_margin_bottom(prt->w_content, round(pheight - aheight - ay));
+    gtk_widget_set_margin_start(prt->w_content, roundf(ax));
+    gtk_widget_set_margin_end(prt->w_content, roundf(pwidth - awidth - ax));
+    gtk_widget_set_margin_top(prt->w_content, roundf(ay));
+    gtk_widget_set_margin_bottom(prt->w_content, roundf(pheight - aheight - ay));
   }
 
   if(prt->w_hw_margins)

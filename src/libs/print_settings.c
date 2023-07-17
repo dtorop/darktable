@@ -1388,8 +1388,10 @@ static gboolean _layout_boxes_size_allocate(GtkWidget *w_fixed,
   {
     dt_image_box *box = &ps->imgs.box[k];
     dt_printing_setup_image(&ps->imgs, k, box->imgid, 100, 100, box->alignment);
-    gtk_fixed_move(GTK_FIXED(ps->w_layout_boxes), box->w_box, box->screen.x, box->screen.y);
-    gtk_widget_set_size_request(box->w_box, box->screen.width, box->screen.height);
+    gtk_fixed_move(GTK_FIXED(ps->w_layout_boxes), box->w_box,
+                   roundf(box->screen.x), roundf(box->screen.y));
+    gtk_widget_set_size_request(box->w_box,
+                                roundf(box->screen.width), roundf(box->screen.height));
     // FIXME: will probably need to resize thumbnail as well eventually -- in which case this should be a helper function to resize it
     #if 0
     if(box->thumb)
@@ -1528,7 +1530,9 @@ static void _new_layout_box_widget(dt_lib_print_settings_t *ps,
 
   box->w_box = gtk_drawing_area_new();
   dt_gui_add_class(box->w_box, "print-layout-box");
-  gtk_widget_set_size_request(box->w_box, box->screen.width, box->screen.height);
+  gtk_widget_set_size_request(box->w_box,
+                              roundf(box->screen.width), roundf(box->screen.height));
+
   // FIXME: when don't depend on index we can point directly to data structure
   //g_object_set_data(G_OBJECT(ps->w_box), "box", box);
   // FIXME: this pointer work is fishy

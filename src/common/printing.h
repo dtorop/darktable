@@ -45,7 +45,7 @@ typedef struct _image_box
   dt_image_pos screen;           // current screen pos (in pixels)
   dt_image_pos print;            // current print pos (in pixels) depending on paper size + DPI
   GtkWidget *w_box;              // on screen representation
-  uint16_t *buf;
+  uint16_t *buf;                 // holds image data during export
 } dt_image_box;
 
 typedef struct dt_screen_pos
