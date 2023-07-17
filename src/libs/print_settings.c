@@ -1406,7 +1406,7 @@ static gboolean _layout_boxes_size_allocate(GtkWidget *w_fixed,
 static gboolean _draw_again(gpointer user_data)
 {
   gtk_widget_queue_draw((GtkWidget*)user_data);
-  return FALSE;
+  return G_SOURCE_REMOVE;
 }
 
 static gboolean _draw_layout_box(GtkWidget *self, cairo_t *cr, dt_lib_print_settings_t *ps)
@@ -1441,6 +1441,7 @@ static gboolean _draw_layout_box(GtkWidget *self, cairo_t *cr, dt_lib_print_sett
     if(res != DT_VIEW_SURFACE_OK)
     {
       // if the image is missing, we reload it again
+      // FIXME: we should save the timeout source ID and cancel it if the image is changed before it fires -- but as thumbnail already does this, we can just use that code
       g_timeout_add(250, _draw_again, self);
       ps->busy = TRUE;
     }
@@ -2492,14 +2493,19 @@ static void _pos_changed(GtkWidget *widget, dt_lib_print_settings_t *ps)
   const float nv_px = _mm_to_hscreen(ps, nv / units[ps->unit]);
 
   // FIXME: do need to test that last_selected != -1? or make sure that the position buttons are only sensitive when they correspond to a selected image?
-  const dt_image_pos *box = &ps->imgs.box[ps->last_selected].screen;
-  float pos[4] = { box->x, box->y, box->width, box->height };
+  const dt_image_box *box = &ps->imgs.box[ps->last_selected];
+  float pos[4] = { box->screen.x, box->screen.y, box->screen.width, box->screen.height };
   pos[(gsize)g_object_get_data(G_OBJECT(widget), "idx")] = nv_px;
 
+  // FIXME: should clamp dimensions so that they are within the margins
+
   dt_printing_setup_box(&ps->imgs, ps->last_selected, pos[0], pos[1], pos[2], pos[3]);
+  gtk_widget_set_size_request(box->w_box, roundf(pos[2]), roundf(pos[3]));
+  gtk_fixed_move(GTK_FIXED(ps->w_layout_boxes), box->w_box, roundf(pos[0]), roundf(pos[1]));
 
   ps->has_changed = TRUE;
-  gtk_widget_queue_draw(ps->w_layout_boxes);
+  printf("_pos_changed\n");
+  gtk_widget_queue_draw(box->w_box);
 }
 
 void gui_init(dt_lib_module_t *self)
@@ -3549,6 +3555,7 @@ int set_params(dt_lib_module_t *self,
   // changing orientation, margins, and alignment will all trigger
   // redraw of page background, which in turn will trigger redraw of
   // layout, but just in case make sure to redraw
+  // FIXME: is this needed now?
   gtk_widget_queue_draw(ps->w_layout_boxes);
 
   return 0;
