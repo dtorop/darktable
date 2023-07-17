@@ -491,6 +491,7 @@ void _fill_box_values(dt_lib_print_settings_t *ps)
     }
   }
 
+  // FIXME: if last_selected is -1, shouldn't these spin buttons be made insensitive as well as zeroed out? this will also keep adjusting zeroed out spin buttons from making an out of bounds memory reference
   ++darktable.gui->reset;
 
   gtk_spin_button_set_value(GTK_SPIN_BUTTON(ps->b_x), x);
@@ -1744,9 +1745,7 @@ static void _new_box_drag_begin(GtkGestureDrag *gesture,
 {
   // FIXME: should gtk_widget_grab_focus(w)? this is what the gtk.c _button_pressed handler does
 
-  // FIXME: needed?
   ps->last_selected = -1;
-  // FIXME: needed?
   ps->selected = -1;
 
   gint page_x, page_y;
@@ -2341,6 +2340,7 @@ static void _pos_changed(GtkWidget *widget, dt_lib_print_settings_t *ps)
   const float nv = gtk_spin_button_get_value(GTK_SPIN_BUTTON(widget));
   const float nv_px = _mm_to_hscreen(ps, nv / units[ps->unit]);
 
+  // FIXME: do need to test that last_selected != -1? or make sure that the position buttons are only sensitive when they correspond to a selected image?
   const dt_image_pos *box = &ps->imgs.box[ps->last_selected].screen;
   float pos[4] = { box->x, box->y, box->width, box->height };
   pos[(gsize)g_object_get_data(G_OBJECT(widget), "idx")] = nv_px;
