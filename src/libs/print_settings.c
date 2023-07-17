@@ -1376,6 +1376,30 @@ void _cairo_rectangle(cairo_t *cr,
   }
 }
 
+static gboolean _layout_boxes_size_allocate(GtkWidget *w_fixed,
+                                            GtkAllocation *alloc,
+                                            dt_lib_print_settings_t *ps)
+{
+  // FIXME: doc of GtkWindow says that the event allocation may include client decorations, gtk_window_get_size() is more reliable, but unfortunately fixed or event box don't seem to have widgets, and configure-event doesn't seem to be called on any of these widgets
+  // FIXME: create a GtkDrawingArea which does produce configure events, so even if it is empty this could be more reliable than size-allocate?
+  printf("fixed size-allocate event x %d y %d width %d height %d\n", alloc->x, alloc->y, alloc->width, alloc->height);
+
+  for(int k=0; k<ps->imgs.count; k++)
+  {
+    dt_image_box *box = &ps->imgs.box[k];
+    dt_printing_setup_image(&ps->imgs, k, box->imgid, 100, 100, box->alignment);
+    gtk_fixed_move(GTK_FIXED(ps->w_layout_boxes), box->w_box, box->screen.x, box->screen.y);
+    gtk_widget_set_size_request(box->w_box, box->screen.width, box->screen.height);
+    // FIXME: will probably need to resize thumbnail as well eventually -- in which case this should be a helper function to resize it
+    #if 0
+    if(box->thumb)
+      dt_thumbnail_resize(box->thumb, width, height, FALSE, IMG_TO_FIT);
+    #endif
+  }
+
+  return FALSE;
+}
+
 // FIXME: if we switch to thumbnails we won't need this
 static gboolean _draw_again(gpointer user_data)
 {
@@ -1509,7 +1533,9 @@ static void _new_layout_box_widget(dt_lib_print_settings_t *ps,
   //g_object_set_data(G_OBJECT(ps->w_box), "box", box);
   // FIXME: this pointer work is fishy
   g_object_set_data(G_OBJECT(box->w_box), "idx", (gpointer)(guintptr)idx);
+
   g_signal_connect(G_OBJECT(box->w_box), "draw", G_CALLBACK(_draw_layout_box), ps);
+
   gtk_widget_show(box->w_box);
   gtk_fixed_put(GTK_FIXED(ps->w_layout_boxes), box->w_box, box->screen.x, box->screen.y);
 }
@@ -2554,6 +2580,8 @@ void gui_init(dt_lib_module_t *self)
   g_signal_connect(G_OBJECT(d->w_grid), "draw",
                    G_CALLBACK(_draw_grid), d);
 
+  g_signal_connect(G_OBJECT(d->w_layout_boxes), "size-allocate",
+                   G_CALLBACK(_layout_boxes_size_allocate), d);
 
   g_signal_connect(G_OBJECT(d->w_box_outline), "draw",
                    G_CALLBACK(_draw_box_outline), d);
