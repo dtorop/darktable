@@ -32,6 +32,7 @@ void dt_printing_clear_box(dt_image_box *img)
   img->img_width = img->img_height = 0;
   img->alignment = ALIGNMENT_CENTER;
   img->buf = NULL;
+  img->w_box = NULL;
 
   _clear_pos(&img->screen);
   _clear_pos(&img->pos);
@@ -133,37 +134,45 @@ void dt_printing_setup_display(dt_images_box *imgs,
   }
 }
 
-void dt_printing_setup_box(dt_images_box *imgs, const int idx,
-                           const float x, const float y,
-                           const float width, const float height)
+void _contain_to_bounds(const float request_low, const float request_size,
+                        const float bound_low, const float bound_size,
+                        float *out_low, float *out_size)
 {
-  const float dx = fminf(imgs->screen.print_area.width,
-                         fmaxf(100.0f, width));
-  const float dy = fminf(imgs->screen.print_area.height,
-                         fmaxf(100.0f, height));
+  // apply bounds, with a sane miminum
+  *out_low = fmaxf(request_low, bound_low);
+  *out_size = CLAMPF(request_size, 100.0f, bound_size);
 
-  //  setup screen position & width
+  // if past bounds, shift back in, best case without shrinking
+  // FIXME: would it be better if the widget just wouldn't let itself be dragged outside of print area
+  const float out_high = *out_low + *out_size;
+  const float bound_high = bound_low + bound_size;
+  if(out_high > bound_high)
+  {
+    const float off = (out_high - bound_high);
+    *out_low = fmaxf(bound_low, *out_low - off);
+  }
+}
 
+// for the given layout box at idx, set its dimensions in screen and
+// relative dimensions, while not exceeding page body
+void dt_printing_setup_box(dt_images_box *imgs, const int idx,
+                           const float screen_x, const float screen_y,
+                           const float screen_width, const float screen_height)
+{
   dt_image_box *box = &imgs->box[idx];
+  // FIXME: would it be better if the widget just wouldn't let itself be dragged outside of print area?
+  _contain_to_bounds(screen_x, screen_width,
+                     imgs->screen.print_area.x, imgs->screen.print_area.width,
+                     &box->screen.x, &box->screen.width);
+  _contain_to_bounds(screen_y, screen_height,
+                     imgs->screen.print_area.y, imgs->screen.print_area.height,
+                     &box->screen.y, &box->screen.height);
 
-  box->screen.x      = fmaxf(imgs->screen.print_area.x, x);
-  box->screen.y      = fmaxf(imgs->screen.print_area.y, y);
-  box->screen.width  = dx;
-  box->screen.height = dy;
-
-  if(box->screen.x + dx > imgs->screen.print_area.x + imgs->screen.print_area.width)
-  {
-    const float off = (box->screen.x + dx - imgs->screen.print_area.x - imgs->screen.print_area.width);
-    box->screen.x = fmaxf(imgs->screen.print_area.x, box->screen.x - off);
-  }
-  if(box->screen.y + dy > imgs->screen.print_area.y + imgs->screen.print_area.height)
-  {
-    const float off = (box->screen.y + dy - imgs->screen.print_area.y - imgs->screen.print_area.height);
-    box->screen.y = fmaxf(imgs->screen.print_area.y, box->screen.y - off);
-  }
-
+  // FIXME: should this be relative to printable area rather than page dimensions, so image boxes never go outside of printable area?
   _compute_rel_pos(imgs, &box->screen, &box->pos);
 
+  // add box if doesn't exist
+  // FIXME: if boxed are a GList will need to allocate before setting bounds
   if(idx == imgs->count) imgs->count++;
 }
 
@@ -288,6 +297,7 @@ void dt_printing_setup_image(dt_images_box *imgs, const int idx,
 
   // for the print (pdf) the origin is bottom/left, so y must be inverted compared to
   // screen coordinates.
+  // FIXME: this is awkward that this is set then set again
   box->print.x      = box->pos.x * imgs->page_width;
   box->print.y      = box->pos.y * imgs->page_height;
   box->print.width  = box->pos.width * imgs->page_width;

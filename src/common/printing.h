@@ -29,6 +29,7 @@
 
 typedef struct _image_pos
 {
+  // FIXME: should these be double?
   float x, y, width, height;
 } dt_image_pos;
 
@@ -43,6 +44,7 @@ typedef struct _image_box
   dt_image_pos pos;              // relative pos from screen.page
   dt_image_pos screen;           // current screen pos (in pixels)
   dt_image_pos print;            // current print pos (in pixels) depending on paper size + DPI
+  GtkWidget *w_box;              // on screen representation
   uint16_t *buf;
 } dt_image_box;
 
@@ -82,8 +84,8 @@ void dt_printing_setup_display(dt_images_box *imgs,
                                const float ax, const float ay, const float awidth, const float aheight, gboolean borderless);
 
 void dt_printing_setup_box(dt_images_box *imgs, const int idx,
-                           const float x, const float y,
-                           const float width, const float height);
+                           const float screen_x, const float screen_y,
+                           const float screen_width, const float screen_height);
 
 /* page_width page_height in mm, compute the max_width and max_height in
    pixels for the image */

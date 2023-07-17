@@ -124,6 +124,8 @@ static void _update_display_coords(dt_print_t *prt)
                             ax, ay, awidth, aheight,
                             borderless);
 
+  // FIXME: update the layout box positions -- or make a configure handler for these within print_settings
+
   // FIXME: if some of the pixel dimensions aren't used outside of here, don't store theme! if we can put them in a form to make them easier here, do that
   if(prt->w_content)
   {

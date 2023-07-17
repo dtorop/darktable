@@ -85,7 +85,7 @@ typedef struct dt_lib_print_settings_t
   // widgets for center area
   GtkWidget *w_overlay;            // GtkOverlay -- holds page contents
   GtkWidget *w_grid;               // GtkDrawingArea -- grid
-  GtkWidget *w_layout_boxes;       // GtkDrawingArea -- images in boxes
+  GtkWidget *w_layout_boxes;       // GtkFixed -- contains layout boxes
   GtkWidget *w_box_outline;        // GtkDrawingArea -- outline of current selected box
   GtkWidget *w_new_box;            // GtkDrawingArea -- outline when drawing layout box
   GtkWidget *w_callouts;           // GtkDrawingArea -- callouts of image box dimensions
@@ -492,6 +492,8 @@ void _fill_box_values(dt_lib_print_settings_t *ps)
       y       = _mm_to_user(ps, _vscreen_to_mm(ps, ps->y1));
       swidth  = _mm_to_user(ps, _hscreen_to_mm(ps, ps->x2)) - x;
       sheight = _mm_to_user(ps, _hscreen_to_mm(ps, ps->y2)) - y;
+
+      // FIXME: should align default to center?
     }
     else
     {
@@ -516,7 +518,7 @@ void _fill_box_values(dt_lib_print_settings_t *ps)
     --darktable.gui->reset;
   }
 
-  // FIXME: if last_selected is -1, shouldn't these spin buttons be made insensitive as well as zeroed out? this will also keep adjusting zeroed out spin buttons from making an out of bounds memory reference
+  // FIXME: if last_selected is -1, shouldn't these spin buttons be made insensitive as well as zeroed out? this will also keep the changed handlers for adjusting zeroed out spin buttons from making an out of bounds memory reference
   ++darktable.gui->reset;
 
   gtk_spin_button_set_value(GTK_SPIN_BUTTON(ps->b_x), x);
@@ -647,14 +649,24 @@ static void _page_clear_area_clicked(GtkWidget *widget, gpointer user_data)
   dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
 
   ps->has_changed = TRUE;
+
+  for(int k=0; k<ps->imgs.count; k++)
+  {
+    gtk_container_remove(GTK_CONTAINER(ps->w_layout_boxes), ps->imgs.box[k].w_box);
+    ps->imgs.box[k].w_box = NULL;
+  }
+
   dt_printing_clear_boxes(&ps->imgs);
+
   gtk_widget_set_sensitive(ps->del, FALSE);
-  gtk_widget_queue_draw(ps->w_layout_boxes);
 }
 
 static void _page_delete_area(dt_lib_print_settings_t *ps, const int box_index)
 {
   if(box_index == -1) return;
+
+  gtk_container_remove(GTK_CONTAINER(ps->w_layout_boxes), ps->imgs.box[box_index].w_box);
+  ps->imgs.box[box_index].w_box = NULL;
 
   for(int k=box_index; k<MAX_IMAGE_PER_PAGE-1; k++)
   {
@@ -673,7 +685,6 @@ static void _page_delete_area(dt_lib_print_settings_t *ps, const int box_index)
   _fill_box_values(ps);
 
   ps->has_changed = TRUE;
-  gtk_widget_queue_draw(ps->w_layout_boxes);
 }
 
 static void _page_delete_area_clicked(GtkWidget *widget, dt_lib_print_settings_t *ps)
@@ -1034,10 +1045,10 @@ _alignment_callback(GtkWidget *tb, gpointer user_data)
   {
     dt_printing_setup_image(&ps->imgs, ps->last_selected,
                             ps->imgs.box[ps->last_selected].imgid, 100, 100, index);
+    gtk_widget_queue_draw(ps->imgs.box[ps->last_selected].w_box);
   }
 
   _update_slider(ps);
-  gtk_widget_queue_draw(ps->w_layout_boxes);
 }
 
 static void
@@ -1247,6 +1258,7 @@ _intent_callback(GtkWidget *widget, dt_lib_module_t *self)
   ps->v_intent = pos - 1;
 }
 
+// FIXME: change drag/drop handlers to be installed per widget, then we don't have to call dt_printing_get_image_box()
 static void _drag_and_drop_received(GtkWidget *widget,
                                     GdkDragContext *context,
                                     gint x,
@@ -1259,12 +1271,14 @@ static void _drag_and_drop_received(GtkWidget *widget,
   const int bidx = dt_printing_get_image_box(&ps->imgs, x, y);
 
   if(bidx != -1)
+  {
     // FIXME: can we get the image from drag-and-drop data?
     dt_printing_setup_image(&ps->imgs, bidx, ps->filmstrip_select,
                             100, 100, ALIGNMENT_CENTER);
+    gtk_widget_queue_draw(ps->imgs.box[bidx].w_box);
+  }
 
   ps->imgs.motion_over = -1;
-  gtk_widget_queue_draw(ps->w_layout_boxes);
 }
 
 static gboolean _drag_motion_received(GtkWidget *widget,
@@ -1278,9 +1292,177 @@ static gboolean _drag_motion_received(GtkWidget *widget,
   ps->imgs.motion_over = bidx;
 
   if(bidx != -1)
-    gtk_widget_queue_draw(ps->w_layout_boxes);
+  {
+    gtk_widget_queue_draw(ps->imgs.box[bidx].w_box);
+  }
 
   return TRUE;
+}
+
+void _cairo_rectangle(cairo_t *cr,
+                      const int sel_controls,
+                      const int x1,
+                      const int y1,
+                      const int x2,
+                      const int y2)
+{
+  const float sel_width = DT_PIXEL_APPLY_DPI(3.0);
+  const float std_width = DT_PIXEL_APPLY_DPI(1.0);
+
+  const gboolean all = sel_controls == BOX_ALL;
+
+  cairo_move_to(cr, x1, y1);
+  cairo_set_line_width(cr, (all || sel_controls == BOX_LEFT) ? sel_width : std_width);
+  cairo_line_to(cr, x1, y2);
+  cairo_stroke(cr);
+
+  cairo_move_to(cr, x1, y2);
+  cairo_set_line_width(cr, (all || sel_controls == BOX_BOTTOM) ? sel_width : std_width);
+  cairo_line_to(cr, x2, y2);
+  cairo_stroke(cr);
+
+  cairo_move_to(cr, x2, y2);
+  cairo_set_line_width(cr, (all || sel_controls == BOX_RIGHT) ? sel_width : std_width);
+  cairo_line_to(cr, x2, y1);
+  cairo_stroke(cr);
+
+  cairo_move_to(cr, x2, y1);
+  cairo_set_line_width(cr, (all || sel_controls == BOX_TOP) ? sel_width : std_width);
+  cairo_line_to(cr, x1, y1);
+  cairo_stroke(cr);
+
+  if(sel_controls == 0)
+  {
+    const double dash[] = { DT_PIXEL_APPLY_DPI(3.0), DT_PIXEL_APPLY_DPI(3.0) };
+    cairo_set_dash(cr, dash, 2, 0);
+
+    // no image inside
+    cairo_move_to(cr, x1, y1);
+    cairo_line_to(cr, x2, y2);
+
+    cairo_move_to(cr, x1, y2);
+    cairo_line_to(cr, x2, y1);
+    cairo_stroke(cr);
+  }
+
+  cairo_set_dash(cr, NULL, 0, 0);
+  cairo_set_line_width(cr, sel_width);
+
+  if(sel_controls == BOX_TOP_LEFT)
+  {
+    cairo_rectangle (cr, x1, y1, DT_PIXEL_APPLY_DPI(15), DT_PIXEL_APPLY_DPI(15));
+    cairo_stroke(cr);
+  }
+
+  if(sel_controls == BOX_TOP_RIGHT)
+  {
+    cairo_rectangle (cr, x2 - DT_PIXEL_APPLY_DPI(15), y1,
+                     DT_PIXEL_APPLY_DPI(15), DT_PIXEL_APPLY_DPI(15));
+    cairo_stroke(cr);
+  }
+
+  if(sel_controls == BOX_BOTTOM_LEFT)
+  {
+    cairo_rectangle (cr, x1, y2 - DT_PIXEL_APPLY_DPI(15),
+                     DT_PIXEL_APPLY_DPI(15), DT_PIXEL_APPLY_DPI(15));
+    cairo_stroke(cr);
+  }
+
+  if(sel_controls == BOX_BOTTOM_RIGHT)
+  {
+    cairo_rectangle (cr, x2 - DT_PIXEL_APPLY_DPI(15), y2 - DT_PIXEL_APPLY_DPI(15),
+                     DT_PIXEL_APPLY_DPI(15), DT_PIXEL_APPLY_DPI(15));
+    cairo_stroke(cr);
+  }
+}
+
+// FIXME: if we switch to thumbnails we won't need this
+static gboolean _draw_again(gpointer user_data)
+{
+  gtk_widget_queue_draw((GtkWidget*)user_data);
+  return FALSE;
+}
+
+static gboolean _draw_layout_box(GtkWidget *self, cairo_t *cr, dt_lib_print_settings_t *ps)
+{
+  // FIXME: busy doesn't need to be in data structure! it is only used locally here, and should eventually be replaced by thumbnail implementation
+  ps->busy = FALSE;
+
+  //dt_image_box *img = g_object_get_data(G_OBJECT(widget), "box");
+  // FIXME: this is fishy pointer work
+  int k = (guintptr)g_object_get_data(G_OBJECT(self), "idx");
+  dt_image_box *img = &ps->imgs.box[k];
+  printf("in _draw_layout_box for box #%d imgid %d\n", k, img->imgid);
+  if(dt_is_valid_imgid(img->imgid))
+  {
+    cairo_surface_t *surf = NULL;
+
+    // screen coordinate default to current box if there is no image
+    dt_image_pos screen;
+
+    // FIXME: this is called by _load_image_full_page(), is it used other places?
+    dt_printing_setup_image(&ps->imgs, k, img->imgid, 100, 100, img->alignment);
+
+    // FIXME: instead of calculating this, once have thumbnail widget inside this, just align that widget
+    dt_printing_get_screen_pos(&ps->imgs, img, &screen);
+    // FIXME: hacky, just make dt_printing_get_screen_pos not offset this
+    screen.x -= img->screen.x;
+    screen.y -= img->screen.y;
+
+    const dt_view_surface_value_t res =
+      dt_view_image_get_surface(img->imgid, screen.width, screen.height, &surf, TRUE);
+
+    if(res != DT_VIEW_SURFACE_OK)
+    {
+      // if the image is missing, we reload it again
+      g_timeout_add(250, _draw_again, self);
+      ps->busy = TRUE;
+    }
+    else
+    {
+      const float scaler = 1.0f / darktable.gui->ppd_thb;
+
+      cairo_save(cr);
+      cairo_translate(cr, screen.x, screen.y);
+      cairo_scale(cr, scaler, scaler);
+      cairo_set_source_surface(cr, surf, 0, 0);
+      // FIXME: even if we keep this, we can figure this out via gtk_gesture_is_active()
+      const double alpha =
+        (ps->dragging
+         || (ps->selected != -1 && ps->selected != k))
+        ? 0.25
+        : 1.0;
+
+      cairo_paint_with_alpha(cr, alpha);
+      cairo_surface_destroy(surf);
+      cairo_restore(cr);
+    }
+  }
+
+  if(k == ps->selected || !dt_is_valid_imgid(img->imgid))
+  {
+    cairo_set_source_rgba(cr, .4, .4, .4, 1.0);
+    _cairo_rectangle(cr, (k == ps->selected) ? ps->sel_controls : 0,
+                     0.0, 0.0, roundf(img->screen.width), roundf(img->screen.height));
+    cairo_stroke(cr);
+  }
+
+  if(k == ps->imgs.motion_over)
+  {
+    cairo_set_source_rgba(cr, .2, .2, .2, 1.0);
+    cairo_rectangle(cr, 0.0, 0.0, roundf(img->screen.width), roundf(img->screen.height));
+    cairo_fill(cr);
+  }
+
+  // FIXME: if switch to thumbnail, that should handle this per image
+  if(ps->busy)
+  {
+    GtkAllocation alloc;
+    gtk_widget_get_allocation(self, &alloc);
+    dt_control_draw_busy_msg(cr, alloc.width, alloc.height);
+  }
+
+  return FALSE;
 }
 
 static void _set_orientation(dt_lib_print_settings_t *ps, dt_imgid_t imgid)
@@ -1305,11 +1487,39 @@ static void _set_orientation(dt_lib_print_settings_t *ps, dt_imgid_t imgid)
   dt_mipmap_cache_release(darktable.mipmap_cache, &buf);
 }
 
+static void _new_layout_box_widget(dt_lib_print_settings_t *ps,
+                                   const int idx
+                                   // FIXME: pass this in instead of idx if don't depend on index
+                                   /* dt_image_box *box */)
+{
+  dt_image_box *box = &ps->imgs.box[idx];
+
+  // FIXME: just in case remove existing box, but we should make sure not to overwrite it -- or remove other clearing code?
+  if(box->w_box)
+  {
+    gtk_container_remove(GTK_CONTAINER(ps->w_layout_boxes), box->w_box);
+    printf("removing box %p\n", box->w_box);
+    box->w_box = NULL;
+  }
+
+  box->w_box = gtk_drawing_area_new();
+  dt_gui_add_class(box->w_box, "print-layout-box");
+  gtk_widget_set_size_request(box->w_box, box->screen.width, box->screen.height);
+  // FIXME: when don't depend on index we can point directly to data structure
+  //g_object_set_data(G_OBJECT(ps->w_box), "box", box);
+  // FIXME: this pointer work is fishy
+  g_object_set_data(G_OBJECT(box->w_box), "idx", (gpointer)(guintptr)idx);
+  g_signal_connect(G_OBJECT(box->w_box), "draw", G_CALLBACK(_draw_layout_box), ps);
+  gtk_widget_show(box->w_box);
+  gtk_fixed_put(GTK_FIXED(ps->w_layout_boxes), box->w_box, box->screen.x, box->screen.y);
+}
+
 static void _load_image_full_page(dt_lib_print_settings_t *ps, dt_imgid_t imgid)
 {
   // this will update page background with new aspect
   _set_orientation(ps, imgid);
 
+  // FIXME: we can just pass in page body so doesn't have to be clipped
   dt_printing_setup_box(&ps->imgs, 0, 0.0f, 0.0f,
                         ps->imgs.screen.page_width, ps->imgs.screen.page_height);
   float width, height;
@@ -1317,14 +1527,16 @@ static void _load_image_full_page(dt_lib_print_settings_t *ps, dt_imgid_t imgid)
 
   dt_printing_setup_page(&ps->imgs, width, height, ps->prt.printer.resolution);
 
+  // FIXME: do need to do this here if it does when image is drawn?
   dt_printing_setup_image(&ps->imgs, 0, imgid, 100, 100, ALIGNMENT_CENTER);
+  _new_layout_box_widget(ps, 0);
 
-  gtk_widget_queue_draw(ps->w_layout_boxes);
+  gtk_widget_queue_draw(ps->imgs.box[0].w_box);
 }
 
-static void _print_settings_update_callback(gpointer instance,
-                                            const dt_imgid_t imgid,
-                                            gpointer user_data)
+static void _print_settings_mipmap_updated_cb(gpointer instance,
+                                              const dt_imgid_t imgid,
+                                              gpointer user_data)
 {
   const dt_lib_module_t *self = (dt_lib_module_t *)user_data;
   dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
@@ -1334,13 +1546,16 @@ static void _print_settings_update_callback(gpointer instance,
   // mipmap's orientation
   if(ps->imgs.count == 1 && ps->imgs.box[0].imgid == imgid && !ps->has_changed)
   {
+    // FIXME: it would be nice if there was one function to do GUI and internal data work
+    gtk_container_remove(GTK_CONTAINER(ps->w_layout_boxes), ps->imgs.box[0].w_box);
+    ps->imgs.box[0].w_box = NULL;
     dt_printing_clear_box(&ps->imgs.box[0]);
     _load_image_full_page(ps, imgid);
   }
 }
 
-static void _print_settings_activate_callback(gpointer instance,
-                                              const dt_lib_module_t *self)
+static void _print_settings_active_img_change_cb(gpointer instance,
+                                                 const dt_lib_module_t *self)
 {
   dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
 
@@ -1357,10 +1572,12 @@ static void _print_settings_activate_callback(gpointer instance,
     if(ps->has_changed)
     {
       dt_printing_setup_image(&ps->imgs, 0, imgid, 100, 100, ps->imgs.box[0].alignment);
-      gtk_widget_queue_draw(ps->w_layout_boxes);
+      gtk_widget_queue_draw(ps->imgs.box[0].w_box);
     }
     else
     {
+      gtk_container_remove(GTK_CONTAINER(ps->w_layout_boxes), ps->imgs.box[0].w_box);
+      ps->imgs.box[0].w_box = NULL;
       dt_printing_clear_box(&ps->imgs.box[0]);
       _load_image_full_page(ps, imgid);
     }
@@ -1441,16 +1658,17 @@ void view_enter(struct dt_lib_module_t *self,
   // user activated a new image via the filmstrip or user entered view
   // mode which activates an image: get image_id and orientation
   DT_DEBUG_CONTROL_SIGNAL_CONNECT(darktable.signals, DT_SIGNAL_ACTIVE_IMAGES_CHANGE,
-                                  G_CALLBACK(_print_settings_activate_callback),
+                                  G_CALLBACK(_print_settings_active_img_change_cb),
                                   self);
 
   // when an updated mipmap, we may have new orientation information
   // about the current image.
   DT_DEBUG_CONTROL_SIGNAL_CONNECT(darktable.signals,
                                   DT_SIGNAL_DEVELOP_MIPMAP_UPDATED,
-                                  G_CALLBACK(_print_settings_update_callback),
+                                  G_CALLBACK(_print_settings_mipmap_updated_cb),
                                   self);
 
+  // FIXME: why is this called when an active image changed event also does this work? but if we leave this out, thne nothing loads?!
   if(dt_is_valid_imgid(ps->imgs.imgid_to_load))
     _load_image_full_page(ps, ps->imgs.imgid_to_load);
 }
@@ -1465,18 +1683,11 @@ void view_leave(struct dt_lib_module_t *self,
   gtk_event_controller_reset(GTK_EVENT_CONTROLLER(ps->g_new_box));
 
   DT_DEBUG_CONTROL_SIGNAL_DISCONNECT(darktable.signals,
-                                     G_CALLBACK(_print_settings_activate_callback),
+                                     G_CALLBACK(_print_settings_active_img_change_cb),
                                      self);
   DT_DEBUG_CONTROL_SIGNAL_DISCONNECT(darktable.signals,
-                                     G_CALLBACK(_print_settings_update_callback),
+                                     G_CALLBACK(_print_settings_mipmap_updated_cb),
                                      self);
-}
-
-static gboolean _draw_again(gpointer user_data)
-{
-  dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)user_data;
-  gtk_widget_queue_draw(ps->w_layout_boxes);
-  return FALSE;
 }
 
 void _get_control(dt_lib_print_settings_t *ps,
@@ -1593,6 +1804,7 @@ static gboolean _layout_box_mouse_moved(GtkWidget *w, GdkEventMotion *event,
        default:
          break;
     }
+    // FIXME: this should reposition the active box
     expose = TRUE;
 
     _snap_to_grid(ps, &ps->x1, &ps->y1);
@@ -1607,6 +1819,7 @@ static gboolean _layout_box_mouse_moved(GtkWidget *w, GdkEventMotion *event,
     {
       if(ps->selected != -1) expose = TRUE;
       ps->selected = -1;
+      // FIXME: make position boxes inactive in right panel
     }
     else
     {
@@ -1620,8 +1833,6 @@ static gboolean _layout_box_mouse_moved(GtkWidget *w, GdkEventMotion *event,
 
   if(expose)
   {
-    gtk_widget_queue_draw(ps->w_layout_boxes);
-    // FIXME: this really should just be the selection? or the callouts too?
     gtk_widget_queue_draw(ps->w_box_outline);
     gtk_widget_queue_draw(ps->w_callouts);
   }
@@ -1667,7 +1878,11 @@ static gboolean _layout_box_button_released(GtkWidget *w, GdkEventButton *event,
       ps->last_selected = idx;
       _fill_box_values(ps);
 
-      gtk_widget_queue_draw(ps->w_layout_boxes);
+      gtk_widget_set_size_request(ps->imgs.box[idx].w_box,
+                                  roundf(ps->imgs.box[idx].screen.width),
+                                  roundf(ps->imgs.box[idx].screen.height));
+      gtk_fixed_move(GTK_FIXED(ps->w_layout_boxes), ps->imgs.box[idx].w_box,
+                     roundf(ps->imgs.box[idx].screen.x), roundf(ps->imgs.box[idx].screen.y));
       gtk_widget_queue_draw(ps->w_callouts);
     }
   }
@@ -1705,7 +1920,21 @@ static gboolean _layout_box_button_pressed(GtkWidget *w, GdkEventButton *event,
     memcpy(&ps->imgs.box[ps->selected], &ps->imgs.box[ps->selected-1],
            sizeof(dt_image_box));
     memcpy(&ps->imgs.box[ps->selected-1], &b, sizeof(dt_image_box));
-    gtk_widget_queue_draw(ps->w_layout_boxes);
+    // FIXME: this is hacky as the window may stil need to be z-ordered below others -- we other need to remove and reattach all the windows to the fixed or switch to GtkOverlay and position via margins
+#if 1
+    gdk_window_raise(gtk_widget_get_window(ps->imgs.box[ps->selected].w_box));
+#else
+    // another alternative, ctrl-click could raise the selected widget
+    // move widget to top
+    GtkWidget *w = dt_layout_box_widget(body->drag_box->data);
+    gtk_container_remove(GTK_CONTAINER(body->w_fixed), g_object_ref(w));
+    gtk_fixed_put(GTK_FIXED(body->w_fixed), w,
+                  body->box_initial_x, body->box_initial_y);
+    g_object_unref(w);
+#endif
+    // FIXME: necessary?
+    gtk_widget_queue_draw(ps->imgs.box[ps->selected].w_box);
+    gtk_widget_queue_draw(ps->imgs.box[ps->selected-1].w_box);
   }
   else if(ps->selected != -1 && which == 1)
   {
@@ -1730,10 +1959,14 @@ static gboolean _layout_box_button_pressed(GtkWidget *w, GdkEventButton *event,
 
     // if image present remove it, otherwise remove the box
     if(dt_is_valid_imgid(b->imgid))
+    {
       b->imgid = NO_IMGID;
+      gtk_widget_queue_draw(ps->imgs.box[ps->selected].w_box);
+    }
     else
+    {
       _page_delete_area(ps, ps->selected);
-    gtk_widget_queue_draw(ps->w_layout_boxes);
+    }
 
     ps->last_selected = ps->selected;
     ps->has_changed = TRUE;
@@ -1846,6 +2079,7 @@ static void _new_box_drag_end(GtkGestureDrag *gesture,
     const float dy = ps->y2 - ps->y1;
 
     dt_printing_setup_box(&ps->imgs, idx, ps->x1, ps->y1, dx, dy);
+    _new_layout_box_widget(ps, idx);
     // make the new created box the last edited one
     ps->last_selected = idx;
     _fill_box_values(ps);
@@ -1859,83 +2093,6 @@ static void _new_box_drag_end(GtkGestureDrag *gesture,
 
   dt_control_change_cursor(GDK_LEFT_PTR);
   gtk_widget_hide(ps->w_new_box);
-}
-
-void _cairo_rectangle(cairo_t *cr,
-                      const int sel_controls,
-                      const int x1,
-                      const int y1,
-                      const int x2,
-                      const int y2)
-{
-  const float sel_width = DT_PIXEL_APPLY_DPI(3.0);
-  const float std_width = DT_PIXEL_APPLY_DPI(1.0);
-
-  const gboolean all = sel_controls == BOX_ALL;
-
-  cairo_move_to(cr, x1, y1);
-  cairo_set_line_width(cr, (all || sel_controls == BOX_LEFT) ? sel_width : std_width);
-  cairo_line_to(cr, x1, y2);
-  cairo_stroke(cr);
-
-  cairo_move_to(cr, x1, y2);
-  cairo_set_line_width(cr, (all || sel_controls == BOX_BOTTOM) ? sel_width : std_width);
-  cairo_line_to(cr, x2, y2);
-  cairo_stroke(cr);
-
-  cairo_move_to(cr, x2, y2);
-  cairo_set_line_width(cr, (all || sel_controls == BOX_RIGHT) ? sel_width : std_width);
-  cairo_line_to(cr, x2, y1);
-  cairo_stroke(cr);
-
-  cairo_move_to(cr, x2, y1);
-  cairo_set_line_width(cr, (all || sel_controls == BOX_TOP) ? sel_width : std_width);
-  cairo_line_to(cr, x1, y1);
-  cairo_stroke(cr);
-
-  if(sel_controls == 0)
-  {
-    const double dash[] = { DT_PIXEL_APPLY_DPI(3.0), DT_PIXEL_APPLY_DPI(3.0) };
-    cairo_set_dash(cr, dash, 2, 0);
-
-    // no image inside
-    cairo_move_to(cr, x1, y1);
-    cairo_line_to(cr, x2, y2);
-
-    cairo_move_to(cr, x1, y2);
-    cairo_line_to(cr, x2, y1);
-    cairo_stroke(cr);
-  }
-
-  cairo_set_dash(cr, NULL, 0, 0);
-  cairo_set_line_width(cr, sel_width);
-
-  if(sel_controls == BOX_TOP_LEFT)
-  {
-    cairo_rectangle (cr, x1, y1, DT_PIXEL_APPLY_DPI(15), DT_PIXEL_APPLY_DPI(15));
-    cairo_stroke(cr);
-  }
-
-  if(sel_controls == BOX_TOP_RIGHT)
-  {
-    cairo_rectangle (cr, x2 - DT_PIXEL_APPLY_DPI(15), y1,
-                     DT_PIXEL_APPLY_DPI(15), DT_PIXEL_APPLY_DPI(15));
-    cairo_stroke(cr);
-  }
-
-  if(sel_controls == BOX_BOTTOM_LEFT)
-  {
-    cairo_rectangle (cr, x1, y2 - DT_PIXEL_APPLY_DPI(15),
-                     DT_PIXEL_APPLY_DPI(15), DT_PIXEL_APPLY_DPI(15));
-    cairo_stroke(cr);
-  }
-
-  if(sel_controls == BOX_BOTTOM_RIGHT)
-  {
-    cairo_rectangle (cr, x2 - DT_PIXEL_APPLY_DPI(15), y2 - DT_PIXEL_APPLY_DPI(15),
-                     DT_PIXEL_APPLY_DPI(15), DT_PIXEL_APPLY_DPI(15));
-    cairo_stroke(cr);
-  }
 }
 
 static gboolean _draw_grid(GtkWidget *self, cairo_t *cr, dt_lib_print_settings_t *ps)
@@ -1983,86 +2140,7 @@ static gboolean _draw_grid(GtkWidget *self, cairo_t *cr, dt_lib_print_settings_t
   return FALSE;
 }
 
-static gboolean _draw_layouts(GtkWidget *self, cairo_t *cr, dt_lib_print_settings_t *ps)
-{
-  const float scaler = 1.0f / darktable.gui->ppd_thb;
-
-  // FIXME: busy doesn't need to be in data structure! it is only used locally here, and should eventually be replaced by thumbnail implementation
-  ps->busy = FALSE;
-  // FIXME: each layout box should be its own widget
-  for(int k=0; k<ps->imgs.count; k++)
-  {
-    dt_image_box *img = &ps->imgs.box[k];
-
-    if(dt_is_valid_imgid(img->imgid))
-    {
-      cairo_surface_t *surf = NULL;
-
-      // screen coordinate default to current box if there is no image
-      dt_image_pos screen;
-
-      dt_printing_setup_image(&ps->imgs, k, img->imgid, 100, 100, img->alignment);
-
-      dt_printing_get_screen_pos(&ps->imgs, img, &screen);
-
-      const dt_view_surface_value_t res =
-        dt_view_image_get_surface(img->imgid, screen.width, screen.height, &surf, TRUE);
-
-      if(res != DT_VIEW_SURFACE_OK)
-      {
-        // if the image is missing, we reload it again
-        g_timeout_add(250, _draw_again, ps);
-        ps->busy = TRUE;
-      }
-      else
-      {
-        cairo_save(cr);
-        cairo_translate(cr, screen.x, screen.y);
-        cairo_scale(cr, scaler, scaler);
-        cairo_set_source_surface(cr, surf, 0, 0);
-        // FIXME: even if we keep this, we can figure this out via gtk_gesture_is_active()
-        const double alpha =
-          (ps->dragging
-           || (ps->selected != -1 && ps->selected != k))
-          ? 0.25
-          : 1.0;
-
-        cairo_paint_with_alpha(cr, alpha);
-        cairo_surface_destroy(surf);
-        cairo_restore(cr);
-      }
-    }
-
-    if(k == ps->selected || !dt_is_valid_imgid(img->imgid))
-    {
-      cairo_set_source_rgba(cr, .4, .4, .4, 1.0);
-      _cairo_rectangle(cr, (k == ps->selected) ? ps->sel_controls : 0,
-                       img->screen.x, img->screen.y,
-                       img->screen.x + img->screen.width,
-                       img->screen.y + img->screen.height);
-      cairo_stroke(cr);
-    }
-
-    if(k == ps->imgs.motion_over)
-    {
-      cairo_set_source_rgba(cr, .2, .2, .2, 1.0);
-      cairo_rectangle(cr, img->screen.x, img->screen.y,
-                      img->screen.width, img->screen.height);
-      cairo_fill(cr);
-    }
-  }
-
-  // FIXME: if switch to thumbnail, that should handle this per image
-  if(ps->busy)
-  {
-    GtkAllocation alloc;
-    gtk_widget_get_allocation(self, &alloc);
-    dt_control_draw_busy_msg(cr, alloc.width, alloc.height);
-  }
-
-  return FALSE;
-}
-
+// draw outline of current layout box
 static gboolean _draw_box_outline(GtkWidget *self, cairo_t *cr,
                                   dt_lib_print_settings_t *ps)
 {
@@ -2452,7 +2530,7 @@ void gui_init(dt_lib_module_t *self)
   d->w_grid = gtk_drawing_area_new();
   gtk_widget_set_name(d->w_grid, "print-page-grid");
 
-  d->w_layout_boxes = gtk_drawing_area_new();
+  d->w_layout_boxes = gtk_fixed_new();
   gtk_widget_set_name(d->w_layout_boxes, "print-layout-boxes");
 
   d->w_box_outline = gtk_drawing_area_new();
@@ -2476,8 +2554,6 @@ void gui_init(dt_lib_module_t *self)
   g_signal_connect(G_OBJECT(d->w_grid), "draw",
                    G_CALLBACK(_draw_grid), d);
 
-  g_signal_connect(G_OBJECT(d->w_layout_boxes), "draw",
-                   G_CALLBACK(_draw_layouts), d);
 
   g_signal_connect(G_OBJECT(d->w_box_outline), "draw",
                    G_CALLBACK(_draw_box_outline), d);
@@ -3353,6 +3429,12 @@ int set_params(dt_lib_module_t *self,
   const int32_t media_len = strlen(media) + 1;
   buf += media_len;
 
+  for(int k=0; k<ps->imgs.count; k++)
+  {
+    gtk_container_remove(GTK_CONTAINER(ps->w_layout_boxes), ps->imgs.box[k].w_box);
+    ps->imgs.box[k].w_box = NULL;
+  }
+
   ps->imgs.count = *(int32_t *)buf;
   buf += sizeof(int32_t);
 
@@ -3366,6 +3448,8 @@ int set_params(dt_lib_module_t *self,
     buf += sizeof(float);
     ps->imgs.box[k].pos.height = *(float *)buf;
     buf += sizeof(float);
+
+    _new_layout_box_widget(ps, k);
   }
 
   // ensure that the size is correct
@@ -3567,6 +3651,8 @@ void gui_cleanup(dt_lib_module_t *self)
 {
   dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
 
+  // FIXME: remove center view widgets from containers
+
   // these can be called on shutdown, resulting in null-pointer
   // dereference and division by zero -- not sure what interaction
   // makes them called, but better to disconnect and not have segfault
@@ -3615,10 +3701,17 @@ void gui_reset(dt_lib_module_t *self)
   gtk_widget_set_sensitive(GTK_WIDGET(ps->black_point_compensation), FALSE);
   gtk_widget_set_sensitive(GTK_WIDGET(ps->style_mode), FALSE);
 
+  // FIXME: make wrapper function to clear widgets and dt_printing_clear_boxes()
+  for(int k=0; k<ps->imgs.count; k++)
+  {
+    gtk_container_remove(GTK_CONTAINER(ps->w_layout_boxes), ps->imgs.box[k].w_box);
+    ps->imgs.box[k].w_box = NULL;
+  }
+  dt_printing_clear_boxes(&ps->imgs);
+
   // reset page orientation to fit the picture if a single one is displayed
   // FIXME: instead of using image last box, just use current image from filmstrip?
   const dt_imgid_t imgid = (ps->imgs.count > 0) ? ps->imgs.box[0].imgid : NO_IMGID;
-  dt_printing_clear_boxes(&ps->imgs);
   ps->imgs.imgid_to_load = imgid;
   _load_image_full_page(ps, ps->imgs.imgid_to_load);
 
