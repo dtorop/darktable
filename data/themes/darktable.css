@@ -234,6 +234,7 @@ Why that? Just because it's a developer choice and most classes use underscore i
 @define-color print_paper @grey_80;
 @define-color print_margin @grey_90;
 @define-color print_hw_margin @grey_10;
+@define-color print_dashed_line @grey_50;
 
 /* Reset GTK defaults - Otherwise dt inherits Adwaita default theme dark */
 *
@@ -2348,6 +2349,7 @@ Details :
 
 #print-box-new
 {
-  background-color: alpha(@bg_color, 0.8);
-  border: 0.14em dashed alpha(@border_color, 0.8);
+  background-color: transparent;
+  border: 0.14em dashed alpha(@print_dashed_line, 0.9);
+  color: alpha(@print_dashed_line, 0.9);
 }

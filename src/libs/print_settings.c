@@ -2123,9 +2123,22 @@ static gboolean _draw_new_box(GtkWidget *self, cairo_t *cr,
     height = -height;
   }
 
+  // FIXME: this should draw below the callouts -- or be drawn as part of the callout code
   GtkStyleContext *const context = gtk_widget_get_style_context(self);
   gtk_render_background(context, cr, x, y, width, height);
   gtk_render_frame(context, cr, x, y, width, height);
+
+  const double dash[] = { DT_PIXEL_APPLY_DPI(3.0), DT_PIXEL_APPLY_DPI(3.0) };
+  cairo_set_dash(cr, dash, 2, 0);
+
+  // represent no image inside but only if within margins
+  if(gtk_widget_get_visible(ps->w_callouts))
+  {
+    gtk_render_line(context, cr, x, y, x + width, y + height);
+    gtk_render_line(context, cr, x, y + height, x + width, y);
+  }
+
+  // FIXME: callouts are in wrong position if drag in box from edge of screen beyond margins
 
   _fill_box_values(ps);
 
