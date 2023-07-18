@@ -1388,8 +1388,6 @@ static gboolean _layout_boxes_size_allocate(GtkWidget *w_fixed,
 {
   // FIXME: doc of GtkWindow says that the event allocation may include client decorations, gtk_window_get_size() is more reliable, but unfortunately fixed or event box don't seem to have widgets, and configure-event doesn't seem to be called on any of these widgets
   // FIXME: create a GtkDrawingArea which does produce configure events, so even if it is empty this could be more reliable than size-allocate?
-  printf("fixed size-allocate event x %d y %d width %d height %d\n", alloc->x, alloc->y, alloc->width, alloc->height);
-
   for(int k=0; k<ps->imgs.count; k++)
   {
     dt_image_box *box = &ps->imgs.box[k];
@@ -1426,7 +1424,6 @@ static gboolean _draw_layout_box(GtkWidget *self, cairo_t *cr, dt_lib_print_sett
   // FIXME: this is fishy pointer work, try GPOINTER_TO_INT()
   int k = (guintptr)g_object_get_data(G_OBJECT(self), "idx");
   dt_image_box *img = &ps->imgs.box[k];
-  printf("in _draw_layout_box for box #%d imgid %d\n", k, img->imgid);
   if(dt_is_valid_imgid(img->imgid))
   {
     // FIXME: when layout box is selected, with a valid image, give a subtle cue as to the box dimensions, to aid in figuring out alignment etc.
@@ -1540,7 +1537,6 @@ static void _new_layout_box_widget(dt_lib_print_settings_t *ps,
   if(box->w_box)
   {
     gtk_container_remove(GTK_CONTAINER(ps->w_layout_boxes), box->w_box);
-    printf("removing box %p\n", box->w_box);
     box->w_box = NULL;
   }
 
@@ -2523,7 +2519,6 @@ static void _pos_changed(GtkWidget *widget, dt_lib_print_settings_t *ps)
   gtk_fixed_move(GTK_FIXED(ps->w_layout_boxes), box->w_box, roundf(pos[0]), roundf(pos[1]));
 
   ps->has_changed = TRUE;
-  printf("_pos_changed\n");
   gtk_widget_queue_draw(box->w_box);
 }
 
