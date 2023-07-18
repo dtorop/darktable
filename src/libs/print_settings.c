@@ -2262,6 +2262,7 @@ static gboolean _draw_new_box(GtkWidget *self, cairo_t *cr,
   // represent no image inside but only if within margins
   if(gtk_widget_get_visible(ps->w_callouts))
   {
+    // FIXME: make these direct-to-Cairo drawing calls where control line width via DT_PIXEL_APPLY_DPI() or else the 1 pixel lines will be too thin on hidpi and not match the outline
     gtk_render_line(context, cr, x, y, x + width, y + height);
     gtk_render_line(context, cr, x, y + height, x + width, y);
   }
@@ -3574,6 +3575,13 @@ int set_params(dt_lib_module_t *self,
 
   gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(ps->dtba[alignment]), TRUE);
   gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(ps->black_point_compensation), bpc);
+
+  // FIXME: are these neede?
+  gtk_widget_hide(ps->w_new_box);
+  ps->dragging = FALSE;
+  ps->selected = -1;
+  ps->last_selected = -1;
+  ps->has_changed = TRUE;
 
   dt_view_print_settings(darktable.view_manager, &ps->prt, &ps->imgs);
 
