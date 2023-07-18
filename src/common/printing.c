@@ -44,8 +44,6 @@ void dt_printing_clear_boxes(dt_images_box *imgs)
   for(int k=0; k<MAX_IMAGE_PER_PAGE; k++)
     dt_printing_clear_box(&imgs->box[k]);
 
-  _clear_pos(&imgs->screen.print_area);
-
   imgs->count = 0;
   imgs->motion_over = -1;
   imgs->page_width = imgs->page_height = 0;

@@ -653,11 +653,12 @@ static void _page_clear_area_clicked(GtkWidget *widget, gpointer user_data)
   for(int k=0; k<ps->imgs.count; k++)
   {
     gtk_container_remove(GTK_CONTAINER(ps->w_layout_boxes), ps->imgs.box[k].w_box);
+    // FIXME: this is already cleared by dt_printing_clear_boxes()
     ps->imgs.box[k].w_box = NULL;
   }
 
   dt_printing_clear_boxes(&ps->imgs);
-
+  gtk_widget_hide(ps->w_callouts);
   gtk_widget_set_sensitive(ps->del, FALSE);
 }
 
@@ -676,6 +677,7 @@ static void _page_delete_area(dt_lib_print_settings_t *ps, const int box_index)
   ps->selected = -1;
   dt_printing_clear_box(&ps->imgs.box[MAX_IMAGE_PER_PAGE-1]);
   ps->imgs.count--;
+  gtk_widget_hide(ps->w_callouts);
 
   if(ps->imgs.count > 0)
     ps->selected = 0;
@@ -1387,6 +1389,7 @@ static gboolean _layout_boxes_size_allocate(GtkWidget *w_fixed,
   for(int k=0; k<ps->imgs.count; k++)
   {
     dt_image_box *box = &ps->imgs.box[k];
+    // FIXME: does this do anything? doesn't dt_printing_setup_display() set box->screen?
     dt_printing_setup_image(&ps->imgs, k, box->imgid, 100, 100, box->alignment);
     gtk_fixed_move(GTK_FIXED(ps->w_layout_boxes), box->w_box,
                    roundf(box->screen.x), roundf(box->screen.y));
@@ -1421,6 +1424,7 @@ static gboolean _draw_layout_box(GtkWidget *self, cairo_t *cr, dt_lib_print_sett
   printf("in _draw_layout_box for box #%d imgid %d\n", k, img->imgid);
   if(dt_is_valid_imgid(img->imgid))
   {
+    // FIXME: when layout box is selected, with a valid image, give a subtle cue as to the box dimensions, to aid in figuring out alignment etc.
     cairo_surface_t *surf = NULL;
 
     // screen coordinate default to current box if there is no image
@@ -2052,7 +2056,9 @@ static void _new_box_drag_begin(GtkGestureDrag *gesture,
   ps->click_pos_x = ps->x2 = ps->x1;
   ps->click_pos_y = ps->y2 = ps->y1;
 
-  gtk_widget_set_visible(ps->w_callouts, _in_area(ps->click_pos_x, ps->click_pos_y, &ps->imgs.screen.print_area));
+  gtk_widget_set_visible(ps->w_callouts,
+                         _in_area(ps->click_pos_x, ps->click_pos_y,
+                                  &ps->imgs.screen.print_area));
   gtk_widget_queue_draw(ps->w_new_box);
 }
 
