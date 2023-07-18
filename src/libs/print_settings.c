@@ -669,15 +669,20 @@ static void _page_delete_area(dt_lib_print_settings_t *ps, const int box_index)
   gtk_container_remove(GTK_CONTAINER(ps->w_layout_boxes), ps->imgs.box[box_index].w_box);
   ps->imgs.box[box_index].w_box = NULL;
 
+  // FIXME: only have to iterate down from ps->imgs.count?
   for(int k=box_index; k<MAX_IMAGE_PER_PAGE-1; k++)
   {
     memcpy(&ps->imgs.box[k], &ps->imgs.box[k+1], sizeof(dt_image_box));
+    // FIXME: cleanup nasty casting
+    if(ps->imgs.box[k].w_box)
+      g_object_set_data(G_OBJECT(ps->imgs.box[k].w_box),
+                        "idx", (gpointer)(guintptr)k);
   }
   ps->last_selected = -1;
   ps->selected = -1;
   dt_printing_clear_box(&ps->imgs.box[MAX_IMAGE_PER_PAGE-1]);
   ps->imgs.count--;
-  gtk_widget_hide(ps->w_callouts);
+  //gtk_widget_hide(ps->w_callouts);
 
   if(ps->imgs.count > 0)
     ps->selected = 0;
