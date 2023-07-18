@@ -202,6 +202,14 @@ static gboolean _event_configure_margins(GtkWidget *widget,
   prt->imgs->screen.page_width = pwidth;
   prt->imgs->screen.page_height = pheight;
   _update_display_coords(prt);
+
+  // if the user has tried to load an image but it has a different
+  // aspect which forces a landscape/portrait switch, we wait until
+  // the margins are adjusted before actually loading the image
+  // FIXME: what would happen if the user was resizing the window while they reload the image? we could catch the resize configure event first and miss the margin change
+  if(dt_is_valid_imgid(prt->imgs->imgid_to_load))
+    DT_DEBUG_CONTROL_SIGNAL_RAISE(darktable.signals, DT_SIGNAL_ACTIVE_IMAGES_CHANGE);
+
   return FALSE;
 }
 

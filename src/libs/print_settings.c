@@ -1060,6 +1060,7 @@ _orientation_changed(GtkWidget *combo, dt_lib_module_t *self)
 
   ps->prt.page.landscape = dt_bauhaus_combobox_get(combo);
   // FIXME: should this trigger redrawing of w_overlay?
+  // FIXME: changing orientation makes images look wonky -- should reposition them relative to the new aspect to be in margins by adjusting relative positions
 
   _update_slider(ps);
 }
@@ -1496,8 +1497,10 @@ static gboolean _draw_layout_box(GtkWidget *self, cairo_t *cr, dt_lib_print_sett
   return FALSE;
 }
 
-static void _set_orientation(dt_lib_print_settings_t *ps, dt_imgid_t imgid)
+static gboolean _set_orientation(dt_lib_print_settings_t *ps,
+                             dt_imgid_t imgid)
 {
+  gboolean changed = FALSE;
   dt_mipmap_buffer_t buf;
   dt_mipmap_cache_get(darktable.mipmap_cache, &buf,
                       imgid, DT_MIPMAP_0, DT_MIPMAP_BEST_EFFORT, 'r');
@@ -1507,15 +1510,19 @@ static void _set_orientation(dt_lib_print_settings_t *ps, dt_imgid_t imgid)
   // mipmap arrives.
   if(buf.size != DT_MIPMAP_NONE)
   {
-    ps->prt.page.landscape = (buf.width > buf.height);
-    // both these calls will trigger redraw of page, and the caller
-    // will always redraw the image
-    // FIXME: should redraw image here or in _orientation_changed() callback?
-    dt_view_print_settings(darktable.view_manager, &ps->prt, &ps->imgs);
-    dt_bauhaus_combobox_set(ps->orientation, ps->prt.page.landscape == TRUE ? 1 : 0);
+    gboolean is_landscape = (buf.width > buf.height);
+    if(ps->prt.page.landscape != is_landscape)
+    {
+      dt_bauhaus_combobox_set(ps->orientation, is_landscape);
+      ps->prt.page.landscape = is_landscape;
+      // update page background with any new aspect
+      dt_view_print_settings(darktable.view_manager, &ps->prt, &ps->imgs);
+      changed = TRUE;
+    }
   }
 
   dt_mipmap_cache_release(darktable.mipmap_cache, &buf);
+  return changed;
 }
 
 static void _new_layout_box_widget(dt_lib_print_settings_t *ps,
@@ -1546,13 +1553,19 @@ static void _new_layout_box_widget(dt_lib_print_settings_t *ps,
   g_signal_connect(G_OBJECT(box->w_box), "draw", G_CALLBACK(_draw_layout_box), ps);
 
   gtk_widget_show(box->w_box);
-  gtk_fixed_put(GTK_FIXED(ps->w_layout_boxes), box->w_box, box->screen.x, box->screen.y);
+  gtk_fixed_put(GTK_FIXED(ps->w_layout_boxes), box->w_box,
+                roundf(box->screen.x), roundf(box->screen.y));
 }
 
 static void _load_image_full_page(dt_lib_print_settings_t *ps, dt_imgid_t imgid)
 {
-  // this will update page background with new aspect
-  _set_orientation(ps, imgid);
+  if(_set_orientation(ps, imgid))
+  {
+    // wait for margins to adjust which will retrigger loading of
+    // image
+    ps->imgs.imgid_to_load = imgid;
+    return;
+  }
 
   // FIXME: we can just pass in page body so doesn't have to be clipped
   dt_printing_setup_box(&ps->imgs, 0, 0.0f, 0.0f,
@@ -1595,6 +1608,7 @@ static void _print_settings_active_img_change_cb(gpointer instance,
   dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
 
   dt_imgid_t imgid = ps->imgs.imgid_to_load;
+  ps->imgs.imgid_to_load = NO_IMGID;
 
   // FIXME: this is a shortcut to get the image clicked for drag-and-drop, but should we really read this from the drag data?
   if(dt_is_valid_imgid(imgid))
@@ -1609,7 +1623,9 @@ static void _print_settings_active_img_change_cb(gpointer instance,
   }
   else if(ps->imgs.count <= 1 && !ps->has_changed)
   {
-    gtk_container_remove(GTK_CONTAINER(ps->w_layout_boxes), ps->imgs.box[0].w_box);
+    if(ps->imgs.count == 1)
+      gtk_container_remove(GTK_CONTAINER(ps->w_layout_boxes),
+                           ps->imgs.box[0].w_box);
     ps->imgs.box[0].w_box = NULL;
     dt_printing_clear_box(&ps->imgs.box[0]);
     _load_image_full_page(ps, imgid);
@@ -3748,6 +3764,7 @@ void gui_reset(dt_lib_module_t *self)
   // reset page orientation to fit the picture if a single one is displayed
   // FIXME: instead of using image last box, just use current image from filmstrip?
   const dt_imgid_t imgid = (ps->imgs.count > 0) ? ps->imgs.box[0].imgid : NO_IMGID;
+  // FIXME: why are we setting imgid_to_load? and if we do just trigger DT_SIGNAL_ACTIVE_IMAGES_CHANGE?
   ps->imgs.imgid_to_load = imgid;
   _load_image_full_page(ps, ps->imgs.imgid_to_load);
 
