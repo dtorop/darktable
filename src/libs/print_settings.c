@@ -1418,7 +1418,7 @@ static gboolean _draw_layout_box(GtkWidget *self, cairo_t *cr, dt_lib_print_sett
   ps->busy = FALSE;
 
   //dt_image_box *img = g_object_get_data(G_OBJECT(widget), "box");
-  // FIXME: this is fishy pointer work
+  // FIXME: this is fishy pointer work, try GPOINTER_TO_INT()
   int k = (guintptr)g_object_get_data(G_OBJECT(self), "idx");
   dt_image_box *img = &ps->imgs.box[k];
   printf("in _draw_layout_box for box #%d imgid %d\n", k, img->imgid);
@@ -1540,7 +1540,7 @@ static void _new_layout_box_widget(dt_lib_print_settings_t *ps,
 
   // FIXME: when don't depend on index we can point directly to data structure
   //g_object_set_data(G_OBJECT(ps->w_box), "box", box);
-  // FIXME: this pointer work is fishy
+  // FIXME: this pointer work is fishy, try GINT_TO_POINTER()
   g_object_set_data(G_OBJECT(box->w_box), "idx", (gpointer)(guintptr)idx);
 
   g_signal_connect(G_OBJECT(box->w_box), "draw", G_CALLBACK(_draw_layout_box), ps);
@@ -1601,21 +1601,18 @@ static void _print_settings_active_img_change_cb(gpointer instance,
     ps->filmstrip_select = imgid;
 
   // load an image with a simple click on the filmstrip only if a
-  // single image is present
-  if(ps->imgs.count == 1)
+  // single image is present or if have newly entered the print view
+  if(ps->imgs.count == 1 && ps->has_changed)
   {
-    if(ps->has_changed)
-    {
-      dt_printing_setup_image(&ps->imgs, 0, imgid, 100, 100, ps->imgs.box[0].alignment);
-      gtk_widget_queue_draw(ps->imgs.box[0].w_box);
-    }
-    else
-    {
-      gtk_container_remove(GTK_CONTAINER(ps->w_layout_boxes), ps->imgs.box[0].w_box);
-      ps->imgs.box[0].w_box = NULL;
-      dt_printing_clear_box(&ps->imgs.box[0]);
-      _load_image_full_page(ps, imgid);
-    }
+    dt_printing_setup_image(&ps->imgs, 0, imgid, 100, 100, ps->imgs.box[0].alignment);
+    gtk_widget_queue_draw(ps->imgs.box[0].w_box);
+  }
+  else if(ps->imgs.count <= 1 && !ps->has_changed)
+  {
+    gtk_container_remove(GTK_CONTAINER(ps->w_layout_boxes), ps->imgs.box[0].w_box);
+    ps->imgs.box[0].w_box = NULL;
+    dt_printing_clear_box(&ps->imgs.box[0]);
+    _load_image_full_page(ps, imgid);
   }
 }
 
@@ -1688,8 +1685,6 @@ void view_enter(struct dt_lib_module_t *self,
                 struct dt_view_t *old_view,
                 struct dt_view_t *new_view)
 {
-  dt_lib_print_settings_t *ps = (dt_lib_print_settings_t *)self->data;
-
   // user activated a new image via the filmstrip or user entered view
   // mode which activates an image: get image_id and orientation
   DT_DEBUG_CONTROL_SIGNAL_CONNECT(darktable.signals, DT_SIGNAL_ACTIVE_IMAGES_CHANGE,
@@ -1702,10 +1697,6 @@ void view_enter(struct dt_lib_module_t *self,
                                   DT_SIGNAL_DEVELOP_MIPMAP_UPDATED,
                                   G_CALLBACK(_print_settings_mipmap_updated_cb),
                                   self);
-
-  // FIXME: why is this called when an active image changed event also does this work? but if we leave this out, thne nothing loads?!
-  if(dt_is_valid_imgid(ps->imgs.imgid_to_load))
-    _load_image_full_page(ps, ps->imgs.imgid_to_load);
 }
 
 void view_leave(struct dt_lib_module_t *self,
