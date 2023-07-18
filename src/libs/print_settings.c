@@ -3761,6 +3761,11 @@ void gui_reset(dt_lib_module_t *self)
   gtk_widget_set_sensitive(GTK_WIDGET(ps->black_point_compensation), FALSE);
   gtk_widget_set_sensitive(GTK_WIDGET(ps->style_mode), FALSE);
 
+  // reset page orientation to fit the picture if a single one is
+  // displayed
+  // FIXME: instead of using image last box, just use current image from filmstrip?
+  const dt_imgid_t imgid = (ps->imgs.count > 0) ? ps->imgs.box[0].imgid : NO_IMGID;
+
   // FIXME: make wrapper function to clear widgets and dt_printing_clear_boxes()
   for(int k=0; k<ps->imgs.count; k++)
   {
@@ -3769,19 +3774,15 @@ void gui_reset(dt_lib_module_t *self)
   }
   dt_printing_clear_boxes(&ps->imgs);
 
-  // reset page orientation to fit the picture if a single one is displayed
-  // FIXME: instead of using image last box, just use current image from filmstrip?
-  const dt_imgid_t imgid = (ps->imgs.count > 0) ? ps->imgs.box[0].imgid : NO_IMGID;
-  // FIXME: why are we setting imgid_to_load? and if we do just trigger DT_SIGNAL_ACTIVE_IMAGES_CHANGE?
-  // FIXME: this can crash!
-  ps->imgs.imgid_to_load = imgid;
-  _load_image_full_page(ps, ps->imgs.imgid_to_load);
-
   gtk_widget_hide(ps->w_new_box);
   ps->dragging = FALSE;
   ps->selected = -1;
   ps->last_selected = -1;
   ps->has_changed = FALSE;
+
+  ps->imgs.imgid_to_load = imgid;
+  if(dt_is_valid_imgid(imgid))
+    DT_DEBUG_CONTROL_SIGNAL_RAISE(darktable.signals, DT_SIGNAL_ACTIVE_IMAGES_CHANGE);
 }
 
 // clang-format off
