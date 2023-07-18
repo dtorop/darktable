@@ -3508,6 +3508,8 @@ int set_params(dt_lib_module_t *self,
     ps->imgs.box[k].pos.height = *(float *)buf;
     buf += sizeof(float);
 
+    // FIXME: why does the first layout box load a recent image? is this a feature? what controls it?
+    // FIXME: why does second layout box (which is empty) not get marked as empty via GUI, only visible on mouseover?
     _new_layout_box_widget(ps, k);
   }
 
@@ -3572,6 +3574,8 @@ int set_params(dt_lib_module_t *self,
 
   gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(ps->dtba[alignment]), TRUE);
   gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(ps->black_point_compensation), bpc);
+
+  dt_view_print_settings(darktable.view_manager, &ps->prt, &ps->imgs);
 
   // changing orientation, margins, and alignment will all trigger
   // redraw of page background, which in turn will trigger redraw of
