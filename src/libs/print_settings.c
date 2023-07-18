@@ -1060,7 +1060,10 @@ _orientation_changed(GtkWidget *combo, dt_lib_module_t *self)
 
   ps->prt.page.landscape = dt_bauhaus_combobox_get(combo);
   // FIXME: should this trigger redrawing of w_overlay?
-  // FIXME: changing orientation makes images look wonky -- should reposition them relative to the new aspect to be in margins by adjusting relative positions
+
+  // FIXME: changing orientation makes images look wonky, reposition them relative to the new aspect to be in margins by adjusting relative positions
+  // FIXME: keeping layout boxes in sensible positions on orientation and paer size change would be much easier if relative positions were relative to margins rather than page edge
+  // FIXME: should this work happen here _orientation_changed() and _paper_changed() or in _layout_boxes_size_allocate()?
 
   _update_slider(ps);
 }
@@ -1392,15 +1395,16 @@ static gboolean _layout_boxes_size_allocate(GtkWidget *w_fixed,
     dt_image_box *box = &ps->imgs.box[k];
     // FIXME: does this do anything? doesn't dt_printing_setup_display() set box->screen?
     dt_printing_setup_image(&ps->imgs, k, box->imgid, 100, 100, box->alignment);
-    gtk_fixed_move(GTK_FIXED(ps->w_layout_boxes), box->w_box,
-                   roundf(box->screen.x), roundf(box->screen.y));
     gtk_widget_set_size_request(box->w_box,
                                 roundf(box->screen.width), roundf(box->screen.height));
+    gtk_fixed_move(GTK_FIXED(ps->w_layout_boxes), box->w_box,
+                   roundf(box->screen.x), roundf(box->screen.y));
     // FIXME: will probably need to resize thumbnail as well eventually -- in which case this should be a helper function to resize it
     #if 0
     if(box->thumb)
       dt_thumbnail_resize(box->thumb, width, height, FALSE, IMG_TO_FIT);
     #endif
+    //gtk_widget_queue_draw(box->w_box);
   }
 
   return FALSE;
@@ -1920,11 +1924,12 @@ static gboolean _layout_box_button_released(GtkWidget *w, GdkEventButton *event,
       ps->last_selected = idx;
       _fill_box_values(ps);
 
-      gtk_widget_set_size_request(ps->imgs.box[idx].w_box,
-                                  roundf(ps->imgs.box[idx].screen.width),
-                                  roundf(ps->imgs.box[idx].screen.height));
-      gtk_fixed_move(GTK_FIXED(ps->w_layout_boxes), ps->imgs.box[idx].w_box,
-                     roundf(ps->imgs.box[idx].screen.x), roundf(ps->imgs.box[idx].screen.y));
+      dt_image_box *box = &ps->imgs.box[idx];
+      gtk_widget_set_size_request(box->w_box,
+                                  roundf(box->screen.width),
+                                  roundf(box->screen.height));
+      gtk_fixed_move(GTK_FIXED(ps->w_layout_boxes), box->w_box,
+                     roundf(box->screen.x), roundf(box->screen.y));
       gtk_widget_queue_draw(ps->w_callouts);
     }
   }
@@ -2579,12 +2584,15 @@ void gui_init(dt_lib_module_t *self)
   d->w_grid = gtk_drawing_area_new();
   gtk_widget_set_name(d->w_grid, "print-page-grid");
 
+  // FIXME: make this a GtkOverlay with margins for each widget giving offsets -- that way we can control z-order of widgets -- so long as gestures register only on area of widget within margins 
   d->w_layout_boxes = gtk_fixed_new();
   gtk_widget_set_name(d->w_layout_boxes, "print-layout-boxes");
 
+  // FIXME: make this a pass-through widget, then we can move w_new_box under this one, and then the layout boxes can be sensitive to drag events -- or merge this into w_callouts if it only shows for active window or dragged window
   d->w_box_outline = gtk_drawing_area_new();
   gtk_widget_set_name(d->w_box_outline, "print-box-outline");
 
+  // FIXME: make this a pass-through widget, then we can move w_new_box under this one, and then the layout boxes can be sensitive to drag events
   d->w_callouts = gtk_drawing_area_new();
   gtk_widget_set_name(d->w_callouts, "print-callouts");
 
@@ -3765,6 +3773,7 @@ void gui_reset(dt_lib_module_t *self)
   // FIXME: instead of using image last box, just use current image from filmstrip?
   const dt_imgid_t imgid = (ps->imgs.count > 0) ? ps->imgs.box[0].imgid : NO_IMGID;
   // FIXME: why are we setting imgid_to_load? and if we do just trigger DT_SIGNAL_ACTIVE_IMAGES_CHANGE?
+  // FIXME: this can crash!
   ps->imgs.imgid_to_load = imgid;
   _load_image_full_page(ps, ps->imgs.imgid_to_load);
 
