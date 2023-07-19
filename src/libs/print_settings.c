@@ -1581,6 +1581,13 @@ static void _snap_to_grid(dt_lib_print_settings_t *ps,
   }
 }
 
+static void _swap(gdouble *a, gdouble *b)
+{
+  const float tmp = *a;
+  *a = *b;
+  *b = tmp;
+}
+
 static void _extant_box_drag_begin(GtkGestureDrag *gesture,
                                    gdouble start_x, gdouble start_y,
                                    dt_lib_print_settings_t *ps)
@@ -1694,6 +1701,8 @@ static void _extant_box_drag_update(GtkGestureDrag *gesture,
   _snap_to_grid(ps, &ps->x1, &ps->y1);
   _snap_to_grid(ps, &ps->x2, &ps->y2);
 
+  // FIXME: should keep box in bounds ofpage
+
   // FIXME: should reposition the active box -- once are able to change its size
 #if 0
   gtk_fixed_move(GTK_FIXED(ps->w_layout_boxes), w_box, ps->x1, ps->y1);
@@ -1708,6 +1717,51 @@ static void _extant_box_drag_end(GtkGestureDrag *gesture,
                                  dt_lib_print_settings_t *ps)
 {
   printf("_extant_box_drag_end: on widget %p offset %f,%f\n", gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(gesture)), offset_x, offset_y);
+
+  gtk_widget_set_sensitive(ps->del, TRUE);
+
+  // FIXME: new area code is different now, yes?
+#if 0
+  // handle new area
+  if(ps->selected != -1)
+  {
+    idx = ps->selected;
+  }
+#endif
+
+  //GtkWidget *w_box = gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(gesture));
+  // FIXME: this is fishy pointer work, try GPOINTER_TO_INT()
+  //const int k = (guintptr)g_object_get_data(G_OBJECT(w_box), "idx");
+  dt_image_box *box = &ps->imgs.box[ps->selected];
+  const int idx = ps->selected;
+
+  // make sure the area is in the the printable area taking into account the margins
+
+  // FIXME: this actually handles if bottom/right above/left of top/left, do we want to not allow too small boxes?
+  // don't allow a too small area
+  if(ps->x2 < ps->x1) _swap(&ps->x1, &ps->x2);
+  if(ps->y2 < ps->y1) _swap(&ps->y1, &ps->y2);
+
+  const float width = ps->x2 - ps->x1;
+  const float height = ps->y2 - ps->y1;
+
+  dt_printing_setup_box(&ps->imgs, idx, ps->x1, ps->y1, width, height);
+  // make the new created box the last edited one
+  ps->last_selected = idx;
+  _fill_box_values(ps);
+
+  gtk_widget_set_size_request(box->w_box,
+                              roundf(box->screen.width),
+                              roundf(box->screen.height));
+  gtk_fixed_move(GTK_FIXED(ps->w_layout_boxes), box->w_box,
+                 roundf(box->screen.x), roundf(box->screen.y));
+  gtk_widget_queue_draw(ps->w_callouts);
+
+  _update_slider(ps);
+
+  ps->dragging = FALSE;
+
+  dt_control_change_cursor(GDK_LEFT_PTR);
 }
 
 static void _new_layout_box_widget(dt_lib_print_settings_t *ps,
@@ -2033,13 +2087,6 @@ static gboolean _layout_box_mouse_moved(GtkWidget *w, GdkEventMotion *event,
   return FALSE;
 }
 #endif
-
-static void _swap(gdouble *a, gdouble *b)
-{
-  const float tmp = *a;
-  *a = *b;
-  *b = tmp;
-}
 
 #if 0
 static gboolean _layout_box_button_released(GtkWidget *w, GdkEventButton *event,
