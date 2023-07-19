@@ -1558,6 +1558,29 @@ void _get_control(dt_lib_print_settings_t *ps,
   if(ps->sel_controls == 0) ps->sel_controls = BOX_ALL;
 }
 
+static void _snap_to_grid(dt_lib_print_settings_t *ps,
+                          gdouble *x, gdouble *y)
+{
+  // FIXME: there should also be a snap-to-margin, perhaps always on, as if snap to margin in screen pixels it should really snap to margin in mm, might may be different -- unless we make all measurements relative in terms of margin, or deliberately make margins pixel accurate and the page edges be a bit sloppy
+  if(gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(ps->snap_grid)))
+  {
+    // only snap to the grid if within 5 pixels
+    const gdouble diff = DT_PIXEL_APPLY_DPI(5);
+    const gdouble step =
+      gtk_spin_button_get_value(GTK_SPIN_BUTTON(ps->grid_size)) / units[ps->unit];
+
+    const gdouble h_step = _mm_to_hscreen(ps, step);
+    const float h_dist = fmod(*x, h_step);
+    if((h_dist < diff) || (h_dist > h_step - diff))
+      *x = h_step * round(*x / h_step);
+
+    const float v_step = _mm_to_vscreen(ps, step);
+    const float v_dist = fmod(*y, v_step);
+    if((v_dist < diff) || (v_dist > v_step - diff))
+      *y = v_step * round(*y / v_step);
+  }
+}
+
 static void _extant_box_drag_begin(GtkGestureDrag *gesture,
                                    gdouble start_x, gdouble start_y,
                                    dt_lib_print_settings_t *ps)
@@ -1604,7 +1627,10 @@ static void _extant_box_drag_update(GtkGestureDrag *gesture,
                                     dt_lib_print_settings_t *ps)
 {
   GtkWidget *w_box = gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(gesture));
-  printf("_extant_box_drag_update: on widget %p offset %f,%f\n", gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(gesture)), offset_x, offset_y);
+  // FIXME: this is fishy pointer work, try GPOINTER_TO_INT()
+  //const int k = (guintptr)g_object_get_data(G_OBJECT(w_box), "idx");
+  dt_image_box *box = &ps->imgs.box[ps->selected];
+  printf("_extant_box_drag_update: on widget %p #%d offset %f,%f\n", gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(gesture)), ps->selected, offset_x, offset_y);
   gdouble start_x, start_y;
   gtk_gesture_drag_get_start_point(gesture, &start_x, &start_y);
   printf(" start window-relative %f,%f page relative %f,%f\n", start_x, start_y, ps->click_pos_x, ps->click_pos_y);
@@ -1623,11 +1649,58 @@ static void _extant_box_drag_update(GtkGestureDrag *gesture,
   const gdouble actual_offset_y = page_y - ps->click_pos_y;
   printf(" new widget relateive %f,%f page pos %d,%d, actual offset is %f,%f\n", pos_x, pos_y, page_x, page_y, actual_offset_x, actual_offset_y);
 
-  ps->x1 += offset_x;
-  ps->y1 += offset_y;
-  ps->x2 += offset_x;
-  ps->y2 += offset_y;
+  // FIXME: to do this math right, we need the distance from the click origin
+  const float coef = actual_offset_x / box->screen.width;
+
+  switch(ps->sel_controls)
+  {
+     case BOX_ALL:
+       ps->x1 = box->screen.x + actual_offset_x;
+       ps->y1 = box->screen.y + actual_offset_y;
+       ps->x2 = box->screen.x + box->screen.width + actual_offset_x;
+       ps->y2 = box->screen.y + box->screen.height + actual_offset_y;
+       break;
+     case BOX_LEFT:
+       ps->x1 = box->screen.x + actual_offset_x;
+       break;
+     case BOX_TOP:
+       ps->y1 = box->screen.y + actual_offset_y;
+       break;
+     case BOX_RIGHT:
+       ps->x2 = box->screen.x + box->screen.width + actual_offset_x;
+       break;
+     case BOX_BOTTOM:
+       ps->y2 = box->screen.y + box->screen.height + actual_offset_y;
+       break;
+     case BOX_TOP_LEFT:
+       ps->x1 = box->screen.x + actual_offset_x;
+       ps->y1 = box->screen.y + (coef * box->screen.height);
+       break;
+     case BOX_TOP_RIGHT:
+       ps->x2 = box->screen.x + box->screen.width + actual_offset_x;
+       ps->y1 = box->screen.y - (coef * box->screen.height);
+       break;
+     case BOX_BOTTOM_LEFT:
+       ps->x1 = box->screen.x + actual_offset_x;
+       ps->y2 = box->screen.y + box->screen.height - (coef * box->screen.height);
+       break;
+     case BOX_BOTTOM_RIGHT:
+       ps->x2 = box->screen.x + box->screen.width + actual_offset_x;
+       ps->y2 = box->screen.y + box->screen.height + (coef * box->screen.height);
+       break;
+     default:
+       break;
+  }
+  _snap_to_grid(ps, &ps->x1, &ps->y1);
+  _snap_to_grid(ps, &ps->x2, &ps->y2);
+
+  // FIXME: should reposition the active box -- once are able to change its size
+#if 0
   gtk_fixed_move(GTK_FIXED(ps->w_layout_boxes), w_box, ps->x1, ps->y1);
+#endif
+
+  gtk_widget_queue_draw(ps->w_box_outline);
+  gtk_widget_queue_draw(ps->w_callouts);
 }
 
 static void _extant_box_drag_end(GtkGestureDrag *gesture,
@@ -1867,29 +1940,6 @@ int mouse_leave(struct dt_lib_module_t *self)
   }
 
   return 0;
-}
-
-static void _snap_to_grid(dt_lib_print_settings_t *ps,
-                          gdouble *x, gdouble *y)
-{
-  // FIXME: there should also be a snap-to-margin, perhaps always on, as if snap to margin in screen pixels it should really snap to margin in mm, might may be different -- unless we make all measurements relative in terms of margin, or deliberately make margins pixel accurate and the page edges be a bit sloppy
-  if(gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(ps->snap_grid)))
-  {
-    // only snap to the grid if within 5 pixels
-    const gdouble diff = DT_PIXEL_APPLY_DPI(5);
-    const gdouble step =
-      gtk_spin_button_get_value(GTK_SPIN_BUTTON(ps->grid_size)) / units[ps->unit];
-
-    const gdouble h_step = _mm_to_hscreen(ps, step);
-    const float h_dist = fmod(*x, h_step);
-    if((h_dist < diff) || (h_dist > h_step - diff))
-      *x = h_step * round(*x / h_step);
-
-    const float v_step = _mm_to_vscreen(ps, step);
-    const float v_dist = fmod(*y, v_step);
-    if((v_dist < diff) || (v_dist > v_step - diff))
-      *y = v_step * round(*y / v_step);
-  }
 }
 
 #if 0
