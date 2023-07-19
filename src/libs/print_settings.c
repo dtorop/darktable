@@ -1269,6 +1269,7 @@ _intent_callback(GtkWidget *widget, dt_lib_module_t *self)
   ps->v_intent = pos - 1;
 }
 
+#if 0
 // FIXME: change drag/drop handlers to be installed per widget, then we don't have to call dt_printing_get_image_box()
 static void _drag_and_drop_received(GtkWidget *widget,
                                     GdkDragContext *context,
@@ -1309,6 +1310,7 @@ static gboolean _drag_motion_received(GtkWidget *widget,
 
   return TRUE;
 }
+#endif
 
 void _cairo_rectangle(cairo_t *cr,
                       const int sel_controls,
@@ -1531,6 +1533,29 @@ static gboolean _set_orientation(dt_lib_print_settings_t *ps,
   return changed;
 }
 
+static void _extant_box_drag_begin(GtkGestureDrag *gesture,
+                                   gdouble start_x, gdouble start_y,
+                                   dt_lib_print_settings_t *ps)
+{
+  // FIXME: should gtk_widget_grab_focus(w)? this is what the gtk.c _button_pressed handler does
+  // FIXME: should: sequence = gtk_gesture_get_last_updated_sequence(GTK_GESTURE(gesture)); gtk_gesture_set_sequence_state(gesture, sequence, GTK_EVENT_SEQUENCE_CLAIMED); ?
+  printf("_extant_box_drag_begin: on widget %p start %f,%f\n", gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(gesture)), start_x, start_y);
+}
+
+static void _extant_box_drag_update(GtkGestureDrag *gesture,
+                                    gdouble offset_x, gdouble offset_y,
+                                    dt_lib_print_settings_t *ps)
+{
+  printf("_extant_box_drag_update: on widget %p offset %f,%f\n", gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(gesture)), offset_x, offset_y);
+}
+
+static void _extant_box_drag_end(GtkGestureDrag *gesture,
+                                 gdouble offset_x, gdouble offset_y,
+                                 dt_lib_print_settings_t *ps)
+{
+  printf("_extant_box_drag_end: on widget %p offset %f,%f\n", gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(gesture)), offset_x, offset_y);
+}
+
 static void _new_layout_box_widget(dt_lib_print_settings_t *ps,
                                    const int idx
                                    // FIXME: pass this in instead of idx if don't depend on index
@@ -1556,6 +1581,17 @@ static void _new_layout_box_widget(dt_lib_print_settings_t *ps,
   g_object_set_data(G_OBJECT(box->w_box), "idx", (gpointer)(guintptr)idx);
 
   g_signal_connect(G_OBJECT(box->w_box), "draw", G_CALLBACK(_draw_layout_box), ps);
+
+  // FIXME: as per https://wiki.gnome.org/HowDoI/Gestures should attach gesture as widget data via g_object_set_data_full with g_object_unref, so it is automatically unref'd, or
+  // FIXME: make a GtkFixed or GtkOverlay above d->w_callouts with an event box for each layout box, with bindings to position of that layout box, then listen for drag gestures on those layout boxes, when it comes, capture the drag, freeze the binding to the box below, move the box below around during the drag (minding the borders), then when finished unfreeze the bindigns so the eventbox snaps into position of the dragged box (but it can't move during the drag, as that would make the drag offset #'s break)
+  GtkGesture *g_layout_boxes_drag =
+    gtk_gesture_drag_new(box->w_box);
+  g_signal_connect(g_layout_boxes_drag, "drag-begin",
+                   G_CALLBACK(_extant_box_drag_begin), ps);
+  g_signal_connect(g_layout_boxes_drag, "drag-update",
+                   G_CALLBACK(_extant_box_drag_update), ps);
+  g_signal_connect(g_layout_boxes_drag, "drag-end",
+                   G_CALLBACK(_extant_box_drag_end), ps);
 
   gtk_widget_show(box->w_box);
   gtk_fixed_put(GTK_FIXED(ps->w_layout_boxes), box->w_box,
@@ -1797,6 +1833,7 @@ static void _snap_to_grid(dt_lib_print_settings_t *ps,
   }
 }
 
+#if 0
 static gboolean _layout_box_mouse_moved(GtkWidget *w, GdkEventMotion *event,
                                         dt_lib_print_settings_t *ps)
 {
@@ -1886,6 +1923,7 @@ static gboolean _layout_box_mouse_moved(GtkWidget *w, GdkEventMotion *event,
 
   return FALSE;
 }
+#endif
 
 static void _swap(gdouble *a, gdouble *b)
 {
@@ -1894,6 +1932,7 @@ static void _swap(gdouble *a, gdouble *b)
   *b = tmp;
 }
 
+#if 0
 static gboolean _layout_box_button_released(GtkWidget *w, GdkEventButton *event,
                                             dt_lib_print_settings_t *ps)
 {
@@ -2044,6 +2083,7 @@ static gboolean _layout_box_button_pressed(GtkWidget *w, GdkEventButton *event,
 
   return FALSE;
 }
+#endif
 
 static gboolean _new_box_enter(GtkWidget *w, GdkEventCrossing event,
                                gpointer user_data)
@@ -2072,6 +2112,7 @@ static void _new_box_drag_begin(GtkGestureDrag *gesture,
                                 dt_lib_print_settings_t *ps)
 {
   // FIXME: should gtk_widget_grab_focus(w)? this is what the gtk.c _button_pressed handler does
+  // FIXME: should: sequence = gtk_gesture_get_last_updated_sequence(GTK_GESTURE(gesture)); gtk_gesture_set_sequence_state(gesture, sequence, GTK_EVENT_SEQUENCE_CLAIMED); ?
 
   ps->last_selected = -1;
   ps->selected = -1;
@@ -2165,6 +2206,17 @@ static void _new_box_drag_end(GtkGestureDrag *gesture,
 
   dt_control_change_cursor(GDK_LEFT_PTR);
   gtk_widget_hide(ps->w_new_box);
+}
+
+static void _event_realize_pass_through(GtkWidget *widget,
+                                        gpointer user_data)
+{
+  // drawing areas block events going to the layout, and as it has a
+  // GDK window, we must wait for that window to be realized then set
+  // that window to pass-through
+  // NOTE: in GTK 4 we can move to set_can_target()
+  GdkWindow *window = gtk_widget_get_window(widget);
+  gdk_window_set_pass_through(window, TRUE);
 }
 
 static gboolean _draw_grid(GtkWidget *self, cairo_t *cr, dt_lib_print_settings_t *ps)
@@ -2625,11 +2677,17 @@ void gui_init(dt_lib_module_t *self)
   gtk_overlay_add_overlay(GTK_OVERLAY(d->w_overlay), d->w_box_outline);
   gtk_overlay_add_overlay(GTK_OVERLAY(d->w_overlay), d->w_callouts);
   gtk_widget_set_name(d->w_overlay, "print-page-overlay");
+  gtk_overlay_set_overlay_pass_through(GTK_OVERLAY(d->w_overlay),
+                                       d->w_box_outline, TRUE);
+  gtk_overlay_set_overlay_pass_through(GTK_OVERLAY(d->w_overlay),
+                                       d->w_callouts, TRUE);
 
+#if 0
   // FIXME: these will start being connected to event boxes
   gtk_widget_set_events(d->w_callouts,
                         GDK_POINTER_MOTION_MASK | GDK_BUTTON_PRESS_MASK
                         | GDK_BUTTON_RELEASE_MASK);
+#endif
 
   g_signal_connect(G_OBJECT(d->w_grid), "draw",
                    G_CALLBACK(_draw_grid), d);
@@ -2639,17 +2697,27 @@ void gui_init(dt_lib_module_t *self)
 
   g_signal_connect(G_OBJECT(d->w_box_outline), "draw",
                    G_CALLBACK(_draw_box_outline), d);
-
   g_signal_connect(G_OBJECT(d->w_callouts), "draw",
                    G_CALLBACK(_draw_callouts), d);
+
+  g_signal_connect(G_OBJECT(d->w_box_outline), "realize",
+                   G_CALLBACK(_event_realize_pass_through), NULL);
+  g_signal_connect(G_OBJECT(d->w_callouts), "realize",
+                   G_CALLBACK(_event_realize_pass_through), NULL);
+
+#if 0
   // FIXME: mouse and drag/drop events probably need to be handled via an event box overlaid on top
   g_signal_connect(G_OBJECT(d->w_callouts), "motion-notify-event",
                    G_CALLBACK(_layout_box_mouse_moved), d);
+  // FIXME: single press button events should be handled by each layout box via GtkGestureMultiPress set to detect one press, with a single press without modifiers not being accepted but saving the ID of this window so that a drag on w_layout_boxes knows what is being dragged, propogation set to bubble from layout box up to the w_layout_boxes
   g_signal_connect(G_OBJECT(d->w_callouts), "button-press-event",
                    G_CALLBACK(_layout_box_button_pressed), d);
   g_signal_connect(G_OBJECT(d->w_callouts), "button-release-event",
                    G_CALLBACK(_layout_box_button_released), d);
+#endif
 
+#if 0
+  // FIXME: if we make passthrough work, we can do this per layout box
   // FIXME: check out _register_modules_drag_n_drop() from darkroom.c and its callbacks for ideas
   gtk_drag_dest_set(d->w_callouts, GTK_DEST_DEFAULT_ALL,
                     // FIXME: should be target_list_internal?
@@ -2658,6 +2726,7 @@ void gui_init(dt_lib_module_t *self)
                    G_CALLBACK(_drag_and_drop_received), d);
   g_signal_connect(d->w_callouts, "drag-motion",
                    G_CALLBACK(_drag_motion_received), d);
+#endif
 
   gtk_widget_show(d->w_callouts);
   // FIXME: don't show this initially, only when box is selected or when dragging
@@ -2681,6 +2750,7 @@ void gui_init(dt_lib_module_t *self)
   g_signal_connect(G_OBJECT(d->w_new_box), "enter-notify-event",
                    G_CALLBACK(_new_box_enter), NULL);
 
+  // FIXME: as per https://wiki.gnome.org/HowDoI/Gestures should attach gesture as widget data via g_object_set_data_full with g_object_unref, so it is automatically unref'd, or
   d->g_new_box = gtk_gesture_drag_new(d->w_new_box);
   g_signal_connect(d->g_new_box, "drag-begin",
                    G_CALLBACK(_new_box_drag_begin), d);
