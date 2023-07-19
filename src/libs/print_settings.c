@@ -1533,20 +1533,101 @@ static gboolean _set_orientation(dt_lib_print_settings_t *ps,
   return changed;
 }
 
+void _get_control(dt_lib_print_settings_t *ps,
+                  const float x,
+                  const float y)
+{
+  const float dist = 20.0;
+
+  const dt_image_box *b = &ps->imgs.box[ps->selected];
+
+  ps->sel_controls = 0;
+
+  if(fabsf(b->screen.x - x) < dist)
+    ps->sel_controls |= BOX_LEFT;
+
+  if(fabsf(b->screen.y - y) < dist)
+    ps->sel_controls |= BOX_TOP;
+
+  if(fabsf((b->screen.x + b->screen.width) - x) < dist)
+    ps->sel_controls |= BOX_RIGHT;
+
+  if(fabsf((b->screen.y + b->screen.height) - y) < dist)
+    ps->sel_controls |= BOX_BOTTOM;
+
+  if(ps->sel_controls == 0) ps->sel_controls = BOX_ALL;
+}
+
 static void _extant_box_drag_begin(GtkGestureDrag *gesture,
                                    gdouble start_x, gdouble start_y,
                                    dt_lib_print_settings_t *ps)
 {
   // FIXME: should gtk_widget_grab_focus(w)? this is what the gtk.c _button_pressed handler does
   // FIXME: should: sequence = gtk_gesture_get_last_updated_sequence(GTK_GESTURE(gesture)); gtk_gesture_set_sequence_state(gesture, sequence, GTK_EVENT_SEQUENCE_CLAIMED); ?
-  printf("_extant_box_drag_begin: on widget %p start %f,%f\n", gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(gesture)), start_x, start_y);
+  GtkWidget *w_box = gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(gesture));
+  // FIXME: this is fishy pointer work, try GPOINTER_TO_INT()
+  const int k = (guintptr)g_object_get_data(G_OBJECT(w_box), "idx");
+  dt_image_box *box = &ps->imgs.box[k];
+
+  printf("_extant_box_drag_begin: on widget %p start %f,%f\n", w_box, start_x, start_y);
+
+  gint page_x, page_y;
+  if(!gtk_widget_translate_coordinates(w_box, ps->w_layout_boxes,
+                                       round(start_x), round(start_y),
+                                       &page_x, &page_y))
+  {
+    gtk_event_controller_reset(GTK_EVENT_CONTROLLER(gesture));
+    return;
+  }
+  printf(" -> page %d,%d\n", page_x, page_y);
+
+  // FIXME: instead test if a drag is happening
+  ps->dragging = TRUE;
+  ps->click_pos_x = page_x;
+  ps->click_pos_y = page_y;
+  ps->x1 = box->screen.x;
+  ps->y1 = box->screen.y;
+  ps->x2 = box->screen.x + box->screen.width;
+  ps->y2 = box->screen.y + box->screen.height;
+
+  ps->last_selected = ps->selected = k;
+
+  // FIXME: if we keep this, we should do it in widget-local terms, not page-local
+  _get_control(ps, page_x, page_y);
+
+  // FIXME: won't need ps->dragging if gestures implemented
+  dt_control_change_cursor(GDK_HAND1);
 }
 
 static void _extant_box_drag_update(GtkGestureDrag *gesture,
                                     gdouble offset_x, gdouble offset_y,
                                     dt_lib_print_settings_t *ps)
 {
+  GtkWidget *w_box = gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(gesture));
   printf("_extant_box_drag_update: on widget %p offset %f,%f\n", gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(gesture)), offset_x, offset_y);
+  gdouble start_x, start_y;
+  gtk_gesture_drag_get_start_point(gesture, &start_x, &start_y);
+  printf(" start window-relative %f,%f page relative %f,%f\n", start_x, start_y, ps->click_pos_x, ps->click_pos_y);
+  const gdouble pos_x = start_x + offset_x;
+  const gdouble pos_y = start_y + offset_y;
+
+  gint page_x, page_y;
+  if(!gtk_widget_translate_coordinates(w_box, ps->w_layout_boxes,
+                                       round(pos_x), round(pos_y),
+                                       &page_x, &page_y))
+  {
+    gtk_event_controller_reset(GTK_EVENT_CONTROLLER(gesture));
+    return;
+  }
+  const gdouble actual_offset_x = page_x - ps->click_pos_x;
+  const gdouble actual_offset_y = page_y - ps->click_pos_y;
+  printf(" new widget relateive %f,%f page pos %d,%d, actual offset is %f,%f\n", pos_x, pos_y, page_x, page_y, actual_offset_x, actual_offset_y);
+
+  ps->x1 += offset_x;
+  ps->y1 += offset_y;
+  ps->x2 += offset_x;
+  ps->y2 += offset_y;
+  gtk_fixed_move(GTK_FIXED(ps->w_layout_boxes), w_box, ps->x1, ps->y1);
 }
 
 static void _extant_box_drag_end(GtkGestureDrag *gesture,
@@ -1584,6 +1665,9 @@ static void _new_layout_box_widget(dt_lib_print_settings_t *ps,
 
   // FIXME: as per https://wiki.gnome.org/HowDoI/Gestures should attach gesture as widget data via g_object_set_data_full with g_object_unref, so it is automatically unref'd, or
   // FIXME: make a GtkFixed or GtkOverlay above d->w_callouts with an event box for each layout box, with bindings to position of that layout box, then listen for drag gestures on those layout boxes, when it comes, capture the drag, freeze the binding to the box below, move the box below around during the drag (minding the borders), then when finished unfreeze the bindigns so the eventbox snaps into position of the dragged box (but it can't move during the drag, as that would make the drag offset #'s break)
+  // FIXME: can have one drag handler if we take origin coordinate and store it in terms of parent overlay, then during drag calculate start + offset and convert that to parent coordinates, and the difference between those is the real offset
+  // FIXME: probably need a drag and multipress handler, in a group, and one takes on ownership of event
+  // FIXME: we still need a mouseover handler for highlighting the widget and showing overlays and filling in right panel position? or can this all be done by CSS somehow
   GtkGesture *g_layout_boxes_drag =
     gtk_gesture_drag_new(box->w_box);
   g_signal_connect(g_layout_boxes_drag, "drag-begin",
@@ -1771,31 +1855,6 @@ void view_leave(struct dt_lib_module_t *self,
   DT_DEBUG_CONTROL_SIGNAL_DISCONNECT(darktable.signals,
                                      G_CALLBACK(_print_settings_mipmap_updated_cb),
                                      self);
-}
-
-void _get_control(dt_lib_print_settings_t *ps,
-                  const float x,
-                  const float y)
-{
-  const float dist = 20.0;
-
-  const dt_image_box *b = &ps->imgs.box[ps->selected];
-
-  ps->sel_controls = 0;
-
-  if(fabsf(b->screen.x - x) < dist)
-    ps->sel_controls |= BOX_LEFT;
-
-  if(fabsf(b->screen.y - y) < dist)
-    ps->sel_controls |= BOX_TOP;
-
-  if(fabsf((b->screen.x + b->screen.width) - x) < dist)
-    ps->sel_controls |= BOX_RIGHT;
-
-  if(fabsf((b->screen.y + b->screen.height) - y) < dist)
-    ps->sel_controls |= BOX_BOTTOM;
-
-  if(ps->sel_controls == 0) ps->sel_controls = BOX_ALL;
 }
 
 int mouse_leave(struct dt_lib_module_t *self)
