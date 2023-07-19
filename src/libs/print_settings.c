@@ -482,6 +482,7 @@ void _fill_box_values(dt_lib_print_settings_t *ps)
   int align = -1;
 
   // FIXME: this duplicates code with _draw_callouts, merge them
+  // FIXME: should check if dragging an extant box and fill in #'s there as well
   if(gtk_gesture_is_active(ps->g_new_box) || ps->last_selected != -1)
   {
     // FIXME: will this work for dragging an existing box as well?
@@ -1702,9 +1703,11 @@ static void _extant_box_drag_update(GtkGestureDrag *gesture,
   _snap_to_grid(ps, &ps->x2, &ps->y2);
 
   // FIXME: should keep box in bounds ofpage
-
   // FIXME: should reposition the active box -- once are able to change its size
 #if 0
+  const float width = ps->x2 - ps->x1;
+  const float height = ps->y2 - ps->y1;
+  dt_printing_setup_box(&ps->imgs, ps->selected, ps->x1, ps->y1, width, height);
   gtk_fixed_move(GTK_FIXED(ps->w_layout_boxes), w_box, ps->x1, ps->y1);
 #endif
 
