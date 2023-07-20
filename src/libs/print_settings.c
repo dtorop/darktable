@@ -1278,37 +1278,21 @@ static void _drag_data_received(GtkWidget *widget,
                                 guint time,
                                 dt_lib_print_settings_t *ps)
 {
-  // FIXME: this is hacky!
+  // FIXME: this is hacky! it would be much nicer if the actual layout box widgets could receive drag-and-drop events
+  // FIXME: once we use a GtkOverlay instead of a GtkFixed, dt_printing_get_image_box() should be replaced with GUI-based code which runs through the layout boxes and checks their allocations, so it is mindful of z-order
   const int bidx = dt_printing_get_image_box(&ps->imgs, x, y);
-  printf("drag drop data received to %d\n", bidx);
 
   if(bidx != -1)
   {
     // FIXME: can we get the image from drag-and-drop data via gtk_drag_get_data()?
     dt_printing_setup_image(&ps->imgs, bidx, ps->filmstrip_select,
                             100, 100, ALIGNMENT_CENTER);
-    // FIXME: do this on drag-leave instead?
+
+    // FIXME: it would be nice to use a class attached to the box to set this up
+    ps->imgs.motion_over = -1;
     gtk_widget_queue_draw(ps->imgs.box[bidx].w_box);
   }
-
-  // FIXME: it would be nice to use a class attached to the box to set this up
-  ps->imgs.motion_over = -1;
 }
-
-#if 0
-static gboolean _drag_drop(GtkWidget *widget,
-                       GdkDragContext *context,
-                       gint x,
-                       gint y,
-                       guint time,
-                       dt_lib_print_settings_t *ps)
-{
-  const int bidx = dt_printing_get_image_box(&ps->imgs, x, y);
-  const gboolean is_in_drop_zone = bidx != -1;
-  printf("drag-drop received to %d returning %d\n", bidx, is_in_drop_zone);
-  return is_in_drop_zone;
-}
-#endif
 
 static gboolean _drag_motion_received(GtkWidget *widget,
                                       GdkDragContext *dc,
@@ -1318,11 +1302,8 @@ static gboolean _drag_motion_received(GtkWidget *widget,
                                       dt_lib_print_settings_t *ps)
 {
   const int bidx = dt_printing_get_image_box(&ps->imgs, x, y);
-  // FIXME: instead apply a class to the widget to make its appearance change, or even swap in a widget
   const int prior_bidx = ps->imgs.motion_over;
-  printf("drag drop motion over %d, was over %d\n", bidx, ps->imgs.motion_over);
 
-  // FIXME: we should be sure to do this once, then hold tight until a drag-leave occurs
   if(bidx != prior_bidx)
   {
     // FIXME: if set class on widget we won't need to redraw it
@@ -1332,23 +1313,12 @@ static gboolean _drag_motion_received(GtkWidget *widget,
       gtk_widget_queue_draw(ps->imgs.box[prior_bidx].w_box);
   }
 
+  // FIXME: instead apply a class to the widget to make its appearance change, or even swap in a widget
   ps->imgs.motion_over = bidx;
 
-  const gboolean is_in_drop_zone = bidx != -1;
-  printf(" returning %d\n", is_in_drop_zone);
-  return is_in_drop_zone;
+  // FIXME: GTK seems to ignore this, and always treat the whole widget as a valid drop zone, and similarly responding to the drag-drop signal about whether this is a valid drop zone doesn't make a difference
+  return bidx != -1;
 }
-
-#if 0
-static void _drag_and_drop_leave(GtkWidget *widget,
-                                 GdkDragContext *dc,
-                                 const guint time,
-                                 dt_lib_print_settings_t *ps)
-{
-  printf("_drag_leave dest wndow %p action %d\n", gdk_drag_context_get_dest_window(dc), gdk_drag_context_get_selected_action(dc));
-  ps->imgs.motion_over = -1;
-}
-#endif
 
 void _cairo_rectangle(cairo_t *cr,
                       const int sel_controls,
@@ -1887,7 +1857,6 @@ static gboolean _layout_box_enter(GtkWidget *w, GdkEventCrossing *event,
 
   ps->sel_controls = 0;
   ps->selected = k;
-  printf("entering layout box %d\n", ps->selected);
   _fill_box_values(ps);
 
   // FIXME: layout box should have action to show outline when enter, hide when leave
@@ -1902,7 +1871,6 @@ static gboolean _layout_box_motion(GtkWidget *w, GdkEventMotion *event,
                                    dt_lib_print_settings_t *ps)
 {
   // FIXME: instead of testing dragging, should we could g_signal_handler_block this notification while dragging -- but we should replace this setup with an overlay containing handles
-  printf("motion over layout box %d\n", ps->selected);
   if(!ps->dragging)
   {
     _get_control(ps, event->x, event->y);
@@ -1921,7 +1889,6 @@ static gboolean _layout_box_leave(GtkWidget *w, GdkEventCrossing *event,
   gtk_widget_queue_draw(ps->w_box_outline);
   gtk_widget_queue_draw(ps->w_callouts);
 
-  printf("leaving layout box %d\n", ps->selected);
   ps->selected = -1;
   // FIXME: make position boxes inactive in right panel
 
@@ -2811,12 +2778,6 @@ void gui_init(dt_lib_module_t *self)
                     target_list_all, n_targets_all, GDK_ACTION_MOVE);
   g_signal_connect(d->w_callouts, "drag-data-received",
                    G_CALLBACK(_drag_data_received), d);
-#if 0
-  g_signal_connect(d->w_callouts, "drag-drop",
-                   G_CALLBACK(_drag_drop), d);
-  g_signal_connect(d->w_callouts, "drag-leave",
-                   G_CALLBACK(_drag_and_drop_leave), d);
-#endif
   g_signal_connect(d->w_callouts, "drag-motion",
                    G_CALLBACK(_drag_motion_received), d);
 
