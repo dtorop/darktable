@@ -1429,8 +1429,7 @@ static gboolean _draw_layout_box(GtkWidget *self, cairo_t *cr, dt_lib_print_sett
   ps->busy = FALSE;
 
   //dt_image_box *img = g_object_get_data(G_OBJECT(widget), "box");
-  // FIXME: this is fishy pointer work, try GPOINTER_TO_INT()
-  int k = (guintptr)g_object_get_data(G_OBJECT(self), "idx");
+  int k = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(self), "idx"));
   dt_image_box *img = &ps->imgs.box[k];
   if(dt_is_valid_imgid(img->imgid))
   {
@@ -1594,8 +1593,7 @@ static void _extant_box_drag_begin(GtkGestureDrag *gesture,
   // FIXME: should gtk_widget_grab_focus(w)? this is what the gtk.c _button_pressed handler does
   // FIXME: should: sequence = gtk_gesture_get_last_updated_sequence(GTK_GESTURE(gesture)); gtk_gesture_set_sequence_state(gesture, sequence, GTK_EVENT_SEQUENCE_CLAIMED); ?
   GtkWidget *w_box = gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(gesture));
-  // FIXME: this is fishy pointer work, try GPOINTER_TO_INT()
-  const int k = (guintptr)g_object_get_data(G_OBJECT(w_box), "idx");
+  const int k = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(w_box), "idx"));
   dt_image_box *box = &ps->imgs.box[k];
 
   printf("_extant_box_drag_begin: on widget %p start %f,%f\n", w_box, start_x, start_y);
@@ -1632,9 +1630,8 @@ static void _extant_box_drag_update(GtkGestureDrag *gesture,
                                     dt_lib_print_settings_t *ps)
 {
   GtkWidget *w_box = gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(gesture));
-  // FIXME: this is fishy pointer work, try GPOINTER_TO_INT()
-  //const int k = (guintptr)g_object_get_data(G_OBJECT(w_box), "idx");
-  dt_image_box *box = &ps->imgs.box[ps->selected];
+  const int k = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(w_box), "idx"));
+  dt_image_box *box = &ps->imgs.box[k];
   // FIXME: all this coordinate work is very fishy
   printf("_extant_box_drag_update: on widget %p #%d offset %f,%f\n", gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(gesture)), ps->selected, offset_x, offset_y);
   gdouble start_x, start_y;
@@ -1725,8 +1722,7 @@ static void _extant_box_drag_end(GtkGestureDrag *gesture,
   // it's possible that the cursor has already left the box, so we
   // can't be guaranteed ps->selected is valid
   GtkWidget *w_box = gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(gesture));
-  // FIXME: this is fishy pointer work, try GPOINTER_TO_INT()
-  const int idx = (guintptr)g_object_get_data(G_OBJECT(w_box), "idx");
+  const int idx = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(w_box), "idx"));
   dt_image_box *box = &ps->imgs.box[idx];
 
   // make sure the area is in the the printable area taking into account the margins
@@ -1851,8 +1847,7 @@ static void _extant_box_delete(GtkGestureMultiPress *gesture,
 static gboolean _layout_box_enter(GtkWidget *w, GdkEventCrossing *event,
                                   dt_lib_print_settings_t *ps)
 {
-  // FIXME: this is fishy pointer work, try GPOINTER_TO_INT()
-  const int k = (guintptr)g_object_get_data(G_OBJECT(w), "idx");
+  const int k = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(w), "idx"));
 
   ps->sel_controls = 0;
   ps->selected = k;
@@ -2649,7 +2644,7 @@ static void _pos_changed(GtkWidget *widget, dt_lib_print_settings_t *ps)
   // FIXME: do need to test that last_selected != -1? or make sure that the position buttons are only sensitive when they correspond to a selected image?
   const dt_image_box *box = &ps->imgs.box[ps->last_selected];
   float pos[4] = { box->screen.x, box->screen.y, box->screen.width, box->screen.height };
-  pos[(gsize)g_object_get_data(G_OBJECT(widget), "idx")] = nv_px;
+  pos[GPOINTER_TO_INT(g_object_get_data(G_OBJECT(widget), "idx"))] = nv_px;
 
   // FIXME: should clamp dimensions so that they are within the margins
 
