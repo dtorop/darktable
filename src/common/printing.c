@@ -55,6 +55,7 @@ int32_t dt_printing_get_image_box(const dt_images_box *imgs, const int x, const 
   int box = -1;
   float dist = FLT_MAX;
 
+  // FIXME: use gtk_widget_get_allocation() of widgets instead?
   for(int k=0; k<imgs->count; k++)
   {
     const dt_image_box *b = &imgs->box[k];

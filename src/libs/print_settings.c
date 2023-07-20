@@ -1284,7 +1284,7 @@ static void _drag_data_received(GtkWidget *widget,
 
   if(bidx != -1)
   {
-    // FIXME: can we get the image from drag-and-drop data?
+    // FIXME: can we get the image from drag-and-drop data via gtk_drag_get_data()?
     dt_printing_setup_image(&ps->imgs, bidx, ps->filmstrip_select,
                             100, 100, ALIGNMENT_CENTER);
     // FIXME: do this on drag-leave instead?
@@ -1295,6 +1295,7 @@ static void _drag_data_received(GtkWidget *widget,
   ps->imgs.motion_over = -1;
 }
 
+#if 0
 static gboolean _drag_drop(GtkWidget *widget,
                        GdkDragContext *context,
                        gint x,
@@ -1303,9 +1304,11 @@ static gboolean _drag_drop(GtkWidget *widget,
                        dt_lib_print_settings_t *ps)
 {
   const int bidx = dt_printing_get_image_box(&ps->imgs, x, y);
-  printf("drag-drop received to %d\n", bidx);
-  return TRUE;
+  const gboolean is_in_drop_zone = bidx != -1;
+  printf("drag-drop received to %d returning %d\n", bidx, is_in_drop_zone);
+  return is_in_drop_zone;
 }
+#endif
 
 static gboolean _drag_motion_received(GtkWidget *widget,
                                       GdkDragContext *dc,
@@ -1331,7 +1334,9 @@ static gboolean _drag_motion_received(GtkWidget *widget,
 
   ps->imgs.motion_over = bidx;
 
-  return TRUE;
+  const gboolean is_in_drop_zone = bidx != -1;
+  printf(" returning %d\n", is_in_drop_zone);
+  return is_in_drop_zone;
 }
 
 static void _drag_and_drop_leave(GtkWidget *widget,
@@ -2804,8 +2809,10 @@ void gui_init(dt_lib_module_t *self)
                     target_list_all, n_targets_all, GDK_ACTION_MOVE);
   g_signal_connect(d->w_callouts, "drag-data-received",
                    G_CALLBACK(_drag_data_received), d);
+#if 0
   g_signal_connect(d->w_callouts, "drag-drop",
                    G_CALLBACK(_drag_drop), d);
+#endif
   g_signal_connect(d->w_callouts, "drag-motion",
                    G_CALLBACK(_drag_motion_received), d);
   g_signal_connect(d->w_callouts, "drag-leave",
