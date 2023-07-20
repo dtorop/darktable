@@ -1638,6 +1638,7 @@ static void _extant_box_drag_update(GtkGestureDrag *gesture,
   // FIXME: this is fishy pointer work, try GPOINTER_TO_INT()
   //const int k = (guintptr)g_object_get_data(G_OBJECT(w_box), "idx");
   dt_image_box *box = &ps->imgs.box[ps->selected];
+  // FIXME: all this coordinate work is very fishy
   printf("_extant_box_drag_update: on widget %p #%d offset %f,%f\n", gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(gesture)), ps->selected, offset_x, offset_y);
   gdouble start_x, start_y;
   gtk_gesture_drag_get_start_point(gesture, &start_x, &start_y);
@@ -1655,7 +1656,7 @@ static void _extant_box_drag_update(GtkGestureDrag *gesture,
   }
   const gdouble actual_offset_x = page_x - ps->click_pos_x;
   const gdouble actual_offset_y = page_y - ps->click_pos_y;
-  printf(" new widget relateive %f,%f page pos %d,%d, actual offset is %f,%f\n", pos_x, pos_y, page_x, page_y, actual_offset_x, actual_offset_y);
+  printf(" new widget relative %f,%f page pos %d,%d, actual offset is %f,%f\n", pos_x, pos_y, page_x, page_y, actual_offset_x, actual_offset_y);
 
   // FIXME: to do this math right, we need the distance from the click origin
   const float coef = actual_offset_x / box->screen.width;
@@ -1704,6 +1705,7 @@ static void _extant_box_drag_update(GtkGestureDrag *gesture,
 
   // FIXME: should keep box in bounds ofpage
   // FIXME: should reposition the active box -- once are able to change its size
+  // FIXME: to make this work we'd need to adjust by offset_x, offset_y, and figure out how to make page-relative offsets work for proportional resizing
 #if 0
   const float width = ps->x2 - ps->x1;
   const float height = ps->y2 - ps->y1;
@@ -1767,6 +1769,56 @@ static void _extant_box_drag_end(GtkGestureDrag *gesture,
   dt_control_change_cursor(GDK_LEFT_PTR);
 }
 
+static gboolean _layout_box_enter(GtkWidget *w, GdkEventCrossing *event,
+                                  dt_lib_print_settings_t *ps)
+{
+  // FIXME: this is fishy pointer work, try GPOINTER_TO_INT()
+  const int k = (guintptr)g_object_get_data(G_OBJECT(w), "idx");
+
+  ps->sel_controls = 0;
+  ps->selected = k;
+  _fill_box_values(ps);
+
+  // FIXME: layout box should have action to show outline when enter, hide when leave
+  gtk_widget_queue_draw(ps->w_box_outline);
+  // FIXME: layout box should have action to show callouts when enter box, hide them when leave box
+  gtk_widget_queue_draw(ps->w_callouts);
+
+  return FALSE;
+}
+
+static gboolean _layout_box_motion(GtkWidget *w, GdkEventMotion *event,
+                                   dt_lib_print_settings_t *ps)
+{
+  // FIXME: convert this to widget-local terms, but really we want an overlay widget which will show these controls
+  gint page_x, page_y;
+  if(gtk_widget_translate_coordinates(w, ps->w_layout_boxes,
+                                      round(event->x), round(event->y),
+                                      &page_x, &page_y))
+  {
+    // FIXME: only test this if gtk_gesture_is_active() isn't active for current box
+    //_get_control(ps, page_x, page_y);
+    gtk_widget_queue_draw(ps->w_box_outline);
+  }
+
+  return FALSE;
+}
+
+static gboolean _layout_box_leave(GtkWidget *w, GdkEventCrossing *event,
+                                  dt_lib_print_settings_t *ps)
+{
+  ps->sel_controls = 0;
+
+  // FIXME: these should be hidden, not redrawn
+  gtk_widget_queue_draw(ps->w_box_outline);
+  gtk_widget_queue_draw(ps->w_callouts);
+
+  ps->selected = -1;
+  // FIXME: make position boxes inactive in right panel
+
+  return FALSE;
+}
+
 static void _new_layout_box_widget(dt_lib_print_settings_t *ps,
                                    const int idx
                                    // FIXME: pass this in instead of idx if don't depend on index
@@ -1791,15 +1843,26 @@ static void _new_layout_box_widget(dt_lib_print_settings_t *ps,
   // FIXME: this pointer work is fishy, try GINT_TO_POINTER()
   g_object_set_data(G_OBJECT(box->w_box), "idx", (gpointer)(guintptr)idx);
 
+  gtk_widget_add_events(box->w_box,
+                        GDK_ENTER_NOTIFY_MASK |
+                        GDK_POINTER_MOTION_MASK |
+                        GDK_LEAVE_NOTIFY_MASK);
+  // s/_draw_layout_box/_layout_box_draw/
   g_signal_connect(G_OBJECT(box->w_box), "draw", G_CALLBACK(_draw_layout_box), ps);
+  g_signal_connect(G_OBJECT(box->w_box), "enter-notify-event",
+                   G_CALLBACK(_layout_box_enter), ps);
+  g_signal_connect(G_OBJECT(box->w_box), "motion-notify-event",
+                   G_CALLBACK(_layout_box_motion), ps);
+  g_signal_connect(G_OBJECT(box->w_box), "leave-notify-event",
+                   G_CALLBACK(_layout_box_leave), ps);
 
   // FIXME: as per https://wiki.gnome.org/HowDoI/Gestures should attach gesture as widget data via g_object_set_data_full with g_object_unref, so it is automatically unref'd, or
   // FIXME: make a GtkFixed or GtkOverlay above d->w_callouts with an event box for each layout box, with bindings to position of that layout box, then listen for drag gestures on those layout boxes, when it comes, capture the drag, freeze the binding to the box below, move the box below around during the drag (minding the borders), then when finished unfreeze the bindigns so the eventbox snaps into position of the dragged box (but it can't move during the drag, as that would make the drag offset #'s break)
   // FIXME: can have one drag handler if we take origin coordinate and store it in terms of parent overlay, then during drag calculate start + offset and convert that to parent coordinates, and the difference between those is the real offset
   // FIXME: probably need a drag and multipress handler, in a group, and one takes on ownership of event
   // FIXME: we still need a mouseover handler for highlighting the widget and showing overlays and filling in right panel position? or can this all be done by CSS somehow
-  GtkGesture *g_layout_boxes_drag =
-    gtk_gesture_drag_new(box->w_box);
+
+  GtkGesture *g_layout_boxes_drag = gtk_gesture_drag_new(box->w_box);
   g_signal_connect(g_layout_boxes_drag, "drag-begin",
                    G_CALLBACK(_extant_box_drag_begin), ps);
   g_signal_connect(g_layout_boxes_drag, "drag-update",
@@ -1998,251 +2061,6 @@ int mouse_leave(struct dt_lib_module_t *self)
 
   return 0;
 }
-
-#if 0
-static gboolean _layout_box_mouse_moved(GtkWidget *w, GdkEventMotion *event,
-                                        dt_lib_print_settings_t *ps)
-{
-  const double x = event->x;
-  const double y = event->y;
-
-  gboolean expose = FALSE;
-
-  if(ps->dragging)
-  {
-    dt_image_box *b = &ps->imgs.box[ps->selected];
-    const float dx = x - ps->click_pos_x;
-    const float dy = y - ps->click_pos_y;
-    const float coef = dx / b->screen.width;
-
-    switch(ps->sel_controls)
-    {
-       case BOX_ALL:
-         ps->x1 = b->screen.x + dx;
-         ps->y1 = b->screen.y + dy;
-         ps->x2 = b->screen.x + b->screen.width + dx;
-         ps->y2 = b->screen.y + b->screen.height + dy;
-         break;
-       case BOX_LEFT:
-         ps->x1 = b->screen.x + dx;
-         break;
-       case BOX_TOP:
-         ps->y1 = b->screen.y + dy;
-         break;
-       case BOX_RIGHT:
-         ps->x2 = b->screen.x + b->screen.width + dx;
-         break;
-       case BOX_BOTTOM:
-         ps->y2 = b->screen.y + b->screen.height + dy;
-         break;
-       case BOX_TOP_LEFT:
-         ps->x1 = b->screen.x + dx;
-         ps->y1 = b->screen.y + (coef * b->screen.height);
-         break;
-       case BOX_TOP_RIGHT:
-         ps->x2 = b->screen.x + b->screen.width + dx;
-         ps->y1 = b->screen.y - (coef * b->screen.height);
-         break;
-       case BOX_BOTTOM_LEFT:
-         ps->x1 = b->screen.x + dx;
-         ps->y2 = b->screen.y + b->screen.height - (coef * b->screen.height);
-         break;
-       case BOX_BOTTOM_RIGHT:
-         ps->x2 = b->screen.x + b->screen.width + dx;
-         ps->y2 = b->screen.y + b->screen.height + (coef * b->screen.height);
-         break;
-       default:
-         break;
-    }
-    // FIXME: this should reposition the active box
-    expose = TRUE;
-
-    _snap_to_grid(ps, &ps->x1, &ps->y1);
-    _snap_to_grid(ps, &ps->x2, &ps->y2);
-  }
-  else
-  {
-    const int bidx = dt_printing_get_image_box(&ps->imgs, x, y);
-    ps->sel_controls = 0;
-
-    if(bidx == -1)
-    {
-      if(ps->selected != -1) expose = TRUE;
-      ps->selected = -1;
-      // FIXME: make position boxes inactive in right panel
-    }
-    else
-    {
-      // FIXME: layout box should have mouseover action to show callouts when mouseover box, hide them when mouse
-      expose = TRUE;
-      ps->selected = bidx;
-      _fill_box_values(ps);
-      _get_control(ps, x, y);
-    }
-  }
-
-  if(expose)
-  {
-    gtk_widget_queue_draw(ps->w_box_outline);
-    gtk_widget_queue_draw(ps->w_callouts);
-  }
-
-  return FALSE;
-}
-#endif
-
-#if 0
-static gboolean _layout_box_button_released(GtkWidget *w, GdkEventButton *event,
-                                            dt_lib_print_settings_t *ps)
-{
-  if(ps->dragging)
-  {
-    int idx = -1;
-
-    gtk_widget_set_sensitive(ps->del, TRUE);
-
-    // handle new area
-    if(ps->selected != -1)
-    {
-      idx = ps->selected;
-    }
-
-    if(idx != -1)
-    {
-      // make sure the area is in the the printable area taking into account the margins
-
-      // don't allow a too small area
-      if(ps->x2 < ps->x1) _swap(&ps->x1, &ps->x2);
-      if(ps->y2 < ps->y1) _swap(&ps->y1, &ps->y2);
-
-      const float dx = ps->x2 - ps->x1;
-      const float dy = ps->y2 - ps->y1;
-
-      dt_printing_setup_box(&ps->imgs, idx, ps->x1, ps->y1, dx, dy);
-      // make the new created box the last edited one
-      ps->last_selected = idx;
-      _fill_box_values(ps);
-
-      dt_image_box *box = &ps->imgs.box[idx];
-      gtk_widget_set_size_request(box->w_box,
-                                  roundf(box->screen.width),
-                                  roundf(box->screen.height));
-      gtk_fixed_move(GTK_FIXED(ps->w_layout_boxes), box->w_box,
-                     roundf(box->screen.x), roundf(box->screen.y));
-      gtk_widget_queue_draw(ps->w_callouts);
-    }
-  }
-
-  _update_slider(ps);
-
-  ps->dragging = FALSE;
-
-  dt_control_change_cursor(GDK_LEFT_PTR);
-
-  return FALSE;
-}
-
-static gboolean _layout_box_button_pressed(GtkWidget *w, GdkEventButton *event,
-                                           dt_lib_print_settings_t *ps)
-{
-  const double x = event->x;
-  const double y = event->y;
-  const int which = event->button;
-
-  // FIXME: should gtk_widget_grab_focus(w)? this is what the gtk.c _button_pressed handler does
-
-  ps->click_pos_x = x;
-  ps->click_pos_y = y;
-  ps->last_selected = -1;
-
-  // FIXME: clicks should happen in their own widget boxes, so don't have to mind selection
-  if(ps->selected > 0
-     && (which == 2 || (which == 1 &&
-                        dt_modifier_is(event->state, GDK_CONTROL_MASK))))
-  {
-    // middle click (or ctrl-click), move selected image down
-    // FIXME: moving image down is buggy! think this through better
-    dt_image_box b;
-    memcpy(&b, &ps->imgs.box[ps->selected], sizeof(dt_image_box));
-    memcpy(&ps->imgs.box[ps->selected], &ps->imgs.box[ps->selected-1],
-           sizeof(dt_image_box));
-    memcpy(&ps->imgs.box[ps->selected-1], &b, sizeof(dt_image_box));
-
-#if 0
-    // FIXME: this pointer work is fishy, try GINT_TO_POINTER()
-    if(ps->imgs.box[ps->selected-1].w_box)
-      g_object_set_data(G_OBJECT(&ps->imgs.box[ps->selected-1].w_box), "idx", (gpointer)(guintptr)(ps->selected-1));
-    if(ps->imgs.box[ps->selected].w_box)
-      g_object_set_data(G_OBJECT(&ps->imgs.box[ps->selected].w_box), "idx", (gpointer)(guintptr)(ps->selected));
-#elif 1
-    // we've swapped the underlying data, but kept the z-order of the
-    // widgets, so now we move the widgets to where their data shows
-    // them to be
-    for(int k=ps->selected-1; k <= ps->selected; k++)
-    {
-      dt_image_box *box = &ps->imgs.box[k];
-      // FIXME: does this do anything? doesn't dt_printing_setup_display() set box->screen?
-      dt_printing_setup_image(&ps->imgs, k, box->imgid, 100, 100, box->alignment);
-      gtk_widget_set_size_request(box->w_box,
-                                  roundf(box->screen.width), roundf(box->screen.height));
-      gtk_fixed_move(GTK_FIXED(ps->w_layout_boxes), box->w_box,
-                     roundf(box->screen.x), roundf(box->screen.y));
-    }
-#elif 0
-    // FIXME: this is hacky as the window may stil need to be z-ordered below others -- we other need to remove and reattach all the windows to the fixed or switch to GtkOverlay and position via margins
-    gdk_window_raise(gtk_widget_get_window(ps->imgs.box[ps->selected].w_box));
-#else
-    // another alternative, ctrl-click could raise the selected widget
-    // move widget to top
-    GtkWidget *w = dt_layout_box_widget(body->drag_box->data);
-    gtk_container_remove(GTK_CONTAINER(body->w_fixed), g_object_ref(w));
-    gtk_fixed_put(GTK_FIXED(body->w_fixed), w,
-                  body->box_initial_x, body->box_initial_y);
-    g_object_unref(w);
-#endif
-    // FIXME: necessary?
-    //gtk_widget_queue_draw(ps->imgs.box[ps->selected].w_box);
-    //gtk_widget_queue_draw(ps->imgs.box[ps->selected-1].w_box);
-  }
-  else if(ps->selected != -1 && which == 1)
-  {
-    dt_image_box *b = &ps->imgs.box[ps->selected];
-
-    ps->dragging = TRUE;
-    ps->x1 = b->screen.x;
-    ps->y1 = b->screen.y;
-    ps->x2 = b->screen.x + b->screen.width;
-    ps->y2 = b->screen.y + b->screen.height;
-
-    ps->last_selected = ps->selected;
-    ps->has_changed = TRUE;
-
-    _get_control(ps, x, y);
-
-    dt_control_change_cursor(GDK_HAND1);
-  }
-  else if(ps->selected != -1 && which == 3)
-  {
-    dt_image_box *b = &ps->imgs.box[ps->selected];
-
-    // if image present remove it, otherwise remove the box
-    if(dt_is_valid_imgid(b->imgid))
-    {
-      b->imgid = NO_IMGID;
-      gtk_widget_queue_draw(ps->imgs.box[ps->selected].w_box);
-    }
-    else
-    {
-      _page_delete_area(ps, ps->selected);
-    }
-
-    ps->last_selected = ps->selected;
-    ps->has_changed = TRUE;
-  }
-
-  return FALSE;
-}
-#endif
 
 static gboolean _new_box_enter(GtkWidget *w, GdkEventCrossing event,
                                gpointer user_data)
@@ -3827,7 +3645,7 @@ int set_params(dt_lib_module_t *self,
   gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(ps->dtba[alignment]), TRUE);
   gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(ps->black_point_compensation), bpc);
 
-  // FIXME: are these neede?
+  // FIXME: are these needed?
   gtk_widget_hide(ps->w_new_box);
   ps->dragging = FALSE;
   ps->selected = -1;
