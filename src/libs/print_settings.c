@@ -1722,20 +1722,12 @@ static void _extant_box_drag_end(GtkGestureDrag *gesture,
 
   gtk_widget_set_sensitive(ps->del, TRUE);
 
-  // FIXME: new area code is different now, yes?
-#if 0
-  // handle new area
-  if(ps->selected != -1)
-  {
-    idx = ps->selected;
-  }
-#endif
-
-  //GtkWidget *w_box = gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(gesture));
+  // it's possible that the cursor has already left the box, so we
+  // can't be guaranteed ps->selected is valid
+  GtkWidget *w_box = gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(gesture));
   // FIXME: this is fishy pointer work, try GPOINTER_TO_INT()
-  //const int k = (guintptr)g_object_get_data(G_OBJECT(w_box), "idx");
-  dt_image_box *box = &ps->imgs.box[ps->selected];
-  const int idx = ps->selected;
+  const int idx = (guintptr)g_object_get_data(G_OBJECT(w_box), "idx");
+  dt_image_box *box = &ps->imgs.box[idx];
 
   // make sure the area is in the the printable area taking into account the margins
 
