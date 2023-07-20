@@ -1269,9 +1269,7 @@ _intent_callback(GtkWidget *widget, dt_lib_module_t *self)
   ps->v_intent = pos - 1;
 }
 
-#if 0
-// FIXME: change drag/drop handlers to be installed per widget, then we don't have to call dt_printing_get_image_box()
-static void _drag_and_drop_received(GtkWidget *widget,
+static void _drag_data_received(GtkWidget *widget,
                                     GdkDragContext *context,
                                     gint x,
                                     gint y,
@@ -1280,17 +1278,29 @@ static void _drag_and_drop_received(GtkWidget *widget,
                                     guint time,
                                     dt_lib_print_settings_t *ps)
 {
-  const int bidx = dt_printing_get_image_box(&ps->imgs, x, y);
+  const int idx = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(widget), "idx"));
+  printf("drag drop data received to %d\n", idx);
 
-  if(bidx != -1)
-  {
-    // FIXME: can we get the image from drag-and-drop data?
-    dt_printing_setup_image(&ps->imgs, bidx, ps->filmstrip_select,
-                            100, 100, ALIGNMENT_CENTER);
-    gtk_widget_queue_draw(ps->imgs.box[bidx].w_box);
-  }
+  // FIXME: can we get the image from drag-and-drop data?
+  dt_printing_setup_image(&ps->imgs, idx, ps->filmstrip_select,
+                          100, 100, ALIGNMENT_CENTER);
+  gtk_widget_queue_draw(widget);
 
   ps->imgs.motion_over = -1;
+}
+
+static gboolean _drag_drop(GtkWidget *widget,
+                       GdkDragContext *context,
+                       gint x,
+                       gint y,
+                       guint time,
+                       dt_lib_print_settings_t *ps)
+{
+  const int idx = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(widget), "idx"));
+  printf("drag-drop received to %d\n", idx);
+  gtk_widget_show(ps->w_callouts);
+  gtk_widget_show(ps->w_box_outline);
+  return TRUE;
 }
 
 static gboolean _drag_motion_received(GtkWidget *widget,
@@ -1300,17 +1310,56 @@ static gboolean _drag_motion_received(GtkWidget *widget,
                                       const guint time,
                                       dt_lib_print_settings_t *ps)
 {
-  const int bidx = dt_printing_get_image_box(&ps->imgs, x, y);
-  ps->imgs.motion_over = bidx;
+  const int idx = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(widget), "idx"));
+  // FIXME: instead apply a class to the widget to make its appearance change, or even swap in a widget
+  printf("drag drop motion over %d\n", idx);
+  ps->imgs.motion_over = idx;
 
-  if(bidx != -1)
-  {
-    gtk_widget_queue_draw(ps->imgs.box[bidx].w_box);
-  }
+  gtk_widget_queue_draw(ps->imgs.box[idx].w_box);
 
   return TRUE;
 }
-#endif
+
+static void _drag_cancel(GdkDragContext *dc,
+                         GdkDragCancelReason reason,
+                         dt_lib_print_settings_t *ps)
+{
+  printf("drag canceled because %d\n", reason);
+}
+
+static gboolean _top_drag_motion_received(GtkWidget *widget,
+                                          GdkDragContext *dc,
+                                          const gint x,
+                                          const gint y,
+                                          const guint time,
+                                          dt_lib_print_settings_t *ps)
+{
+  printf("_top_drag_motion wndow %p action %d\n", gdk_drag_context_get_dest_window(dc), gdk_drag_context_get_selected_action(dc));
+  g_signal_connect(G_OBJECT(dc), "cancel", G_CALLBACK(_drag_cancel), ps);
+  // GTK 3 drag-and-drop doesn't know about pass-through windows, so
+  // we need to hide these for the duration of the drag-and-drop so
+  // the layout boxes will be sensitive
+  gtk_widget_hide(ps->w_callouts);
+  gtk_widget_hide(ps->w_box_outline);
+  return FALSE;
+}
+
+static void _drag_and_drop_leave(GtkWidget *widget,
+                                 GdkDragContext *dc,
+                                 const guint time,
+                                 dt_lib_print_settings_t *ps)
+{
+  const int idx = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(widget), "idx"));
+  printf("_drag_leave dest wndow %p action %d\n", gdk_drag_context_get_dest_window(dc), gdk_drag_context_get_selected_action(dc));
+  // restore state if drag was canceled
+  if(!gdk_drag_context_get_selected_action(dc))
+  {
+    printf(" restoring state\n");
+    gtk_widget_queue_draw(ps->imgs.box[idx].w_box);
+    gtk_widget_show(ps->w_callouts);
+    gtk_widget_show(ps->w_box_outline);
+  }
+}
 
 void _cairo_rectangle(cairo_t *cr,
                       const int sel_controls,
@@ -1944,6 +1993,22 @@ static void _new_layout_box_widget(dt_lib_print_settings_t *ps,
                    G_CALLBACK(_extant_box_drag_update), ps);
   g_signal_connect(g_box_drag, "drag-end",
                    G_CALLBACK(_extant_box_drag_end), ps);
+
+  // FIXME: if we make passthrough work, we can do this per layout box
+  // FIXME: check out _register_modules_drag_n_drop() from darkroom.c and its callbacks for ideas
+  gtk_drag_dest_set(box->w_box, GTK_DEST_DEFAULT_ALL,
+                    // FIXME: should be target_list_internal?
+                    target_list_all, n_targets_all, GDK_ACTION_MOVE);
+  //gtk_drag_dest_set_track_motion(GTK_WIDGET(box->w_box), TRUE);
+
+  g_signal_connect(box->w_box, "drag-data-received",
+                   G_CALLBACK(_drag_data_received), ps);
+  g_signal_connect(box->w_box, "drag-drop",
+                   G_CALLBACK(_drag_drop), ps);
+  g_signal_connect(box->w_box, "drag-motion",
+                   G_CALLBACK(_drag_motion_received), ps);
+  g_signal_connect(box->w_box, "drag-leave",
+                   G_CALLBACK(_drag_and_drop_leave), ps);
 
   gtk_widget_show(box->w_box);
   gtk_fixed_put(GTK_FIXED(ps->w_layout_boxes), box->w_box,
@@ -2757,28 +2822,13 @@ void gui_init(dt_lib_module_t *self)
   g_signal_connect(G_OBJECT(d->w_callouts), "realize",
                    G_CALLBACK(_event_realize_pass_through), NULL);
 
-#if 0
-  // FIXME: mouse and drag/drop events probably need to be handled via an event box overlaid on top
-  g_signal_connect(G_OBJECT(d->w_callouts), "motion-notify-event",
-                   G_CALLBACK(_layout_box_mouse_moved), d);
-  // FIXME: single press button events should be handled by each layout box via GtkGestureMultiPress set to detect one press, with a single press without modifiers not being accepted but saving the ID of this window so that a drag on w_layout_boxes knows what is being dragged, propogation set to bubble from layout box up to the w_layout_boxes
-  g_signal_connect(G_OBJECT(d->w_callouts), "button-press-event",
-                   G_CALLBACK(_layout_box_button_pressed), d);
-  g_signal_connect(G_OBJECT(d->w_callouts), "button-release-event",
-                   G_CALLBACK(_layout_box_button_released), d);
-#endif
-
-#if 0
-  // FIXME: if we make passthrough work, we can do this per layout box
+  // hacky trick to hide overlays so drag-and-drop can reach layout boxes
   // FIXME: check out _register_modules_drag_n_drop() from darkroom.c and its callbacks for ideas
   gtk_drag_dest_set(d->w_callouts, GTK_DEST_DEFAULT_ALL,
                     // FIXME: should be target_list_internal?
                     target_list_all, n_targets_all, GDK_ACTION_MOVE);
-  g_signal_connect(d->w_callouts, "drag-data-received",
-                   G_CALLBACK(_drag_and_drop_received), d);
   g_signal_connect(d->w_callouts, "drag-motion",
-                   G_CALLBACK(_drag_motion_received), d);
-#endif
+                   G_CALLBACK(_top_drag_motion_received), d);
 
   gtk_widget_show(d->w_callouts);
   // FIXME: don't show this initially, only when box is selected or when dragging
