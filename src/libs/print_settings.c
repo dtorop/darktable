@@ -1534,9 +1534,7 @@ static gboolean _set_orientation(dt_lib_print_settings_t *ps,
   return changed;
 }
 
-void _get_control(dt_lib_print_settings_t *ps,
-                  const float x,
-                  const float y)
+void _get_control(dt_lib_print_settings_t *ps, const float x, const float y)
 {
   const float dist = 20.0;
 
@@ -1544,16 +1542,16 @@ void _get_control(dt_lib_print_settings_t *ps,
 
   ps->sel_controls = 0;
 
-  if(fabsf(b->screen.x - x) < dist)
+  if(fabsf(x) < dist)
     ps->sel_controls |= BOX_LEFT;
 
-  if(fabsf(b->screen.y - y) < dist)
+  if(fabsf(y) < dist)
     ps->sel_controls |= BOX_TOP;
 
-  if(fabsf((b->screen.x + b->screen.width) - x) < dist)
+  if(fabsf(b->screen.width - x) < dist)
     ps->sel_controls |= BOX_RIGHT;
 
-  if(fabsf((b->screen.y + b->screen.height) - y) < dist)
+  if(fabsf(b->screen.height - y) < dist)
     ps->sel_controls |= BOX_BOTTOM;
 
   if(ps->sel_controls == 0) ps->sel_controls = BOX_ALL;
@@ -1610,7 +1608,7 @@ static void _extant_box_drag_begin(GtkGestureDrag *gesture,
     gtk_event_controller_reset(GTK_EVENT_CONTROLLER(gesture));
     return;
   }
-  printf(" -> page %d,%d\n", page_x, page_y);
+  //printf(" -> page %d,%d\n", page_x, page_y);
 
   // FIXME: instead test if a drag is happening
   ps->dragging = TRUE;
@@ -1623,8 +1621,7 @@ static void _extant_box_drag_begin(GtkGestureDrag *gesture,
 
   ps->last_selected = ps->selected = k;
 
-  // FIXME: if we keep this, we should do it in widget-local terms, not page-local
-  _get_control(ps, page_x, page_y);
+  _get_control(ps, start_x, start_y);
 
   // FIXME: won't need ps->dragging if gestures implemented
   dt_control_change_cursor(GDK_HAND1);
@@ -1642,7 +1639,7 @@ static void _extant_box_drag_update(GtkGestureDrag *gesture,
   printf("_extant_box_drag_update: on widget %p #%d offset %f,%f\n", gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(gesture)), ps->selected, offset_x, offset_y);
   gdouble start_x, start_y;
   gtk_gesture_drag_get_start_point(gesture, &start_x, &start_y);
-  printf(" start window-relative %f,%f page relative %f,%f\n", start_x, start_y, ps->click_pos_x, ps->click_pos_y);
+  //printf(" start window-relative %f,%f page relative %f,%f\n", start_x, start_y, ps->click_pos_x, ps->click_pos_y);
   const gdouble pos_x = start_x + offset_x;
   const gdouble pos_y = start_y + offset_y;
 
@@ -1656,7 +1653,7 @@ static void _extant_box_drag_update(GtkGestureDrag *gesture,
   }
   const gdouble actual_offset_x = page_x - ps->click_pos_x;
   const gdouble actual_offset_y = page_y - ps->click_pos_y;
-  printf(" new widget relative %f,%f page pos %d,%d, actual offset is %f,%f\n", pos_x, pos_y, page_x, page_y, actual_offset_x, actual_offset_y);
+  //printf(" new widget relative %f,%f page pos %d,%d, actual offset is %f,%f\n", pos_x, pos_y, page_x, page_y, actual_offset_x, actual_offset_y);
 
   // FIXME: to do this math right, we need the distance from the click origin
   const float coef = actual_offset_x / box->screen.width;
@@ -1790,14 +1787,10 @@ static gboolean _layout_box_enter(GtkWidget *w, GdkEventCrossing *event,
 static gboolean _layout_box_motion(GtkWidget *w, GdkEventMotion *event,
                                    dt_lib_print_settings_t *ps)
 {
-  // FIXME: convert this to widget-local terms, but really we want an overlay widget which will show these controls
-  gint page_x, page_y;
-  if(gtk_widget_translate_coordinates(w, ps->w_layout_boxes,
-                                      round(event->x), round(event->y),
-                                      &page_x, &page_y))
+  // FIXME: instead of testing dragging, should we freeze this notification while dragging?
+  if(!ps->dragging)
   {
-    // FIXME: only test this if gtk_gesture_is_active() isn't active for current box
-    //_get_control(ps, page_x, page_y);
+    _get_control(ps, event->x, event->y);
     gtk_widget_queue_draw(ps->w_box_outline);
   }
 
