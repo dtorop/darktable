@@ -1339,6 +1339,7 @@ static gboolean _drag_motion_received(GtkWidget *widget,
   return is_in_drop_zone;
 }
 
+#if 0
 static void _drag_and_drop_leave(GtkWidget *widget,
                                  GdkDragContext *dc,
                                  const guint time,
@@ -1347,6 +1348,7 @@ static void _drag_and_drop_leave(GtkWidget *widget,
   printf("_drag_leave dest wndow %p action %d\n", gdk_drag_context_get_dest_window(dc), gdk_drag_context_get_selected_action(dc));
   ps->imgs.motion_over = -1;
 }
+#endif
 
 void _cairo_rectangle(cairo_t *cr,
                       const int sel_controls,
@@ -1983,7 +1985,7 @@ static void _new_layout_box_widget(dt_lib_print_settings_t *ps,
                    G_CALLBACK(_extant_box_drag_update), ps);
   g_signal_connect(g_box_drag, "drag-end",
                    G_CALLBACK(_extant_box_drag_end), ps);
- 
+
   gtk_widget_show(box->w_box);
   gtk_fixed_put(GTK_FIXED(ps->w_layout_boxes), box->w_box,
                 roundf(box->screen.x), roundf(box->screen.y));
@@ -2812,11 +2814,11 @@ void gui_init(dt_lib_module_t *self)
 #if 0
   g_signal_connect(d->w_callouts, "drag-drop",
                    G_CALLBACK(_drag_drop), d);
+  g_signal_connect(d->w_callouts, "drag-leave",
+                   G_CALLBACK(_drag_and_drop_leave), d);
 #endif
   g_signal_connect(d->w_callouts, "drag-motion",
                    G_CALLBACK(_drag_motion_received), d);
-  g_signal_connect(d->w_callouts, "drag-leave",
-                   G_CALLBACK(_drag_and_drop_leave), d);
 
   gtk_widget_show(d->w_callouts);
   // FIXME: don't show this initially, only when box is selected or when dragging
