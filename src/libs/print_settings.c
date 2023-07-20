@@ -674,10 +674,9 @@ static void _page_delete_area(dt_lib_print_settings_t *ps, const int box_index)
   for(int k=box_index; k<MAX_IMAGE_PER_PAGE-1; k++)
   {
     memcpy(&ps->imgs.box[k], &ps->imgs.box[k+1], sizeof(dt_image_box));
-    // FIXME: cleanup nasty casting
     if(ps->imgs.box[k].w_box)
       g_object_set_data(G_OBJECT(ps->imgs.box[k].w_box),
-                        "idx", (gpointer)(guintptr)k);
+                        "idx", GINT_TO_POINTER(k));
   }
   ps->last_selected = -1;
   ps->selected = -1;
@@ -1781,11 +1780,10 @@ static void _extant_box_lower(GtkGestureMultiPress *gesture,
     memcpy(&ps->imgs.box[ps->selected-1], &b, sizeof(dt_image_box));
 
 #if 0
-    // FIXME: this pointer work is fishy, try GINT_TO_POINTER()
     if(ps->imgs.box[ps->selected-1].w_box)
-      g_object_set_data(G_OBJECT(&ps->imgs.box[ps->selected-1].w_box), "idx", (gpointer)(guintptr)(ps->selected-1));
+      g_object_set_data(G_OBJECT(&ps->imgs.box[ps->selected-1].w_box), "idx", GINT_TO_POINTER(ps->selected-1));
     if(ps->imgs.box[ps->selected].w_box)
-      g_object_set_data(G_OBJECT(&ps->imgs.box[ps->selected].w_box), "idx", (gpointer)(guintptr)(ps->selected));
+      g_object_set_data(G_OBJECT(&ps->imgs.box[ps->selected].w_box), "idx", GINT_TO_POINTER(ps->selected));
 #elif 1
     // we've swapped the underlying data, but kept the z-order of the
     // widgets, so now we move the widgets to where their data shows
@@ -1910,8 +1908,7 @@ static void _new_layout_box_widget(dt_lib_print_settings_t *ps,
 
   // FIXME: when don't depend on index we can point directly to data structure
   //g_object_set_data(G_OBJECT(ps->w_box), "box", box);
-  // FIXME: this pointer work is fishy, try GINT_TO_POINTER()
-  g_object_set_data(G_OBJECT(box->w_box), "idx", (gpointer)(guintptr)idx);
+  g_object_set_data(G_OBJECT(box->w_box), "idx", GINT_TO_POINTER(idx));
 
   gtk_widget_add_events(box->w_box,
                         GDK_ENTER_NOTIFY_MASK |
@@ -2846,10 +2843,10 @@ void gui_init(dt_lib_module_t *self)
   gtk_spin_button_set_digits(GTK_SPIN_BUTTON(d->b_y), n_digits);
   gtk_spin_button_set_digits(GTK_SPIN_BUTTON(d->b_width), n_digits);
   gtk_spin_button_set_digits(GTK_SPIN_BUTTON(d->b_height), n_digits);
-  g_object_set_data(G_OBJECT(d->b_x), "idx", (gpointer)0);
-  g_object_set_data(G_OBJECT(d->b_y), "idx", (gpointer)1);
-  g_object_set_data(G_OBJECT(d->b_width), "idx", (gpointer)2);
-  g_object_set_data(G_OBJECT(d->b_height), "idx", (gpointer)3);
+  g_object_set_data(G_OBJECT(d->b_x), "idx", GINT_TO_POINTER(0));
+  g_object_set_data(G_OBJECT(d->b_y), "idx", GINT_TO_POINTER(1));
+  g_object_set_data(G_OBJECT(d->b_width), "idx", GINT_TO_POINTER(2));
+  g_object_set_data(G_OBJECT(d->b_height), "idx", GINT_TO_POINTER(3));
 
   d->grid_size = gtk_spin_button_new_with_range(0, 100, incr);
   gtk_spin_button_set_digits(GTK_SPIN_BUTTON(d->grid_size),  n_digits);
