@@ -1766,11 +1766,11 @@ static void _extant_box_drag_end(GtkGestureDrag *gesture,
   dt_control_change_cursor(GDK_LEFT_PTR);
 }
 
-static void _extant_box_pressed(GtkGestureMultiPress *gesture,
-                                gint n_press, gdouble x, gdouble y,
-                                dt_lib_print_settings_t *ps)
+static void _extant_box_lower(GtkGestureMultiPress *gesture,
+                              gint n_press, gdouble x, gdouble y,
+                              dt_lib_print_settings_t *ps)
 {
-  printf("_extant_box_pressed n_press %d x %f y %f\n", n_press, x, y);
+  printf("_extant_box_lower n_press %d x %f y %f\n", n_press, x, y);
   GdkEventSequence *sequence = gtk_gesture_single_get_current_sequence(GTK_GESTURE_SINGLE(gesture));
   const guint which = gtk_gesture_single_get_current_button (GTK_GESTURE_SINGLE (gesture));
   const GdkEvent *event = gtk_gesture_get_last_event(GTK_GESTURE(gesture), sequence);
@@ -1779,13 +1779,10 @@ static void _extant_box_pressed(GtkGestureMultiPress *gesture,
 
   // FIXME: should gtk_widget_grab_focus(w)? this is what the gtk.c _button_pressed handler does
 
-  ps->click_pos_x = x;
-  ps->click_pos_y = y;
   ps->last_selected = -1;
 
-  if(ps->selected > 0
-     && (which == GDK_BUTTON_MIDDLE || (which == GDK_BUTTON_PRIMARY &&
-                                        dt_modifier_is(state, GDK_CONTROL_MASK))))
+  if((which == GDK_BUTTON_MIDDLE || (which == GDK_BUTTON_PRIMARY &&
+                                     dt_modifier_is(state, GDK_CONTROL_MASK))))
   {
     // middle click (or ctrl-click), move selected image down
     // FIXME: moving image down is buggy! think this through better
@@ -1831,29 +1828,32 @@ static void _extant_box_pressed(GtkGestureMultiPress *gesture,
     //gtk_widget_queue_draw(ps->imgs.box[ps->selected].w_box);
     //gtk_widget_queue_draw(ps->imgs.box[ps->selected-1].w_box);
   }
-  else if(ps->selected != -1 && which == GDK_BUTTON_PRIMARY)
+}
+
+static void _extant_box_delete(GtkGestureMultiPress *gesture,
+                               gint n_press, gdouble x, gdouble y,
+                               dt_lib_print_settings_t *ps)
+{
+  printf("_extant_box_delete n_press %d x %f y %f\n", n_press, x, y);
+
+  // FIXME: figure this out from current widget?
+  dt_image_box *b = &ps->imgs.box[ps->selected];
+
+  // if image present remove it, otherwise remove the box
+  if(dt_is_valid_imgid(b->imgid))
   {
-    // FIXME: this is handled by drag, do we want to deny it?
+    b->imgid = NO_IMGID;
+    gtk_widget_queue_draw(b->w_box);
   }
-  else if(ps->selected != -1 && which == GDK_BUTTON_SECONDARY)
-  { // delete
-    // FIXME: figure this out from current widget?
-    dt_image_box *b = &ps->imgs.box[ps->selected];
-
-    // if image present remove it, otherwise remove the box
-    if(dt_is_valid_imgid(b->imgid))
-    {
-      b->imgid = NO_IMGID;
-      gtk_widget_queue_draw(ps->imgs.box[ps->selected].w_box);
-    }
-    else
-    {
-      _page_delete_area(ps, ps->selected);
-    }
-
-    ps->last_selected = ps->selected;
-    ps->has_changed = TRUE;
+  else
+  {
+    _page_delete_area(ps, ps->selected);
   }
+
+  ps->last_selected = ps->selected;
+  ps->has_changed = TRUE;
+
+  // FIXME: should claim this gesture?
 }
 
 static gboolean _layout_box_enter(GtkWidget *w, GdkEventCrossing *event,
@@ -1945,10 +1945,13 @@ static void _new_layout_box_widget(dt_lib_print_settings_t *ps,
   // FIXME: probably need a drag and multipress handler, in a group, and one takes on ownership of event
   // FIXME: we still need a mouseover handler for highlighting the widget and showing overlays and filling in right panel position? or can this all be done by CSS somehow
 
-  // FIXME: divide these by different button presses, e.g. g_box_move_down
-  GtkGesture *g_box_press = gtk_gesture_multi_press_new(box->w_box);
-  gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(g_box_press), 0);
-  g_signal_connect(g_box_press, "pressed", G_CALLBACK(_extant_box_pressed), ps);
+  GtkGesture *g_box_lower = gtk_gesture_multi_press_new(box->w_box);
+  gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(g_box_lower), 0);
+  g_signal_connect(g_box_lower, "pressed", G_CALLBACK(_extant_box_lower), ps);
+
+  GtkGesture *g_box_delete = gtk_gesture_multi_press_new(box->w_box);
+  gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(g_box_delete), GDK_BUTTON_SECONDARY);
+  g_signal_connect(g_box_delete, "pressed", G_CALLBACK(_extant_box_delete), ps);
 
   GtkGesture *g_box_drag = gtk_gesture_drag_new(box->w_box);
   g_signal_connect(g_box_drag, "drag-begin",
