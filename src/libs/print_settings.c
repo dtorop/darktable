@@ -1766,6 +1766,96 @@ static void _extant_box_drag_end(GtkGestureDrag *gesture,
   dt_control_change_cursor(GDK_LEFT_PTR);
 }
 
+static void _extant_box_pressed(GtkGestureMultiPress *gesture,
+                                gint n_press, gdouble x, gdouble y,
+                                dt_lib_print_settings_t *ps)
+{
+  printf("_extant_box_pressed n_press %d x %f y %f\n", n_press, x, y);
+  GdkEventSequence *sequence = gtk_gesture_single_get_current_sequence(GTK_GESTURE_SINGLE(gesture));
+  const guint which = gtk_gesture_single_get_current_button (GTK_GESTURE_SINGLE (gesture));
+  const GdkEvent *event = gtk_gesture_get_last_event(GTK_GESTURE(gesture), sequence);
+  GdkModifierType state;
+  gdk_event_get_state(event, &state);
+
+  // FIXME: should gtk_widget_grab_focus(w)? this is what the gtk.c _button_pressed handler does
+
+  ps->click_pos_x = x;
+  ps->click_pos_y = y;
+  ps->last_selected = -1;
+
+  if(ps->selected > 0
+     && (which == GDK_BUTTON_MIDDLE || (which == GDK_BUTTON_PRIMARY &&
+                                        dt_modifier_is(state, GDK_CONTROL_MASK))))
+  {
+    // middle click (or ctrl-click), move selected image down
+    // FIXME: moving image down is buggy! think this through better
+    dt_image_box b;
+    memcpy(&b, &ps->imgs.box[ps->selected], sizeof(dt_image_box));
+    memcpy(&ps->imgs.box[ps->selected], &ps->imgs.box[ps->selected-1],
+           sizeof(dt_image_box));
+    memcpy(&ps->imgs.box[ps->selected-1], &b, sizeof(dt_image_box));
+
+#if 0
+    // FIXME: this pointer work is fishy, try GINT_TO_POINTER()
+    if(ps->imgs.box[ps->selected-1].w_box)
+      g_object_set_data(G_OBJECT(&ps->imgs.box[ps->selected-1].w_box), "idx", (gpointer)(guintptr)(ps->selected-1));
+    if(ps->imgs.box[ps->selected].w_box)
+      g_object_set_data(G_OBJECT(&ps->imgs.box[ps->selected].w_box), "idx", (gpointer)(guintptr)(ps->selected));
+#elif 1
+    // we've swapped the underlying data, but kept the z-order of the
+    // widgets, so now we move the widgets to where their data shows
+    // them to be
+    for(int k=ps->selected-1; k <= ps->selected; k++)
+    {
+      dt_image_box *box = &ps->imgs.box[k];
+      // FIXME: does this do anything? doesn't dt_printing_setup_display() set box->screen?
+      dt_printing_setup_image(&ps->imgs, k, box->imgid, 100, 100, box->alignment);
+      gtk_widget_set_size_request(box->w_box,
+                                  roundf(box->screen.width), roundf(box->screen.height));
+      gtk_fixed_move(GTK_FIXED(ps->w_layout_boxes), box->w_box,
+                     roundf(box->screen.x), roundf(box->screen.y));
+    }
+#elif 0
+    // FIXME: this is hacky as the window may stil need to be z-ordered below others -- we other need to remove and reattach all the windows to the fixed or switch to GtkOverlay and position via margins
+    gdk_window_raise(gtk_widget_get_window(ps->imgs.box[ps->selected].w_box));
+#else
+    // another alternative, ctrl-click could raise the selected widget
+    // move widget to top
+    GtkWidget *w = dt_layout_box_widget(body->drag_box->data);
+    gtk_container_remove(GTK_CONTAINER(body->w_fixed), g_object_ref(w));
+    gtk_fixed_put(GTK_FIXED(body->w_fixed), w,
+                  body->box_initial_x, body->box_initial_y);
+    g_object_unref(w);
+#endif
+    // FIXME: necessary?
+    //gtk_widget_queue_draw(ps->imgs.box[ps->selected].w_box);
+    //gtk_widget_queue_draw(ps->imgs.box[ps->selected-1].w_box);
+  }
+  else if(ps->selected != -1 && which == GDK_BUTTON_PRIMARY)
+  {
+    // FIXME: this is handled by drag, do we want to deny it?
+  }
+  else if(ps->selected != -1 && which == GDK_BUTTON_SECONDARY)
+  { // delete
+    // FIXME: figure this out from current widget?
+    dt_image_box *b = &ps->imgs.box[ps->selected];
+
+    // if image present remove it, otherwise remove the box
+    if(dt_is_valid_imgid(b->imgid))
+    {
+      b->imgid = NO_IMGID;
+      gtk_widget_queue_draw(ps->imgs.box[ps->selected].w_box);
+    }
+    else
+    {
+      _page_delete_area(ps, ps->selected);
+    }
+
+    ps->last_selected = ps->selected;
+    ps->has_changed = TRUE;
+  }
+}
+
 static gboolean _layout_box_enter(GtkWidget *w, GdkEventCrossing *event,
                                   dt_lib_print_settings_t *ps)
 {
@@ -1787,7 +1877,7 @@ static gboolean _layout_box_enter(GtkWidget *w, GdkEventCrossing *event,
 static gboolean _layout_box_motion(GtkWidget *w, GdkEventMotion *event,
                                    dt_lib_print_settings_t *ps)
 {
-  // FIXME: instead of testing dragging, should we freeze this notification while dragging?
+  // FIXME: instead of testing dragging, should we could g_signal_handler_block this notification while dragging -- but we should replace this setup with an overlay containing handles
   if(!ps->dragging)
   {
     _get_control(ps, event->x, event->y);
@@ -1855,12 +1945,17 @@ static void _new_layout_box_widget(dt_lib_print_settings_t *ps,
   // FIXME: probably need a drag and multipress handler, in a group, and one takes on ownership of event
   // FIXME: we still need a mouseover handler for highlighting the widget and showing overlays and filling in right panel position? or can this all be done by CSS somehow
 
-  GtkGesture *g_layout_boxes_drag = gtk_gesture_drag_new(box->w_box);
-  g_signal_connect(g_layout_boxes_drag, "drag-begin",
+  // FIXME: divide these by different button presses, e.g. g_box_move_down
+  GtkGesture *g_box_press = gtk_gesture_multi_press_new(box->w_box);
+  gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(g_box_press), 0);
+  g_signal_connect(g_box_press, "pressed", G_CALLBACK(_extant_box_pressed), ps);
+
+  GtkGesture *g_box_drag = gtk_gesture_drag_new(box->w_box);
+  g_signal_connect(g_box_drag, "drag-begin",
                    G_CALLBACK(_extant_box_drag_begin), ps);
-  g_signal_connect(g_layout_boxes_drag, "drag-update",
+  g_signal_connect(g_box_drag, "drag-update",
                    G_CALLBACK(_extant_box_drag_update), ps);
-  g_signal_connect(g_layout_boxes_drag, "drag-end",
+  g_signal_connect(g_box_drag, "drag-end",
                    G_CALLBACK(_extant_box_drag_end), ps);
 
   gtk_widget_show(box->w_box);
