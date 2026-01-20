@@ -34,11 +34,8 @@ typedef enum dt_mipmap_size_t {
   DT_MIPMAP_4,
   DT_MIPMAP_5,
   DT_MIPMAP_6,
-  DT_MIPMAP_7,
-  DT_MIPMAP_8,
-  DT_MIPMAP_9,
   // 8 bit, full resolution, for zoomed in thumbnail
-  DT_MIPMAP_10,
+  DT_MIPMAP_7,
   // float, downscaled, for preview pixelpipe
   DT_MIPMAP_F,
   // float, full resolution, for full/export pixelpipe
@@ -46,7 +43,7 @@ typedef enum dt_mipmap_size_t {
   DT_MIPMAP_NONE
 } dt_mipmap_size_t;
 
-static const dt_mipmap_size_t DT_MIPMAP_LDR_MAX = DT_MIPMAP_10;
+static const dt_mipmap_size_t DT_MIPMAP_LDR_MAX = DT_MIPMAP_7;
 
 // type to be passed to getter functions
 typedef enum dt_mipmap_get_flags_t

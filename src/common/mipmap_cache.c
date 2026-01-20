@@ -698,16 +698,13 @@ void dt_mipmap_cache_init()
   const size_t max_mem = CLAMPS(darktable.dtresources.mipmap_memory, 100u << 20, ((size_t)8) << 30);
   // Fixed sizes for the thumbnail mip levels, selected for coverage of most screen sizes
   int32_t mipsizes[DT_MIPMAP_F][2] = {
-    { 180, 110 },             // mip0 - ~1/2 size previous one
-    { 360, 225 },             // mip1 - 1/2 size previous one
-    { 720, 450 },             // mip2 - 1/2 size previous one
-    { 1440, 900 },            // mip3 - covers 720p and 1366x768
-    { 1920, 1200 },           // mip4 - covers 1080p and 1600x1200
-    { 2560, 1600 },           // mip5 - covers 2560x1440
-    { 4096, 2560 },           // mip6 - covers 4K and UHD
-    { 6144, 3200 },           // mip7 - covers 6K and 5120x2880 panels
-    { 7680, 4320 },           // mip8 - covers 8K
-    { 10240, 6192 },          // mip9 - covers 10K and 8256x6192 senors
+    { 180, 110 },             // mip0 - ~half next one
+    { 360, 225 },             // mip1 - half next one
+    { 720, 450 },             // mip2 - VGA
+    { 1440, 900 },            // mip3 - covers 720p, 1366x768, WSXGA
+    { 2560, 1600 },           // mip4 - covers 1080p, 1600x1200, 2560x1440 (WQXGA)
+    { 5120, 3200 },           // mip5 - covers 4K, UHD, 5K
+    { 10240, 6400 },          // mip9 - covers 6K, 8K, 10K (and 50MP sensors)
     { 999999999, 999999999 }, // mip10 - used for full preview at full size
   };
   // Set mipf to mip3 size, which is ~4x smaller than a 6K screen screen
@@ -1212,14 +1209,9 @@ dt_mipmap_size_t dt_mipmap_cache_get_min_mip_from_pref(const char *value)
   if(strcmp(value, "small") == 0)  return DT_MIPMAP_1;
   if(strcmp(value, "VGA") == 0)    return DT_MIPMAP_2;
   if(strcmp(value, "720p") == 0)   return DT_MIPMAP_3;
-  if(strcmp(value, "1080p") == 0)  return DT_MIPMAP_4;
-  if(strcmp(value, "WQXGA") == 0)  return DT_MIPMAP_5;
-  if(strcmp(value, "4K") == 0)     return DT_MIPMAP_6;
-  if(strcmp(value, "6K") == 0)     return DT_MIPMAP_7;
-  if(strcmp(value, "8K") == 0)     return DT_MIPMAP_8;
-  if(strcmp(value, "10K") == 0)    return DT_MIPMAP_9;
-  // support obsolete pref value
-  if(strcmp(value, "5K") == 0)     return DT_MIPMAP_7;
+  if(strcmp(value, "WQXGA") == 0)  return DT_MIPMAP_4;
+  if(strcmp(value, "5K") == 0)     return DT_MIPMAP_5;
+  if(strcmp(value, "10K") == 0)     return DT_MIPMAP_6;
   return DT_MIPMAP_NONE;
 }
 
